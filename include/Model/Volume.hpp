@@ -19,13 +19,6 @@ public:
         uint32_t x, y, z, w;
     };
 
-    struct Block{
-        BlockUID id;
-        void* ptr;
-        size_t size;
-        bool encoded;
-    };
-
     using GridVolumeDesc = VolumeFile::VolumeDesc;
 
 
@@ -37,14 +30,13 @@ public:
 
     using UID = uint16_t;
 
-
     UID GetUID() const;
 
-    void ReadEncodedBlock(Block&);
+    CUDAHostBuffer ReadBlock(BlockUID);
 
-    void ReadBlock(Block&);
+    CUDAHostBuffer ReadEncodedBlock(BlockUID);
 
-    void ReadRegion();
+    CUDAHostBuffer ReadRegion();
 
     //与文件关联的会返回nullptr
     std::unique_ptr<GridVolume> GetSubGridVolume();

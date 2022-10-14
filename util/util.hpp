@@ -23,6 +23,7 @@
 #include "math/vec4.hpp"
 
 // misc
+#include "misc/stdstr.hpp"
 
 // parallel
 

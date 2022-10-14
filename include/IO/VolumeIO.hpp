@@ -3,6 +3,7 @@
 
 VISER_BEGIN
 
+//不考虑写更新或生成
 class VolumeFilePrivate;
 class VolumeFile : public VolumeIOInterface{
 public:
@@ -23,11 +24,12 @@ public:
         bool decoding_cpu_only = false;
     };
 
-    void ReadVolumeRegion() override;
+    void ReadVolumeRegion(Int3 beg_pos, Int3 end_pos, void* ptr, size_t size) ;
 
-    void WriteVolumeRegion() override;
+    void WriteVolumeRegion() ;
 
     VolumeDesc GetVolumeDesc();
+
 
 
 protected:

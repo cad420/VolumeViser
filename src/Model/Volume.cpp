@@ -1,3 +1,19 @@
-//
-// Created by wyz on 2022/10/11.
-//
+#include <Model/Volume.hpp>
+
+VISER_BEGIN
+
+class GridVolumePrivate{
+public:
+
+};
+
+
+    GridVolume::GridVolume(const GridVolumeDesc& desc){
+
+    }
+
+    GridVolume::~GridVolume() {
+
+    }
+
+VISER_END

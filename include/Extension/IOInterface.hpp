@@ -8,9 +8,9 @@ class VolumeIOInterface{
 public:
     virtual ~VolumeIOInterface() = default;
 
-    virtual void ReadVolumeRegion() = 0;
-
-    virtual void WriteVolumeRegion() = 0;
+//    virtual void ReadVolumeRegion() = 0;
+//
+//    virtual void WriteVolumeRegion() = 0;
 };
 
 class SWCIOInterface{

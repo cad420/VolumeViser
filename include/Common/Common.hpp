@@ -55,4 +55,11 @@ class ResourceMgr;
 class Renderer;
 class DistributeMgr;
 
+
+class ViserFileOpenError : public std::exception{
+public:
+    ViserFileOpenError(const std::string& msg) : std::exception(msg.c_str()){}
+};
+
+
 VISER_END
