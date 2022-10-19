@@ -1,8 +1,0 @@
-//
-// Created by wyz on 2022/10/12.
-//
-
-#ifndef VOLUMEVISER_TRANSFORM2_HPP
-#define VOLUMEVISER_TRANSFORM2_HPP
-
-#endif //VOLUMEVISER_TRANSFORM2_HPP
