@@ -29,3 +29,15 @@
 #else
 #define VISER_WHEN_DEBUG(op) do { } while(false);
 #endif
+
+#include <type_traits>
+
+VUTIL_BEGIN
+
+    struct uninitialized_t {};
+
+    template <typename T>
+    using remove_rcv_t = std::remove_cv_t<std::remove_reference_t<T>>;
+
+
+VUTIL_END

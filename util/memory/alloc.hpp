@@ -3,14 +3,13 @@
 #include <cassert>
 #include <new>
 #include <type_traits>
+#include <algorithm>
 
 #ifndef VISER_CC_MSVC
 #include <cstdlib>
 #endif
 
 VUTIL_BEGIN
-
-
 
 
     template <typename T>
@@ -31,7 +30,7 @@ VUTIL_BEGIN
     inline void *aligned_alloc(size_t byte_size, size_t align)
     {
         assert(align > 0 && !(align & (align - 1)));
-#ifdef WZZ_CXX_MSVC
+#ifdef VISER_CXX_MSVC
 
         void *ret = _aligned_malloc(byte_size, align);
 
@@ -55,7 +54,7 @@ VUTIL_BEGIN
     {
         assert(ptr);
 
-#ifdef WZZ_CXX_MSVC
+#ifdef VISER_CXX_MSVC
 
         _aligned_free(ptr);
 

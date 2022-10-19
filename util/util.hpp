@@ -1,33 +1,55 @@
 #pragma once
 
-// geometry
-#include "geometry/aabb2.hpp"
-#include "geometry/aabb3.hpp"
-#include "geometry/collision.hpp"
-#include "geometry/frustum.hpp"
+// misc
+#include "misc.hpp"
 
-// image
 
+// memory
+#include "memory/alloc.hpp"
+#include "memory/memory_arena.hpp"
+#include "memory/object_pool.hpp"
 
 // math
-#include "math/coord.hpp"
-#include "math/mat3_c.hpp"
-#include "math/mat4_c.hpp"
-#include "math/tensor.hpp"
-#include "math/tensor_view.hpp"
-#include "math/transform2.hpp"
-#include "math/transform3.hpp"
-#include "math/vec.hpp"
-#include "math/vec2.hpp"
-#include "math/vec3.hpp"
-#include "math/vec4.hpp"
+#include "math.hpp"
 
-// misc
-#include "misc/stdstr.hpp"
+
+// geometry
+#include "geometry.hpp"
+
+// image
+#include "image.hpp"
+
+// file
+#include "file/raw_file_io.hpp"
+
+// console
+#include "console/cmdline.hpp"
+#include "console/logger.hpp"
+#include "console/progressbar.hpp"
+
+// event
+#include "event/keycode.hpp"
 
 // parallel
+#include "parallel/thread_id.hpp"
+#include "parallel/thread_group.hpp"
+#include "parallel/parallel_for.hpp"
 
 // opengl
 #ifdef UTIL_ENABLE_OPENGL
-
+#include "opengl/attrib.hpp"
+#include "opengl/buffer.hpp"
+#include "opengl/camera.hpp"
+#include "opengl/demo.hpp"
+#include "opengl/framebuffer.hpp"
+#include "opengl/keyboard.hpp"
+#include "opengl/mouse.hpp"
+#include "opengl/program.hpp"
+#include "opengl/renderbuffer.hpp"
+#include "opengl/sampler.hpp"
+#include "opengl/shader.hpp"
+#include "opengl/texture.hpp"
+#include "opengl/uniform.hpp"
+#include "opengl/vertex_array.hpp"
+#include "opengl/window.hpp"
 #endif
