@@ -1,3 +1,17 @@
-//
-// Created by wyz on 2022/10/13.
-//
+#include "VolViewer.hpp"
+
+
+
+class VolViewerPrivate{
+public:
+
+};
+
+VolViewer::VolViewer(const VolViewer::VolViewerCreateInfo &info) {
+
+}
+
+VolViewer::~VolViewer() {
+
+}
+

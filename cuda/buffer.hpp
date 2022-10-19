@@ -122,6 +122,7 @@ CUB_BEGIN
     template<bool Pitched>
     class cu_buffer;
 
+    //TODO move and copy construct
     template<>
     class cu_buffer<false>{
     public:

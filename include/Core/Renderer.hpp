@@ -22,7 +22,7 @@ struct FrameBuffer{
 //体绘制用CUDA实现
 
 
-
+//渲染器本身也是一种资源，它是CPU和GPU资源的结合，因此同一时刻只能有一个调用者
 class Renderer{
 public:
 
@@ -33,15 +33,25 @@ public:
 
     using VolumeInfo = GridVolume::GridVolumeDesc;
 
+    using RendererUID = size_t;
+
+    virtual ~Renderer() = default;
+
+    virtual void Lock() = 0;
+
+    virtual void UnLock() = 0;
+
     virtual void SetVolume(const VolumeInfo&) = 0;
 
     virtual void SetRenderParams(const RenderParams&) = 0;
 
     virtual void SetPerFrameParams(const PerFrameParams&) = 0;
 
-    virtual FrameBuffer GetRenderFrame(int width, int height) = 0;
+    //返回Unique还是Shared的资源
+    virtual FrameBuffer GetRenderFrame(bool exclusive) = 0;
 
-    using VTextureHandle = GPUMemMgr::Handle<CUDAVolumeImage>;
+    template<typename T>
+    using VTextureHandle = GPUMemMgr::Handle<CUDAVolumeImage<T>>;
     using TextureUnit = int;
     using PTBufferHandle = GPUMemMgr::Handle<CUDABuffer>;
 
@@ -58,12 +68,19 @@ protected:
     std::unique_ptr<RTVolumeRendererPrivate> _;
 };
 
+//分辨率可以动态调整
 class CRTVolumeRendererPrivate;
 class CRTVolumeRenderer : public Renderer{
 public:
-    CRTVolumeRenderer();
+    struct CRTVolumeRendererCreateInfo{
+        Ref<GPUMemMgr> gpu_mem_mgr;
+        Ref<HostMemMgr> host_mem_mgr;
+        // other params...
 
-    ~CRTVolumeRenderer();
+    };
+    explicit CRTVolumeRenderer(const CRTVolumeRendererCreateInfo& info);
+
+    ~CRTVolumeRenderer() override;
 
     void SetVolume(const VolumeInfo&) override;
 
@@ -71,16 +88,19 @@ public:
 
     void SetPerFrameParams(const PerFrameParams&) override;
 
-    FrameBuffer GetRenderFrame(int width, int height) override;
+    FrameBuffer GetRenderFrame(bool exclusive) override;
 
     // 需要绑定纹理和页表两项资源
-    void BindVTexture(VTextureHandle handle, TextureUnit unit);
+    template<typename T>
+    void BindVTexture(VTextureHandle<T> handle, TextureUnit unit);
 
     void BindPTBuffer(PTBufferHandle handle);
 
 protected:
     std::unique_ptr<CRTVolumeRendererPrivate> _;
 };
+
+
 
 //离线的真实感体渲染，数据块的计算放在着色器内，
 //因为考虑散射后，数据块无法提前计算，而且离线不考虑这一点的性能损失

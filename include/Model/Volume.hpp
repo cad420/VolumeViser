@@ -12,6 +12,9 @@
 
 VISER_BEGIN
 
+//为了充分使用CPU资源，因此考虑数据块的解压在CPU进行，而且CPU支持更广泛的数据格式
+//目前GPU的解压只支持10bit的yuv，对于16位的数据来说，可能略有不足，而对于CPU则有12bit的支持，甚至14bit
+//使用CUDA host内存，可以利用DMA优势，加快数据从CPU到GPU的传输速率
 class GridVolumePrivate;
 class GridVolume{
 public:
@@ -26,17 +29,18 @@ public:
 
     ~GridVolume();
 
-    GridVolumeDesc GetDesc() const;
+    [[nodiscard]] GridVolumeDesc GetDesc() const;
 
     using UID = uint16_t;
 
     UID GetUID() const;
 
-    CUDAHostBuffer ReadBlock(BlockUID);
+    //读取数据块，内部完成解压
+    CUDAHostBuffer ReadBlock(const BlockUID& uid);
 
-    CUDAHostBuffer ReadEncodedBlock(BlockUID);
+    CUDAHostBuffer ReadEncodedBlock(const BlockUID& uid);
 
-    CUDAHostBuffer ReadRegion();
+    CUDAHostBuffer ReadRegion(Int3 beg, Int3 end);
 
     //与文件关联的会返回nullptr
     std::unique_ptr<GridVolume> GetSubGridVolume();

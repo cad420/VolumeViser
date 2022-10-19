@@ -42,7 +42,7 @@ namespace detail {
             return devices;
         }
 
-        cu_context create_context(uint32_t flags){
+        cu_context create_context(uint32_t flags) const {
             return cu_context(*this, flags);
         }
 

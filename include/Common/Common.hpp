@@ -21,7 +21,8 @@ using CUDAArray = cub::cu_array<T, N>;
 template<typename T, int N>
 using CUDAImage = CUDAArray<T, N>;
 
-using CUDAVolumeImage = CUDAImage<uint8_t, 3>;
+template<typename T>
+using CUDAVolumeImage = CUDAImage<T, 3>;
 
 using CUDABuffer = cub::cu_buffer<false>;
 
@@ -50,7 +51,7 @@ using BoundingBox3D = vutil::aabb3f;
 
 // Viser
 class GPUMemMgr;
-class CPUMemMgr;
+class HostMemMgr;
 class ResourceMgr;
 class Renderer;
 class DistributeMgr;
@@ -59,6 +60,11 @@ class DistributeMgr;
 class ViserFileOpenError : public std::exception{
 public:
     ViserFileOpenError(const std::string& msg) : std::exception(msg.c_str()){}
+};
+
+class ViserResourceCreateError : public std::exception{
+public:
+    ViserResourceCreateError(const std::string& msg) : std::exception(msg.c_str()){}
 };
 
 

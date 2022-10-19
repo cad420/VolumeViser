@@ -8,6 +8,7 @@ add_subdirectory(util)
 
 add_subdirectory(tests)
 
+add_subdirectory(deps)
 
 file(GLOB_RECURSE
         CORE_SRCS
@@ -24,8 +25,6 @@ target_include_directories(
 
 target_link_libraries(VolumeViserLib PUBLIC
         culib vutil_lib)
-
-add_subdirectory(deps/VolumeUtils)
 
 target_link_libraries(VolumeViserLib PRIVATE
         VolumeUtils)

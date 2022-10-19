@@ -6,13 +6,17 @@
 //自定义优先级的缓存管理
 //建立了CPU内存的缓存层，以及适用于transfer from CPU to GPU
 
+VISER_BEGIN
+class HostMemMgrPrivate;
 class HostMemMgr{
 public:
     struct HostMemMgrCreateInfo{
-
+        size_t MaxCPUMemBytes;
     };
 
-    HostMemMgr(HostMemMgrCreateInfo info);
+    explicit HostMemMgr(const HostMemMgrCreateInfo& info);
+
+    ~HostMemMgr();
 
     struct Key{
         int DeviceID;
@@ -31,11 +35,19 @@ public:
 
     };
 
+    // 整体的加锁
+    void Lock();
+
+    void UnLock();
+
 
     Value Get(const Key& key, std::function<void()> f = nullptr);
 
     //cuMemAllocHost
-
+protected:
+    friend class ResourceMgr;
+    std::unique_ptr<HostMemMgrPrivate> _;
 };
 
 
+VISER_END
