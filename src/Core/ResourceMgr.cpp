@@ -84,7 +84,7 @@ VISER_BEGIN
     }
 
     template<>
-    Ref<HostMemMgr> ResourceMgr::GetResourceMgrRef<HostMemMgr, ResourceMgr::Device>(UID uid) {
+    Ref<HostMemMgr> ResourceMgr::GetResourceMgrRef<HostMemMgr, ResourceMgr::Host>(UID uid) {
         assert(Exist(uid, Host));
         return Ref<HostMemMgr>(_->host_mgrs.at(uid).get());
     }

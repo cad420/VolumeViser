@@ -9,8 +9,8 @@ VISER_BEGIN
 
 
 struct FrameBuffer{
-    using ImageHandle = GPUMemMgr::Handle<CUDAPitchedBuffer>;
-    using HostImageHandle = GPUMemMgr::Handle<CUDABuffer>;
+    using ImageHandle = Handle<CUDAPitchedBuffer>;
+    using HostImageHandle = Handle<CUDABuffer>;
 
     ImageHandle color;
     ImageHandle depth;
@@ -50,10 +50,10 @@ public:
     //返回Unique还是Shared的资源
     virtual FrameBuffer GetRenderFrame(bool exclusive) = 0;
 
-    template<typename T>
-    using VTextureHandle = GPUMemMgr::Handle<CUDAVolumeImage<T>>;
+
+    using VTextureHandle = Handle<CUDATexture>;
     using TextureUnit = int;
-    using PTBufferHandle = GPUMemMgr::Handle<CUDABuffer>;
+    using PTBufferHandle = Handle<CUDABuffer>;
 
 };
 
@@ -91,8 +91,8 @@ public:
     FrameBuffer GetRenderFrame(bool exclusive) override;
 
     // 需要绑定纹理和页表两项资源
-    template<typename T>
-    void BindVTexture(VTextureHandle<T> handle, TextureUnit unit);
+
+    void BindVTexture(VTextureHandle handle, TextureUnit unit);
 
     void BindPTBuffer(PTBufferHandle handle);
 

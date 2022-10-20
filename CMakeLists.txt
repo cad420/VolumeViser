@@ -15,8 +15,15 @@ file(GLOB_RECURSE
         "include/*.hpp"
         "src/*.cpp")
 
+set_source_files_properties(
+        ${PROJECT_SOURCE_DIR}/src/Renderer/CRTVolumeRenderer.cpp
+        ${PROJECT_SOURCE_DIR}/src/Renderer/RTVolumeRenderer.cpp
+        PROPERTIES LANGUAGE CUDA
+)
 
 add_library(VolumeViserLib ${CORE_SRCS})
+
+
 
 target_include_directories(
         VolumeViserLib PUBLIC

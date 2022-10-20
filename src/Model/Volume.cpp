@@ -36,5 +36,13 @@ public:
         return viser::CUDAHostBuffer(0, cub::e_cu_device, cub::cu_context());
     }
 
+    void GridVolume::Lock() {
+
+    }
+
+    void GridVolume::UnLock() {
+
+    }
+
 
 VISER_END

@@ -20,16 +20,63 @@ class GridVolume{
 public:
     struct BlockUID{
         uint32_t x, y, z, w;
+
+        BlockUID() = default;
+
+        BlockUID(UnifiedRescUID uid){
+
+        }
+
+        BlockUID(uint32_t x, uint32_t y, uint32_t z, uint32_t w){
+
+        }
+
+        bool operator==(const BlockUID& uid) const{
+            return x == uid.x && y == uid.y && z == uid.z && w == uid.w;
+        }
+
+        //生成唯一的RescUID
+        UnifiedRescUID ToUnifiedRescUID() const{
+            return 0;
+        }
+
+        //类型不同，但是代表的block是一样的
+        bool IsSame(UnifiedRescUID uid) const{
+
+            return true;
+        }
+
+        bool IsValid() const{
+
+        }
+
+        int GetLOD() const{
+
+        }
     };
+
 
     using GridVolumeDesc = VolumeFile::VolumeDesc;
 
+    // 创建的时候应该要指定所属于的资源
+    struct GridVolumeCreateInfo{
+        Ref<GPUMemMgr> gpu_mem_mgr;
+        Ref<HostMemMgr> host_mem_mgr;
+        // other params...
+        GridVolumeDesc volume_desc;
+    };
 
+    explicit GridVolume(const GridVolumeCreateInfo& info);
     explicit GridVolume(const GridVolumeDesc& desc);
 
     ~GridVolume();
 
-    [[nodiscard]] GridVolumeDesc GetDesc() const;
+    // 整体的加锁
+    void Lock();
+
+    void UnLock();
+
+    GridVolumeDesc GetDesc() const;
 
     using UID = uint16_t;
 
@@ -42,6 +89,8 @@ public:
 
     CUDAHostBuffer ReadRegion(Int3 beg, Int3 end);
 
+    void ReadBlock(const BlockUID& uid, CUDAHostBuffer& buffer);
+
     //与文件关联的会返回nullptr
     std::unique_ptr<GridVolume> GetSubGridVolume();
 
@@ -52,3 +101,14 @@ protected:
 
 
 VISER_END
+
+namespace std{
+
+    template<>
+    struct hash<viser::GridVolume::BlockUID>{
+      size_t operator()(const viser::GridVolume::BlockUID& uid) const {
+          return vutil::hash(uid.x, uid.y, uid.z, uid.w);
+      }
+    };
+
+}

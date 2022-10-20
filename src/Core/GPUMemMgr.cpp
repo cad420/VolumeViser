@@ -4,8 +4,7 @@
 VISER_BEGIN
 
     using GPUMemRescUID = GPUMemMgr::GPUMemRescUID;
-    template<typename T>
-    using Handle = GPUMemMgr::Handle<T>;
+
     namespace{
         template<typename T>
         struct TSharedResc{
@@ -73,11 +72,11 @@ VISER_BEGIN
     }
 
     template<typename T>
-    GPUMemMgr::Handle<CUDAVolumeImage<T>> GPUMemMgr::AllocVolumeImage(GPUMemMgr::RescAccess access) {
-        if(access == Unique){
+    Handle<CUDAVolumeImage<T>> GPUMemMgr::AllocVolumeImage(RescAccess access) {
+        if(access == RescAccess::Unique){
 
         }
-        else if(access == Shared){
+        else if(access == RescAccess::Shared){
 
         }
         else
@@ -85,26 +84,34 @@ VISER_BEGIN
     }
 
     template<typename T>
-    std::vector<GPUMemMgr::Handle<CUDAVolumeImage<T>>> GPUMemMgr::GetAllSharedVolumeImage() {
+    std::vector<Handle<CUDAVolumeImage<T>>> GPUMemMgr::GetAllSharedVolumeImage() {
         return std::vector<Handle<CUDAVolumeImage<T>>>();
     }
 
     template<typename T, int N>
-    GPUMemMgr::Handle<CUDAImage<T, N>> GPUMemMgr::AllocImage(GPUMemMgr::RescAccess access) {
-        return GPUMemMgr::Handle<CUDAImage<T, N>>(GPUMemMgr::Unique, 0);
+    Handle<CUDAImage<T, N>> GPUMemMgr::AllocImage(RescAccess access) {
+        return Handle<CUDAImage<T, N>>(RescAccess::Unique, 0);
     }
 
-    GPUMemMgr::Handle<CUDABuffer> GPUMemMgr::AllocBuffer(GPUMemMgr::RescAccess access) {
-        return GPUMemMgr::Handle<CUDABuffer>(GPUMemMgr::Unique, 0);
+    Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access) {
+        return Handle<CUDABuffer>(RescAccess::Unique, 0, nullptr);
     }
 
-    GPUMemMgr::Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(GPUMemMgr::RescAccess access) {
-        return GPUMemMgr::Handle<CUDAPitchedBuffer>(GPUMemMgr::Unique, 0);
+    Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access) {
+        return Handle<CUDAPitchedBuffer>(RescAccess::Unique, 0, nullptr);
+    }
+
+    UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUMemMgr::GPUVTexMgrCreateInfo &info) {
+        return 0;
+    }
+
+    Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
+        return Ref<GPUVTexMgr>();
     }
 
 
-    template<> GPUMemMgr::Handle<CUDAVolumeImage<uint8_t>> GPUMemMgr::AllocVolumeImage(GPUMemMgr::RescAccess access);
-    template<> GPUMemMgr::Handle<CUDAVolumeImage<uint16_t>> GPUMemMgr::AllocVolumeImage(GPUMemMgr::RescAccess access);
+    template<> Handle<CUDAVolumeImage<uint8_t>> GPUMemMgr::AllocVolumeImage(RescAccess access);
+    template<> Handle<CUDAVolumeImage<uint16_t>> GPUMemMgr::AllocVolumeImage(RescAccess access);
 VISER_END
 
 

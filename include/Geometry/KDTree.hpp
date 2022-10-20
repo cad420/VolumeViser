@@ -1,8 +1,9 @@
-//
-// Created by wyz on 2022/10/2.
-//
+#pragma once
 
-#ifndef VOLUMEVISER_KDTREE_HPP
-#define VOLUMEVISER_KDTREE_HPP
+#include <Common/Common.hpp>
 
-#endif //VOLUMEVISER_KDTREE_HPP
+VISER_BEGIN
+
+
+
+VISER_END

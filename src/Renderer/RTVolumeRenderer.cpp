@@ -1,3 +1,4 @@
+#undef UTIL_ENABLE_OPENGL
 #include <Core/Renderer.hpp>
 
 VISER_BEGIN

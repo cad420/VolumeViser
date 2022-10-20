@@ -6,55 +6,7 @@
 
 VISER_BEGIN
 
-//除了包装引用之外，增加一些自动Lock、UnLock的操作
-template<typename T>
-class Ref{
-public:
-    Ref() = default;
 
-    Ref(T* p)
-    :obj(p)
-    {
-        assert(p);
-        obj->Lock();
-    }
-
-    ~Ref(){
-        Release();
-    }
-
-    Ref(const Ref&) = delete;
-    Ref& operator=(const Ref&) = delete;
-
-    Ref(Ref&& other)noexcept{
-        obj = other.obj;
-        other.obj = nullptr;
-    }
-    Ref& operator=(Ref&& other) noexcept{
-        Release();
-        new(this) Ref(std::move(other));
-        return *this;
-    }
-
-    T* operator->(){
-        assert(obj);
-        return obj;
-    }
-
-    const T* operator->() const {
-        assert(obj);
-        return obj;
-    }
-    //手动释放，之后不能再访问，否则触发assert
-    void Release(){
-        if(obj){
-            obj->UnLock();
-            obj = nullptr;
-        }
-    }
-private:
-    T* obj = nullptr;
-};
 class ResourceMgrPrivate;
 class ResourceMgr final{
 public:
@@ -88,6 +40,8 @@ public:
     template<>
     Ref<HostMemMgr> GetResourceMgrRef<HostMemMgr, Host>(UID);
 
+#define GetHostRef(UID) GetResourceMgrRef<HostMemMgr, ResourceMgr::Host>(UID)
+#define GetGPURef(UID) GetResourceMgrRef<GPUMemMgr, ResourceMgr::Device>(UID)
 
 
     static ResourceMgr& GetInstance();

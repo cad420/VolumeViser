@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Common.hpp>
+#include "GPUVTexMgr.hpp"
 
 VISER_BEGIN
 
@@ -24,94 +25,11 @@ public:
         Image3D
     };
 
-    enum RescAccess{
-        Unique,
-        Shared
-    };
+
 
     using GPUMemRescUID = size_t;
 
-    template<typename T>
-    class Handle{
-    public:
-        struct AccessLocker{
-            AccessLocker(std::unique_lock<std::mutex> lk)
-            :lk(std::move(lk))
-            {}
-            bool IsLocked() const{
-                return lk.owns_lock();
-            }
-            void UnLock(){
-                if(lk.owns_lock())
-                    lk.unlock();
-            }
-        private:
-            std::unique_lock<std::mutex> lk;
-        };
 
-        AccessLocker Lock(bool wait){
-            if(_->access == Unique){
-                // always success
-                return {std::unique_lock<std::mutex>(_->mtx)};
-            }
-            else if(_->access == Shared){
-                if(wait){
-                    std::unique_lock<std::mutex> lk(_->mtx);
-                    return {std::move(lk)};
-                }
-                else{
-                    std::unique_lock<std::mutex> lk(_->mtx, std::try_to_lock_t());
-                    return {std::move(lk)};
-                }
-            }
-            else{
-                assert(false);
-            }
-        }
-
-        size_t UID() const{
-            return _->uid;
-        }
-
-        RescAccess AccessType() const{
-            return _->access;
-        }
-
-        T* operator->(){
-            return _->resc.get();
-        }
-        const T* operator->() const{
-            return _->resc.get();
-        }
-
-        Handle(RescAccess access, size_t uid)
-        :_(std::make_shared<Inner>())
-        {
-            _->access = access;
-            _->uid = uid;
-
-        }
-
-        Handle() = default;
-
-        ~Handle(){
-
-        }
-
-        //todo ???
-        void Destroy(){
-
-        }
-    private:
-        struct Inner{
-            std::mutex mtx;
-            RescAccess access;
-            std::shared_ptr<T> resc;
-            GPUMemRescUID uid = 0;
-        };
-    private:
-        std::shared_ptr<Inner> _;
-    };
 
     struct GPUMemMgrCreateInfo{
         int GPUIndex;
@@ -152,6 +70,12 @@ public:
 // 那么进行降序排序后，选择前k个纹理，把其它未被选择/加锁的纹理中的纹理块直接拷贝到被选择的纹理处。
 // 对这k个纹理进行加锁。
 // 另外每次acquire加一个锁，表示每次只能有一个acquire在处理
+
+    using GPUVTexMgrCreateInfo = GPUVTexMgr::GPUVTexMgrCreateInfo;
+    UnifiedRescUID RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo& info);
+
+    Ref<GPUVTexMgr> GetGPUVTexMgrRef(UnifiedRescUID uid);
+
 
 protected:
 
