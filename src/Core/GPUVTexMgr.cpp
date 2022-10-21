@@ -31,6 +31,10 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
 
 }
 
+    std::vector<GPUVTex> GPUVTexMgr::GetAllTextures() {
+        return std::vector<GPUVTex>();
+    }
+
 
 VISER_END
 

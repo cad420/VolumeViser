@@ -40,7 +40,7 @@ template<typename T>
 using CUDABufferView3D = cub::buffer_view<T, 3>;
 
 using CUDATexture = cub::cu_texture;
-
+constexpr int MaxCUDATextureCountPerGPU = 32;
 
 using Float3 = vutil::vec3f;
 
@@ -62,6 +62,7 @@ class HostMemMgr;
 class ResourceMgr;
 class FixedHostMemMgr;
 class GPUPageTableMgr;
+class HashPageTable;
 class GPUVTexMgr;
 class Renderer;
 class DistributeMgr;
@@ -217,8 +218,13 @@ public:
             }
         }
 
-        size_t UID() const{
+        UnifiedRescUID UID() const{
             return _->uid;
+        }
+
+        void SetUID(UnifiedRescUID uid){
+            assert(IsValid());
+            _->uid = uid;
         }
 
         RescAccess AccessType() const{
@@ -231,6 +237,14 @@ public:
 
         const T* operator->() const{
             return _->resc.get();
+        }
+
+        T& operator*(){
+            return *_->resc;
+        }
+
+        const T& operator*() const {
+            return *_->resc;
         }
 
         Handle(RescAccess access, size_t uid, std::shared_ptr<T> resc)
@@ -313,5 +327,6 @@ public:
     inline BoxVisibility GetBoxVisibility(const Frustum& frustum, const BoundingBox3D& box){
         return vutil::get_box_visibility(frustum, box);
     }
+
 
 VISER_END

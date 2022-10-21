@@ -35,6 +35,12 @@ public:
     using TexCoord = GPUPageTableMgr::TexCoord;
     void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
 
+    using GPUTexUnit = int;
+
+    using GPUVTex = std::pair<GPUTexUnit, Handle<CUDATexture>>;
+
+    std::vector<GPUVTex> GetAllTextures();
+
 protected:
     std::unique_ptr<GPUVTexMgrPrivate> _;
 };

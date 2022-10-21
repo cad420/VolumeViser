@@ -1,6 +1,6 @@
 #include <Core/Renderer.hpp>
 #include <Algorithm/LevelOfDetailPolicy.hpp>
-
+#include <Core/HashPageTable.hpp>
 
 using namespace viser;
 
@@ -28,6 +28,8 @@ int main(int argc, char** argv){
 
 
     // async queue for load block from disk to cpu memory
+    vutil::thread_group_t thread_group;
+    thread_group.start(2);
 
     // volume oct-tree
 
@@ -39,8 +41,18 @@ int main(int argc, char** argv){
     // 3. tf
 
     // renderer
+    bool render_async = false;
 
+    CRTVolumeRenderer rt_vol_renderer({});
 
+    // bind v-textures
+    {
+        auto gpu_vtex_ref = resc_ins.GetGPURef(gpu_resc_uid)->GetGPUVTexMgrRef(vtex_uid);
+        auto vtex = gpu_vtex_ref->GetAllTextures();
+        for(auto& vt : vtex){
+            rt_vol_renderer.BindVTexture(vt.second, vt.first);
+        }
+    }
 
     // render loop
     {
@@ -71,35 +83,83 @@ int main(int argc, char** argv){
         //
         auto gpu_vtex_ref = resc_ins.GetGPURef(gpu_resc_uid)->GetGPUVTexMgrRef(vtex_uid);
         auto page_table = gpu_vtex_ref->GetGPUPageTableMgrRef();
-        std::vector<GPUPageTableMgr::PageTableItem> missed_blocks;
-        page_table->GetAndLock(intersect_blocks, missed_blocks);
+        std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
+        page_table->GetAndLock(intersect_blocks, blocks_info);
 
 
         auto host_block_pool = resc_ins.GetHostRef(host_resc_uid)->GetFixedHostMemMgrRef(block_pool_uid);
-        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> host_blocks;
+        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> host_blocks;//在循环结束会释放Handle
         std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> missed_host_blocks;
-        for(auto& missed_block : missed_blocks){
+        for(auto& missed_block : blocks_info){
+            if(!missed_block.second.Missed()) continue;
+            //应该获取那些没有位于异步解压队列中的block
             auto block_handle = host_block_pool->GetBlock(missed_block.first.ToUnifiedRescUID(), true);
+            if(!block_handle.IsValid()){
+                //说明这个block的handle被别人获取了还没有释放
+                continue;
+            }
             if(missed_block.first.IsSame(block_handle.UID()))
-                host_blocks[missed_block.first] = block_handle;
+                host_blocks[missed_block.first] = std::move(block_handle);//move
             else
-                missed_host_blocks[missed_block.first] = block_handle;
+                missed_host_blocks[missed_block.first] = std::move(block_handle);
         }
+
         // 1. decode blocks
         // if sync then wait for decode finished, else just append task and move on
+        // 把解压任务加入到异步队列中，甚至可以细分任务的优先级，比如对于lod较小的数据优先执行
+        // 加入异步队列的Handle只有在该任务被完成后才会被释放，不会在一次循环结束时释放
+        std::map<int, std::vector<std::function<void()>>> task_mp;
+        for(auto& missed_block : missed_host_blocks){
+            int lod = missed_block.first.GetLOD();
+            task_mp[lod].emplace_back([&,block = missed_block.first,
+                                       block_handle = std::move(missed_block.second)]()mutable{
+                volume_ref->ReadBlock(block, *block_handle);
+                block_handle.SetUID(block.ToUnifiedRescUID());
+                if(!render_async)//note!!!
+                    host_blocks[block] = std::move(block_handle);
+            });
+        }
+        std::map<int, vutil::task_group_handle_t> task_groups;
+        std::vector<int> lods;
+        for(auto& task : task_mp){
+            int count = task.second.size();
+            int lod = task.first;
+            auto& tasks = task.second;
+            assert(count > 0);
+            lods.emplace_back(lod);
+            auto task_group = thread_group.create_task(std::move(tasks.front()));
+            for(int i = 1; i < count; i++){
+                thread_group.enqueue_task(*task_group, std::move(tasks[i]));
+            }
+            task_groups[lod] = std::move(task_group);
+        }
+        int lod_count = lods.size();
+        for(int i = 0; i < lod_count - 1; i++){
+            int first = lods[i], second = lods[i + 1];
+            thread_group.add_dependency(*task_groups[second], *task_groups[first]);
+        }
+        for(auto& [_, task_group] : task_groups){
+            thread_group.submit(task_group);
+        }
+        if(!render_async){
+            thread_group.wait_idle();
+        }
 
         // 2. upload blocks
-        for(auto& missed_block : missed_blocks){
+        for(auto& missed_block : blocks_info){
+            if(!missed_block.second.Missed()) continue;
             gpu_vtex_ref->UploadBlockToGPUTex(host_blocks[missed_block.first], missed_block.second);
         }
 
         // bind resource and render
         if(!host_blocks.empty()){
+            rt_vol_renderer.BindPTBuffer(page_table->GetPageTable()->GetHandle());
 
         }
 
 
         // get result
+        auto render_frame = rt_vol_renderer.GetRenderFrame(true);
 
         // release resource
 

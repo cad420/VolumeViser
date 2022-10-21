@@ -44,5 +44,9 @@ public:
 
     }
 
+    void GridVolume::ReadBlock(const GridVolume::BlockUID &uid, CUDAHostBuffer &buffer) {
+
+    }
+
 
 VISER_END

@@ -10,6 +10,7 @@
 #include <cassert>
 #ifndef __CUDACC__
 //#error "Can not find CUDA"
+#define CUB_KERNEL
 #define CUB_CPU
 #define CUB_GPU
 #define CUB_CPU_GPU
@@ -20,6 +21,7 @@
 #define CUB_GPU_LAMBDA(...) [=](__VA_ARGS__) mutable
 #define CUB_L1_CACHE_LINE_SIZE 64
 #else
+#define CUB_KERNEL __global__
 #define CUB_CPU __host__
 #define CUB_GPU __device__
 #define CUB_CPU_GPU __host__ __device__

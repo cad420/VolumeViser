@@ -36,6 +36,8 @@ public:
     //获取一个Block的Handle，如果不存在，则返回空
     //如果emplace，那么必定返回一个空的可以填充的buffer handle，即会淘汰一个block
     //获取的Handle在析构时应该通知Mgr释放锁
+    //如果Handle处于异步队列解压中，那么将无法获取
+    //同时内部应该记录有那些被锁定的，也就是说，如果想获取一个uid是被锁定的，那么返回Invalid的Handle
     Handle<CUDAHostBuffer> GetBlock(UnifiedRescUID uid, bool emplace = false);
 
     //GetBlockAsync不需要，因为异步的需求在调用者层次处理

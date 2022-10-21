@@ -51,7 +51,7 @@ public:
         }
 
         int GetLOD() const{
-
+            return 0;
         }
     };
 

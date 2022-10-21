@@ -82,6 +82,10 @@ public:
 
     ~CRTVolumeRenderer() override;
 
+    void Lock() override;
+
+    void UnLock() override;
+
     void SetVolume(const VolumeInfo&) override;
 
     void SetRenderParams(const RenderParams&) override;
