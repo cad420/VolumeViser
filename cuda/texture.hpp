@@ -5,6 +5,12 @@
 
 CUB_BEGIN
 
+//同时存储array和texture对象
+class cu_texture_wrap{
+public:
+
+};
+
 class cu_texture{
 public:
     enum address_mode {

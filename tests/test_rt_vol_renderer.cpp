@@ -67,6 +67,7 @@ int main(int argc, char** argv){
         Frustum camera_view_frustum;
         ExtractFrustumFromMatrix(camera_proj_view, camera_view_frustum);
         static std::vector<GridVolume::BlockUID> intersect_blocks;
+        intersect_blocks.clear();
 
         ComputeIntersectedBlocksWithViewFrustum(intersect_blocks,
                                                 *volume_ref,
@@ -93,15 +94,20 @@ int main(int argc, char** argv){
         for(auto& missed_block : blocks_info){
             if(!missed_block.second.Missed()) continue;
             //应该获取那些没有位于异步解压队列中的block
-            auto block_handle = host_block_pool->GetBlock(missed_block.first.ToUnifiedRescUID(), true);
-            if(!block_handle.IsValid()){
+            auto block_handle = host_block_pool->GetBlock(missed_block.first.ToUnifiedRescUID());
+            if(!block_handle.IsWriteLocked()){
                 //说明这个block的handle被别人获取了还没有释放
                 continue;
             }
-            if(missed_block.first.IsSame(block_handle.UID()))
+            if(missed_block.first.IsSame(block_handle.GetUID())){
+                block_handle.AddReadLock();
                 host_blocks[missed_block.first] = std::move(block_handle);//move
-            else
+            }
+            else{
+                block_handle.AddWriteLock();
+                block_handle.SetUID(missed_block.first.ToUnifiedRescUID());
                 missed_host_blocks[missed_block.first] = std::move(block_handle);
+            }
         }
 
         // 1. decode blocks
@@ -115,6 +121,7 @@ int main(int argc, char** argv){
                                        block_handle = std::move(missed_block.second)]()mutable{
                 volume_ref->ReadBlock(block, *block_handle);
                 block_handle.SetUID(block.ToUnifiedRescUID());
+                block_handle.ConvertWriteToReadLock();
                 if(!render_async)//note!!!
                     host_blocks[block] = std::move(block_handle);
             });
@@ -148,7 +155,9 @@ int main(int argc, char** argv){
         // 2. upload blocks
         for(auto& missed_block : blocks_info){
             if(!missed_block.second.Missed()) continue;
-            gpu_vtex_ref->UploadBlockToGPUTex(host_blocks[missed_block.first], missed_block.second);
+            auto& handle = host_blocks[missed_block.first];
+            gpu_vtex_ref->UploadBlockToGPUTex(handle, missed_block.second);
+            handle.ReleaseReadLock();
         }
 
         // bind resource and render
@@ -163,7 +172,7 @@ int main(int argc, char** argv){
 
         // release resource
 
-        page_table->Release();
+        page_table->Release(intersect_blocks);
 
         // swap buffer
 

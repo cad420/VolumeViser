@@ -15,7 +15,7 @@ VISER_BEGIN
 int GetGPUCount();
 
 class GPUMemMgrPrivate;
-class GPUMemMgr{
+class GPUMemMgr : public UnifiedRescBase{
 public:
     enum RescType{
         Buffer,
@@ -44,9 +44,11 @@ public:
     ~GPUMemMgr();
 
     // 整体的加锁
-    void Lock();
+    void Lock() override;
 
-    void UnLock();
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
 
     //创建GPU资源会返回一个句柄
     // create unique resource or shared resource
@@ -55,6 +57,8 @@ public:
     Handle<CUDABuffer> AllocBuffer(RescAccess access);
 
     Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access);
+
+    Handle<CUDATexture> AllocTexture(RescAccess access);
 
     template<typename T, int N>
     Handle<CUDAImage<T,N>> AllocImage(RescAccess access);

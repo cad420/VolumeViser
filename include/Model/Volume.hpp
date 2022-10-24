@@ -19,80 +19,88 @@ class GridVolumePrivate;
 class GridVolume{
 public:
     struct BlockUID{
-        uint32_t x, y, z, w;
+        //不超过65535
+        uint32_t x = 0xffff, y = 0xffff, z = 0xffff, w = 0xff;
 
         BlockUID() = default;
 
         BlockUID(UnifiedRescUID uid){
-
+            x = uid & 0xffff;
+            y = (uid >> 16) & 0xffff;
+            z = (uid >> 32) & 0xffff;
+            w = (uid >> 48) & 0xff;
         }
 
-        BlockUID(uint32_t x, uint32_t y, uint32_t z, uint32_t w){
-
+        BlockUID(uint32_t x, uint32_t y, uint32_t z, uint32_t w)
+        :x(x), y(y), z(z), w(w)
+        {
+            assert(x < (1u << 16) && y < (1u << 16) && z < (1u << 16) && w < (1u << 8));
         }
 
         bool operator==(const BlockUID& uid) const{
             return x == uid.x && y == uid.y && z == uid.z && w == uid.w;
         }
 
-        //生成唯一的RescUID
         UnifiedRescUID ToUnifiedRescUID() const{
-            return 0;
+            return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
+                    (((size_t)w) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);
         }
 
-        //类型不同，但是代表的block是一样的
+        //转换成xyzw后判断是否相等
         bool IsSame(UnifiedRescUID uid) const{
-
-            return true;
+            BlockUID other(uid);
+            return *this == other;
         }
 
-        bool IsValid() const{
-
-        }
+        bool IsValid() const;
 
         int GetLOD() const{
-            return 0;
+            assert(w <= 0xffu);
+            return static_cast<int>(w);
         }
     };
+    inline static BlockUID INVALID_BLOCK_UID = { 0xffffu,  0xffffu,  0xfffu, 0xffu};
 
+    using GridVolumeDesc = VolumeIOInterface::VolumeDesc;
 
-    using GridVolumeDesc = VolumeFile::VolumeDesc;
-
-    // 创建的时候应该要指定所属于的资源
     struct GridVolumeCreateInfo{
-        Ref<GPUMemMgr> gpu_mem_mgr;
-        Ref<HostMemMgr> host_mem_mgr;
-        // other params...
-        GridVolumeDesc volume_desc;
+        UnifiedRescUID host_mem_mgr_uid;
+        UnifiedRescUID gpu_mem_mgr_uid;
+        uint32_t min_lod = 0, max_lod = 0;
+        std::unordered_map<uint32_t, Handle<VolumeIOInterface>> lod_vol_file_io;
     };
 
     explicit GridVolume(const GridVolumeCreateInfo& info);
-    explicit GridVolume(const GridVolumeDesc& desc);
 
     ~GridVolume();
 
-    // 整体的加锁
+    // 整体的加锁，可选的
     void Lock();
 
     void UnLock();
 
     GridVolumeDesc GetDesc() const;
 
-    using UID = uint16_t;
+    UnifiedRescUID GetUID() const;
 
-    UID GetUID() const;
-
-    //读取数据块，内部完成解压
+    // 读取数据块，内部完成解压
     CUDAHostBuffer ReadBlock(const BlockUID& uid);
 
-    CUDAHostBuffer ReadEncodedBlock(const BlockUID& uid);
+    CUDAHostBuffer ReadRegion(Int3 beg, Int3 end, uint32_t lod);
 
-    CUDAHostBuffer ReadRegion(Int3 beg, Int3 end);
-
+    // buffer的大小应该是正确的
     void ReadBlock(const BlockUID& uid, CUDAHostBuffer& buffer);
 
-    //与文件关联的会返回nullptr
-    std::unique_ptr<GridVolume> GetSubGridVolume();
+    void ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAHostBuffer& buffer);
+
+    // 隐藏cpu到gpu的传输过程，可能是内部解压后直接在gpu的，也可能是解压完传输到gpu的
+    CUDAPitchedBuffer ReadBlockGPU(const BlockUID& uid);
+
+    CUDAPitchedBuffer ReadRegionGPU(Int3 beg, Int3 end, uint32_t lod);
+
+    void ReadBlockGPU(const BlockUID& uid, CUDAPitchedBuffer& buffer);
+
+    void ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAPitchedBuffer& buffer);
 
 protected:
     std::unique_ptr<GridVolumePrivate> _;

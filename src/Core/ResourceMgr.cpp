@@ -10,7 +10,7 @@ VISER_BEGIN
         std::unordered_map<RescUID, std::unique_ptr<HostMemMgr>> host_mgrs;
 
         //生成唯一的全局RescUID
-        RescUID GenRescUID(){
+        static RescUID GenRescUID(){
             static std::atomic<RescUID> g_uid = 0;
             auto uid = g_uid.fetch_add(1);
             return uid;
@@ -39,14 +39,14 @@ VISER_BEGIN
         try{
             if(desc.type == Host){
                 auto resc = std::make_unique<HostMemMgr>(HostMemMgr::HostMemMgrCreateInfo{.MaxCPUMemBytes = desc.MaxMemBytes});
-                auto uid = _->GenRescUID();
+                auto uid = resc->GetUID();
                 assert(_->host_mgrs.count(uid) == 0);
                 _->host_mgrs[uid] = std::move(resc);
                 return uid;
             }
             else if(desc.type == Device){
                 auto resc = std::make_unique<GPUMemMgr>(GPUMemMgr::GPUMemMgrCreateInfo{.GPUIndex = desc.DeviceIndex, .MaxGPUMemBytes = desc.MaxMemBytes});
-                auto uid = _->GenRescUID();
+                auto uid = resc->GetUID();
                 assert(_->gpu_mgrs.count(uid) == 0);
                 _->gpu_mgrs[uid] = std::move(resc);
                 return uid;

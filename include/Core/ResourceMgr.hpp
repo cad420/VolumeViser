@@ -20,7 +20,7 @@ public:
         int DeviceIndex;
     };
 
-    using UID = size_t;
+    using UID = UnifiedRescUID;
 
     //失败会抛出异常
     UID RegisterResourceMgr(ResourceDesc desc);

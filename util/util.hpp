@@ -34,6 +34,7 @@
 #include "parallel/thread_id.hpp"
 #include "parallel/thread_group.hpp"
 #include "parallel/parallel_for.hpp"
+#include "parallel/read_write_lock.hpp"
 
 // opengl
 #ifdef UTIL_ENABLE_OPENGL

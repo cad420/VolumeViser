@@ -29,10 +29,12 @@ VISER_BEGIN
         //记录属于该实例的共享GPU模板化资源
         std::unordered_set<GPUMemRescUID> shared_resd_uid;
 
-        static GPUMemRescUID GenUID(){
+        UnifiedRescUID uid;
+
+        static UnifiedRescUID GenRescUID(){
             static std::atomic<GPUMemRescUID> g_uid = 0;
             auto uid = g_uid.fetch_add(1);
-            return uid;
+            return GenUnifiedRescUID(uid, UnifiedRescType::GPUMemMgr);
         }
     };
 
@@ -57,6 +59,8 @@ VISER_BEGIN
             throw ViserResourceCreateError("Create GPUMemMgr with invalid GPUIndex : " + std::to_string(info.GPUIndex));
         }
 
+        _->uid = _->GenRescUID();
+
     }
 
     GPUMemMgr::~GPUMemMgr() {
@@ -69,6 +73,10 @@ VISER_BEGIN
 
     void GPUMemMgr::UnLock() {
         _->mgr_mtx.unlock();
+    }
+
+    UnifiedRescUID GPUMemMgr::GetUID() const {
+        return _->uid;
     }
 
     template<typename T>
@@ -108,6 +116,8 @@ VISER_BEGIN
     Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
         return Ref<GPUVTexMgr>();
     }
+
+
 
 
     template<> Handle<CUDAVolumeImage<uint8_t>> GPUMemMgr::AllocVolumeImage(RescAccess access);

@@ -17,6 +17,7 @@ public:
         Int3 vtex_shape;
         int bits_per_sample;
         int samples_per_channel;
+        int vtex_block_size;
         // ...
         bool exclusive;
     };
@@ -35,7 +36,7 @@ public:
     using TexCoord = GPUPageTableMgr::TexCoord;
     void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
 
-    using GPUTexUnit = int;
+    using GPUTexUnit = uint32_t;
 
     using GPUVTex = std::pair<GPUTexUnit, Handle<CUDATexture>>;
 

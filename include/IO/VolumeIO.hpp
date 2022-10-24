@@ -1,40 +1,41 @@
 #pragma once
+
 #include <Extension/IOInterface.hpp>
 
 VISER_BEGIN
 
-//不考虑写更新或生成
-class VolumeFilePrivate;
-class VolumeFile : public VolumeIOInterface{
+class EBVolumeFilePrivate;
+class EBVolumeFile : public VolumeIOInterface{
 public:
-    explicit VolumeFile(std::string_view filename);
+    /**
+     * @param filename 体数据的desc文件 "*.encoded_blocked.desc.json"
+     */
+    explicit EBVolumeFile(std::string_view filename);
 
-    ~VolumeFile() override;
+    ~EBVolumeFile() override;
 
-    struct VolumeDesc{
-        std::string volume_name;
-//        std::string data_path;
-        int bits_per_sample = 8;
-        int samples_per_voxel = 1;
-        bool is_float = false;
-        UInt3 shape;
-        uint32_t block_length = 0;
-        UInt3 blocked_dim;
-        uint32_t padding = 1;
-        bool decoding_cpu_only = false;
-    };
+    void Lock() override;
 
-    //
-    void ReadVolumeRegion(Int3 beg_pos, Int3 end_pos, void* ptr, size_t size) ;
+    void UnLock() override;
 
-    void WriteVolumeRegion() ;
+    UnifiedRescUID GetUID() override;
 
-    VolumeDesc GetVolumeDesc();
+    using VolumeDesc = VolumeIOInterface::VolumeDesc;
 
+    VolumeDesc GetVolumeDesc() override;
 
+    /**
+     * @param ptr 指向读取数据存储的buffer区域，必须是cpu指针，否则可能有未知错误
+     */
+    void ReadVolumeRegion(const Int3& beg_pos, const Int3& end_pos, void* ptr) override;
+
+    /**
+     * @note 无法写更新，不实现，调用会引发assert false
+     */
+    void WriteVolumeRegion(const Int3& beg_pos, const Int3& end_pos, const void* ptr) override;
 
 protected:
-    std::unique_ptr<VolumeFilePrivate> _;
+    std::unique_ptr<EBVolumeFilePrivate> _;
 };
 
 VISER_END

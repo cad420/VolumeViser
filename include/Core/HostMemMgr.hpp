@@ -13,7 +13,7 @@ class HostMemMgrPrivate;
 
 using HostBuffer = std::vector<uint8_t>;
 
-class HostMemMgr{
+class HostMemMgr : public UnifiedRescBase{
 public:
 
     enum RescType{
@@ -34,15 +34,21 @@ public:
 
     void UnLock();
 
+    UnifiedRescUID GetUID() const;
+
     template<typename T, RescType type>
-    Handle<T> AllocHostMemRef(RescAccess access) = delete;
+    Handle<T> AllocHostMem(RescAccess access, size_t bytes) = delete;
 
     template<>
-    Handle<CUDAHostBuffer> AllocHostMemRef<CUDAHostBuffer, Pinned>(RescAccess access);
+    Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(RescAccess access, size_t bytes);
+
+#define AllocPinnedHostMem(access, bytes) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes)
+
 
     template<>
-    Handle<HostBuffer> AllocHostMemRef<HostBuffer, Paged>(RescAccess access);
+    Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(RescAccess access, size_t bytes);
 
+#define AllocPagedHostMem(access, bytes) AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>(access, bytes)
 
     using FixedHostMemMgrCreateInfo = FixedHostMemMgr::FixedHostMemMgrCreateInfo;
     UnifiedRescUID RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo& info);

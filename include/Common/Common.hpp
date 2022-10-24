@@ -39,7 +39,8 @@ using CUDABufferView2D = cub::buffer_view<T, 2>;
 template<typename T>
 using CUDABufferView3D = cub::buffer_view<T, 3>;
 
-using CUDATexture = cub::cu_texture;
+using CUDATex = cub::cu_texture;
+using CUDATexture = cub::cu_texture_wrap;
 constexpr int MaxCUDATextureCountPerGPU = 32;
 
 using Float3 = vutil::vec3f;
@@ -86,33 +87,60 @@ public:
     using UnifiedRescUID = size_t;
     inline UnifiedRescUID INVALID_RESC_ID = 0ull;
 
-    enum class UnifiedRescType : uint32_t{
-        Unknown = 0u,
-        HostMemMgr = 1 ,
-        GPUMemMgr = 2,
-        FixedHostMemMgr = 3,
-        CUDAMem = 4,
-        HostMem = 5,
-        MaxEnum = 6
+    enum class UnifiedRescType : uint8_t{
+        Unknown = 0,
+        General = 1,
+        HostMemMgr = 2 ,
+        GPUMemMgr = 3,
+        FixedHostMemMgr = 4,
+        VolumeIO = 5,
+        GridVolume = 6,
+        GridVolumeBlock = 7,
+        GPUPageTableMgr = 8,
+        GPUVTexMgr = 9,
+        MaxEnum = 10
     };
+
+
+    inline UnifiedRescUID GenUnifiedRescUID(size_t uid, UnifiedRescType type){
+        uint8_t t = static_cast<uint8_t >(uid >> 56);
+        assert(t == 0 && type != UnifiedRescType::Unknown);
+        t = static_cast<uint8_t>(type);
+        assert(t < static_cast<uint8_t>(UnifiedRescType::MaxEnum));
+        return uid | ((size_t)t) << 56;
+    }
+
+    inline UnifiedRescUID GenInvalidUnifiedRescUID(UnifiedRescType type){
+        return GenUnifiedRescUID(0, type);
+    }
+
+    inline UnifiedRescUID GenGeneralUnifiedRescUID(){
+        static std::atomic<size_t> g_uid = 0;
+        auto uid = g_uid.fetch_add(1);
+        return GenUnifiedRescUID(uid, UnifiedRescType::General);
+    }
 
     //只检查uid的type是否是UnifiedRescType中的，以及是否等于INVALID_RESC_ID
     inline bool CheckUnifiedRescUID(UnifiedRescUID uid){
         if(uid == INVALID_RESC_ID) return false;
-        uint32_t type = uid >> 32;
+        uint8_t type = uid >> 56;
         if(static_cast<UnifiedRescType>(type) == UnifiedRescType::Unknown ||
-           type >= static_cast<uint32_t>(UnifiedRescType::MaxEnum))
+           type >= static_cast<uint8_t>(UnifiedRescType::MaxEnum))
             return false;
 
         return true;
     }
 
-    class ThreadSafeBase{
+    class UnifiedRescBase{
     public:
         virtual void Lock() = 0;
 
         virtual void UnLock() = 0;
+
+        virtual UnifiedRescUID GetUID() const = 0;
     };
+
+
 
 //除了包装引用之外，增加一些自动Lock、UnLock的操作
     template<typename T>
@@ -120,11 +148,12 @@ public:
     public:
         Ref() = default;
 
-        Ref(T* p)
+        Ref(T* p, bool lock = true)
                 :obj(p)
         {
-            assert(p);
-            obj->Lock();
+            if(lock)
+                obj->Lock();
+            locked = lock;
         }
 
         ~Ref(){
@@ -164,12 +193,17 @@ public:
 
         //手动释放，之后不能再访问，否则触发assert
         void Release(){
-            if(obj){
+            if(locked && obj){
                 obj->UnLock();
                 obj = nullptr;
+                locked = false;
             }
         }
+        bool IsLocked() const{
+            return locked;
+        }
     private:
+        bool locked;
         T* obj = nullptr;
     };
 
@@ -177,48 +211,58 @@ public:
     //对于Unique资源，只能移动拷贝不能赋值拷贝
     //对于Shared资源，需要在所有资源都释放完后通知资源池
     // 如果是Shared的资源，提供加锁操作，Unique资源总是能加锁成功，而Shared则不一定
+    enum class AccessType{
+        Read,
+        Write
+    };
     template<typename T>
     class Handle{
     public:
         struct AccessLocker{
-            AccessLocker(std::unique_lock<std::mutex> lk)
-                    :lk(std::move(lk))
+            AccessLocker(std::function<void()> f)
+            :s(std::move(f))
             {}
             ~AccessLocker(){
                 UnLock();
             }
-            bool IsLocked() const{
-                return lk.owns_lock();
-            }
             void UnLock(){
-                if(lk.owns_lock())
-                    lk.unlock();
+                s.call();
             }
         private:
-            std::unique_lock<std::mutex> lk;
+            vutil::scope_bomb_t<std::function<void()>> s;
         };
 
-        AccessLocker Lock(bool wait){
+        AccessLocker AccessLock(AccessType type){
             if(_->access == RescAccess::Unique){
                 // always success
-                return {std::unique_lock<std::mutex>(_->mtx)};
+                return {nullptr};
             }
             else if(_->access == RescAccess::Shared){
-                if(wait){
-                    std::unique_lock<std::mutex> lk(_->mtx);
-                    return {std::move(lk)};
+                if(type == AccessType::Read){
+                    _->rw_lk.lock_read();
+                    return AccessLocker([&](){
+                       _->rw_lk.unlock_read();
+                    });
+                }
+                else if(type == AccessType::Write){
+                    _->rw_lk.lock_write();
+                    return AccessLocker([&](){
+                        _->rw_lk.unlock_write();
+                    });
                 }
                 else{
-                    std::unique_lock<std::mutex> lk(_->mtx, std::try_to_lock_t());
-                    return {std::move(lk)};
+                    assert(false);
+                    return {nullptr};
                 }
             }
             else{
                 assert(false);
+                return {nullptr};
             }
         }
 
-        UnifiedRescUID UID() const{
+
+        UnifiedRescUID GetUID() const{
             return _->uid;
         }
 
@@ -227,7 +271,7 @@ public:
             _->uid = uid;
         }
 
-        RescAccess AccessType() const{
+        RescAccess GetRescAccess() const{
             return _->access;
         }
 
@@ -252,6 +296,15 @@ public:
         {
             _->access = access;
             _->uid = uid;
+            _->resc = std::move(resc);
+        }
+
+        Handle(RescAccess access, std::shared_ptr<T> resc)
+        :_(std::make_shared<Inner>())
+        {
+            static_assert(std::is_base_of_v<UnifiedRescBase, T>, "");
+            _->access = access;
+            _->uid = resc->GetUID();
             _->resc = std::move(resc);
         }
 
@@ -295,6 +348,9 @@ public:
             return *this;
         }
 
+        void SetCallback(std::function<void(UnifiedRescUID)> callback){
+            _->callback = std::move(callback);
+        }
 
         //统一销毁资源，不管是Unique还是Shared的
         //应该在没有被锁住的情况下调用
@@ -307,18 +363,55 @@ public:
         bool IsValid() const{
             return _ && _->resc && CheckUnifiedRescUID(_->uid);
         }
+
+        bool IsReadLocked(){
+            return _->rw_lk.is_read_locked();
+        }
+        bool IsWriteLocked(){
+            return _->rw_lk.is_write_locked();
+        }
+
+        void AddReadLock(){
+            _->rw_lk.lock_read();
+        }
+
+        void AddWriteLock(){
+            _->rw_lk.lock_write();
+        }
+
+        void ReleaseReadLock(){
+            _->rw_lk.unlock_read();
+        }
+
+        void ReleaseWriteLock(){
+            _->rw_lk.unlock_write();
+        }
+
+        void ConvertWriteToReadLock(){
+            _->rw_lk.converse_write_to_read();
+        }
+
     private:
         struct Inner{
-            std::mutex mtx;
+            vutil::rw_spinlock_t rw_lk;
             RescAccess access;
             std::shared_ptr<T> resc;
-            UnifiedRescUID uid = 0;
+            UnifiedRescUID uid = INVALID_RESC_ID;
             std::function<void(UnifiedRescUID)> callback;
         };
     private:
         std::shared_ptr<Inner> _;
     };
 
+    template<typename T, typename... Args>
+    auto NewHandle(RescAccess access, UnifiedRescUID uid, Args&&... args){
+        return Handle<T>(access, uid, std::make_shared<T>(std::forward<Args>(args)...));
+    }
+
+    template<typename T, typename... Args>
+    auto NewHandle(RescAccess access, Args&&... args){
+        return Handle<T>(access, std::make_shared<T>(std::forward<Args>(args)...));
+    }
 
     inline void ExtractFrustumFromMatrix(const Mat4& matrix, Frustum& frustum){
         vutil::extract_frustum_from_matrix(matrix, frustum, true);
