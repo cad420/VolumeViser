@@ -18,7 +18,7 @@ public:
 
     void UnLock() override;
 
-    UnifiedRescUID GetUID() override;
+    UnifiedRescUID GetUID() const override;
 
     using VolumeDesc = VolumeIOInterface::VolumeDesc;
 

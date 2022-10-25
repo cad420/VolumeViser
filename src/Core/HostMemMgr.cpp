@@ -2,64 +2,109 @@
 
 VISER_BEGIN
 
-    class HostMemMgrPrivate{
-    public:
+class HostMemMgrPrivate{
+public:
+    std::atomic<size_t> used_mem_bytes = 0;
+    size_t max_mem_bytes = 0;
+
+    //只用于分配全局的pinned host memory
+    cub::cu_context ctx;
+
+    std::unordered_map<UnifiedRescUID, std::unique_ptr<FixedHostMemMgr>> fixed_host_mgr_mp;
+
+    std::mutex g_mtx;
+
+    UnifiedRescUID uid;
+    static UnifiedRescUID GenRescUID(){
+        static std::atomic<size_t> g_uid = 0;
+        auto uid = g_uid.fetch_add(1);
+        return GenUnifiedRescUID(uid, UnifiedRescType::HostMemMgr);
+    }
+};
+
+HostMemMgr::HostMemMgr(const HostMemMgr::HostMemMgrCreateInfo &info) {
+    _ = std::make_unique<HostMemMgrPrivate>();
+
+    _->max_mem_bytes = info.MaxCPUMemBytes;
+
+    auto devs = cub::cu_physical_device::get_all_device();
+    if(devs.empty()){
+        throw ViserResourceCreateError("Create CPUMemMgr exception : no cuda device");
+    }
+    auto& dev = devs.front();
+    _->ctx = dev.create_context(0);
+
+    _->uid = _->GenRescUID();
+}
+
+HostMemMgr::~HostMemMgr() {
+
+}
+
+void HostMemMgr::Lock() {
+    _->g_mtx.lock();
+}
+
+void HostMemMgr::UnLock() {
+    _->g_mtx.unlock();
+}
+
+UnifiedRescUID HostMemMgr::GetUID() const {
+    return _->uid;
+}
 
 
-        std::mutex g_mtx;
+template<>
+Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes){
+    auto used = _->used_mem_bytes.fetch_add(bytes);
+    if(used > _->max_mem_bytes){
+        _->used_mem_bytes.fetch_sub(bytes);
+        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc buffer with size: " + std::to_string(bytes));
+    }
+    return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::memory_type::e_cu_host, _->ctx);
+}
 
-        UnifiedRescUID uid;
-        static UnifiedRescUID GenRescUID(){
-            static std::atomic<size_t> g_uid = 0;
-            auto uid = g_uid.fetch_add(1);
-            return GenUnifiedRescUID(uid, UnifiedRescType::HostMemMgr);
+template<>
+Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescAccess access, size_t bytes){
+    auto used = _->used_mem_bytes.fetch_add(bytes);
+    if(used > _->max_mem_bytes){
+        _->used_mem_bytes.fetch_sub(bytes);
+        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc buffer with size: " + std::to_string(bytes));
+    }
+    return NewGeneralHandle<HostBuffer>(access, bytes);
+}
+
+UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const HostMemMgr::FixedHostMemMgrCreateInfo &info) {
+    try{
+        size_t alloc_size = info.fixed_block_size * info.fixed_block_num;
+        auto used = _->used_mem_bytes.fetch_add(alloc_size);
+        if(used > _->max_mem_bytes){
+            _->used_mem_bytes.fetch_sub(alloc_size);
+            throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
-    };
+        LOG_DEBUG("Register FixedHostMemMgr cost free memory: {}, remain free: {}",
+                  alloc_size, _->max_mem_bytes - used);
 
-    HostMemMgr::HostMemMgr(const HostMemMgr::HostMemMgrCreateInfo &info) {
-        _ = std::make_unique<HostMemMgrPrivate>();
+        info.host_mem_mgr = Ref(this, false);
 
-
-
-        _->uid = _->GenRescUID();
+        auto resc = std::make_unique<FixedHostMemMgr>(info);
+        auto uid = resc->GetUID();
+        _->fixed_host_mgr_mp[uid] = std::move(resc);
+        return uid;
     }
+    catch (const std::exception& e) {
 
-    HostMemMgr::~HostMemMgr() {
 
+        throw ViserResourceCreateError(std::string("Register FixedHostMemMgr exception : ") + e.what());
     }
+}
 
-    void HostMemMgr::Lock() {
-        _->g_mtx.lock();
-    }
+Ref<FixedHostMemMgr> HostMemMgr::GetFixedHostMemMgrRef(UnifiedRescUID uid) {
+    return Ref<FixedHostMemMgr>(_->fixed_host_mgr_mp.at(uid).get());
+}
 
-    void HostMemMgr::UnLock() {
-        _->g_mtx.unlock();
-    }
 
-    UnifiedRescUID HostMemMgr::GetUID() const {
-        return _->uid;
-    }
 
-    UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const HostMemMgr::FixedHostMemMgrCreateInfo &info) {
-        return 0;
-    }
-
-    Ref<FixedHostMemMgr> HostMemMgr::GetFixedHostMemMgrRef(UnifiedRescUID uid) {
-        return Ref<FixedHostMemMgr>();
-    }
-
-    UnifiedRescUID HostMemMgr::RegisterGridVolume(const HostMemMgr::GridVolumeCreateInfo &info) {
-        return 0;
-    }
-
-    Ref<GridVolume> HostMemMgr::GetGridVolumeRef(UnifiedRescUID uid) {
-        return Ref<GridVolume>();
-    }
-
-    template<>
-    Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes){
-
-    }
 
 
 

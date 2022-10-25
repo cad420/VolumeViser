@@ -48,7 +48,7 @@ void EBVolumeFile::UnLock() {
     _->g_mtx.unlock();
 }
 
-UnifiedRescUID EBVolumeFile::GetUID() {
+UnifiedRescUID EBVolumeFile::GetUID() const {
     return _->uid;
 }
 

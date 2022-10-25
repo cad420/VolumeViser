@@ -23,7 +23,7 @@ struct FrameBuffer{
 
 
 //渲染器本身也是一种资源，它是CPU和GPU资源的结合，因此同一时刻只能有一个调用者
-class Renderer{
+class Renderer : public UnifiedRescBase{
 public:
 
     enum Type{
@@ -36,10 +36,6 @@ public:
     using RendererUID = size_t;
 
     virtual ~Renderer() = default;
-
-    virtual void Lock() = 0;
-
-    virtual void UnLock() = 0;
 
     virtual void SetVolume(const VolumeInfo&) = 0;
 
@@ -85,6 +81,8 @@ public:
     void Lock() override;
 
     void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
 
     void SetVolume(const VolumeInfo&) override;
 

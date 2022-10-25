@@ -11,7 +11,7 @@
 VISER_BEGIN
 class HostMemMgrPrivate;
 
-using HostBuffer = std::vector<uint8_t>;
+
 
 class HostMemMgr : public UnifiedRescBase{
 public:
@@ -23,6 +23,7 @@ public:
 
     struct HostMemMgrCreateInfo{
         size_t MaxCPUMemBytes;
+
     };
 
     explicit HostMemMgr(const HostMemMgrCreateInfo& info);
@@ -54,11 +55,6 @@ public:
     UnifiedRescUID RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo& info);
 
     Ref<FixedHostMemMgr> GetFixedHostMemMgrRef(UnifiedRescUID uid);
-
-    using GridVolumeCreateInfo = GridVolume::GridVolumeCreateInfo;
-    UnifiedRescUID RegisterGridVolume(const GridVolumeCreateInfo& info);
-
-    Ref<GridVolume> GetGridVolumeRef(UnifiedRescUID uid);
 
 
 protected:

@@ -3,36 +3,25 @@
 
 VISER_BEGIN
 
-    using GPUMemRescUID = GPUMemMgr::GPUMemRescUID;
-
-    namespace{
-        template<typename T>
-        struct TSharedResc{
-            inline static std::unordered_map<GPUMemRescUID, Handle<T>> mp;
-        };
-    }
 
     class GPUMemMgrPrivate{
     public:
-        size_t used_mem_bytes = 0;
+        std::atomic<size_t> used_mem_bytes = 0;
         size_t max_mem_bytes = 0;
 
         int gpu_index = -1;
         cub::cu_context ctx;
 
-        std::mutex mgr_mtx;
 
-        struct SharedResc{
-            std::unordered_map<GPUMemRescUID, Handle<CUDABuffer>> shared_buffer;
-            std::unordered_map<GPUMemRescUID, Handle<CUDAPitchedBuffer>> shared_pitched_buffer;
-        };
-        //记录属于该实例的共享GPU模板化资源
-        std::unordered_set<GPUMemRescUID> shared_resd_uid;
+        std::unordered_map<UnifiedRescUID, std::unique_ptr<GPUVTexMgr>> vtex_mgr_mp;
+
+
+        std::mutex g_mtx;
 
         UnifiedRescUID uid;
 
         static UnifiedRescUID GenRescUID(){
-            static std::atomic<GPUMemRescUID> g_uid = 0;
+            static std::atomic<size_t> g_uid = 0;
             auto uid = g_uid.fetch_add(1);
             return GenUnifiedRescUID(uid, UnifiedRescType::GPUMemMgr);
         }
@@ -68,60 +57,86 @@ VISER_BEGIN
     }
 
     void GPUMemMgr::Lock() {
-        _->mgr_mtx.lock();
+        _->g_mtx.lock();
     }
 
     void GPUMemMgr::UnLock() {
-        _->mgr_mtx.unlock();
+        _->g_mtx.unlock();
     }
 
     UnifiedRescUID GPUMemMgr::GetUID() const {
         return _->uid;
     }
 
-    template<typename T>
-    Handle<CUDAVolumeImage<T>> GPUMemMgr::AllocVolumeImage(RescAccess access) {
-        if(access == RescAccess::Unique){
-
+    Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access, size_t bytes) {
+        auto used = _->used_mem_bytes.fetch_add(bytes);
+        if(used > _->max_mem_bytes){
+            _->used_mem_bytes.fetch_sub(bytes);
+            throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
         }
-        else if(access == RescAccess::Shared){
+        return NewGeneralHandle<CUDABuffer>(access, bytes, cub::memory_type::e_cu_device, _->ctx);
+    }
 
+    Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access, size_t width_bytes, size_t height, size_t ele_size) {
+        auto bytes = width_bytes * height;
+        auto used = _->used_mem_bytes.fetch_add(bytes);
+        if(used > _->max_mem_bytes){
+            _->used_mem_bytes.fetch_sub(bytes);
+            throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
         }
-        else
-            assert(false);
+        return NewGeneralHandle<CUDAPitchedBuffer>(access, width_bytes, height, ele_size, _->ctx);
     }
 
-    template<typename T>
-    std::vector<Handle<CUDAVolumeImage<T>>> GPUMemMgr::GetAllSharedVolumeImage() {
-        return std::vector<Handle<CUDAVolumeImage<T>>>();
+    Handle<CUDATexture> GPUMemMgr::AllocTexture(RescAccess access, const TextureCreateInfo& info) {
+        auto bytes = info.alloc_bytes();
+        auto used = _->used_mem_bytes.fetch_add(bytes);
+        if(used > _->max_mem_bytes){
+            _->used_mem_bytes.fetch_sub(bytes);
+            throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
+        }
+        return NewGeneralHandle<CUDATexture>(access, info, _->ctx);
     }
 
-    template<typename T, int N>
-    Handle<CUDAImage<T, N>> GPUMemMgr::AllocImage(RescAccess access) {
-        return Handle<CUDAImage<T, N>>(RescAccess::Unique, 0);
-    }
-
-    Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access) {
-        return Handle<CUDABuffer>(RescAccess::Unique, 0, nullptr);
-    }
-
-    Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access) {
-        return Handle<CUDAPitchedBuffer>(RescAccess::Unique, 0, nullptr);
+    Handle<CUDATexture> GPUMemMgr::_AllocTexture(RescAccess access, const TextureCreateInfo& info) {
+        return NewGeneralHandle<CUDATexture>(access, info, _->ctx);
     }
 
     UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUMemMgr::GPUVTexMgrCreateInfo &info) {
-        return 0;
+        //must Lock first
+        try{
+            size_t alloc_size = (size_t)info.vtex_count * info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z
+                    * info.bits_per_sample * info.samples_per_channel / 8;
+            auto used = _->used_mem_bytes.fetch_add(alloc_size);
+            if(used > _->max_mem_bytes){
+                _->used_mem_bytes.fetch_sub(alloc_size);
+                throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
+            }
+
+            LOG_DEBUG("Register GPUVTexMgr cost free memory: {}, remain free: {}",
+                      alloc_size, _->max_mem_bytes - used);
+
+            info.gpu_mem_mgr = Ref(this, false);
+            auto resc = std::make_unique<GPUVTexMgr>(info);
+            auto uid = resc->GetUID();
+            assert(_->vtex_mgr_mp.count(uid) == 0);
+            _->vtex_mgr_mp[uid] = std::move(resc);
+            return uid;
+        }
+        catch (const std::exception& e) {
+            // print info
+
+            // throw
+            throw ViserResourceCreateError(std::string("RegisterGPUVTexMgr exception : ") + e.what());
+        }
     }
 
     Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
-        return Ref<GPUVTexMgr>();
+        assert(CheckUnifiedRescUID(uid));
+        return {_->vtex_mgr_mp.at(uid).get()};
     }
 
 
 
-
-    template<> Handle<CUDAVolumeImage<uint8_t>> GPUMemMgr::AllocVolumeImage(RescAccess access);
-    template<> Handle<CUDAVolumeImage<uint16_t>> GPUMemMgr::AllocVolumeImage(RescAccess access);
 VISER_END
 
 

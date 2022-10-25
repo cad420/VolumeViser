@@ -1,5 +1,5 @@
 #include <Core/GPUPageTableMgr.hpp>
-
+#include <Core/HashPageTable.hpp>
 VISER_BEGIN
 
 class GPUPageTableMgrPrivate{
@@ -23,6 +23,8 @@ public:
 
     //被cache机制淘汰的才会被erase
     std::unordered_map<BlockUID, TexCoordIndex> record_block_mp;
+
+    HashPageTable hpt;
 
     size_t total_items = 0;
 
@@ -51,6 +53,11 @@ void GPUPageTableMgr::Lock() {
 void GPUPageTableMgr::UnLock() {
     _->g_mtx.unlock();
 }
+
+UnifiedRescUID GPUPageTableMgr::GetUID() const {
+    return _->uid;
+}
+
 
 void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageTableItem> &items) {
     if(keys.size() > _->total_items){
@@ -111,12 +118,31 @@ void GPUPageTableMgr::Release(const std::vector<Key>& keys) {
     }
 }
 
+HashPageTable& GPUPageTableMgr::GetPageTable() {
+    _->hpt.Clear();
+    for(auto& [block_uid, tex_coord] : _->record_block_mp){
+        auto& [tid, coord] = tex_coord;
+        if(_->tex_table[tid][coord].rw_lk.is_write_locked()){
+            _->hpt.Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid,
+                                       0}});
+        }
+        else{
+            uint16_t flag = TexCoordFlag_IsValid;
+            if(block_uid.IsBlack()) flag |= TexCoordFlag_IsBlack;
+            if(block_uid.IsSparse()) flag |= TexCoordFlag_IsSparse;
+            _->hpt.Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, flag}});
+        }
+    }
+    return _->hpt;
+}
+
 void GPUPageTableMgr::Promote(const Key &key) {
     auto& [tid, coord] = _->record_block_mp.at(key);
     _->tex_table[tid][coord].rw_lk.converse_write_to_read();
     //暂时不更新缓存优先级
 
 }
+
 
 
 VISER_END

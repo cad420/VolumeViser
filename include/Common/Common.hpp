@@ -27,6 +27,7 @@ using CUDAVolumeImage = CUDAImage<T, 3>;
 using CUDABuffer = cub::cu_buffer<false>;
 
 using CUDAHostBuffer = CUDABuffer;
+using HostBuffer = std::vector<uint8_t>;
 
 using CUDAPitchedBuffer = cub::cu_buffer<true>;
 
@@ -42,6 +43,36 @@ using CUDABufferView3D = cub::buffer_view<T, 3>;
 using CUDATex = cub::cu_texture;
 using CUDATexture = cub::cu_texture_wrap;
 constexpr int MaxCUDATextureCountPerGPU = 32;
+
+template<typename T>
+struct GeneralRescTraits{
+    static constexpr bool value = false;
+};
+
+template<>
+struct GeneralRescTraits<CUDABuffer>{
+    static constexpr bool value = true;
+};
+
+    template<>
+    struct GeneralRescTraits<CUDAPitchedBuffer>{
+        static constexpr bool value = true;
+    };
+
+    template<>
+    struct GeneralRescTraits<CUDATexture>{
+        static constexpr bool value = true;
+    };
+
+    template<>
+    struct GeneralRescTraits<HostBuffer>{
+        static constexpr bool value = true;
+    };
+
+
+
+    template<typename T>
+inline constexpr bool IsGeneralResc = GeneralRescTraits<T>::value;
 
 using Float3 = vutil::vec3f;
 
@@ -302,10 +333,18 @@ public:
         Handle(RescAccess access, std::shared_ptr<T> resc)
         :_(std::make_shared<Inner>())
         {
-            static_assert(std::is_base_of_v<UnifiedRescBase, T>, "");
-            _->access = access;
-            _->uid = resc->GetUID();
-            _->resc = std::move(resc);
+            if constexpr(IsGeneralResc<T>){
+                _->access = access;
+                _->uid = GenGeneralUnifiedRescUID();
+                _->resc = std::move(resc);
+            }
+            else{
+                static_assert(std::is_base_of_v<UnifiedRescBase, T>, "");
+                _->access = access;
+                _->uid = resc->GetUID();
+                _->resc = std::move(resc);
+            }
+
         }
 
         Handle() = default;
@@ -348,8 +387,9 @@ public:
             return *this;
         }
 
-        void SetCallback(std::function<void(UnifiedRescUID)> callback){
+        Handle& SetCallback(std::function<void(UnifiedRescUID)> callback){
             _->callback = std::move(callback);
+            return *this;
         }
 
         //统一销毁资源，不管是Unique还是Shared的
@@ -404,12 +444,12 @@ public:
     };
 
     template<typename T, typename... Args>
-    auto NewHandle(RescAccess access, UnifiedRescUID uid, Args&&... args){
-        return Handle<T>(access, uid, std::make_shared<T>(std::forward<Args>(args)...));
+    auto NewHandle(RescAccess access, Args&&... args){
+        return Handle<T>(access, std::make_shared<T>(std::forward<Args>(args)...));
     }
 
     template<typename T, typename... Args>
-    auto NewHandle(RescAccess access, Args&&... args){
+    auto NewGeneralHandle(RescAccess access, Args&&... args){
         return Handle<T>(access, std::make_shared<T>(std::forward<Args>(args)...));
     }
 

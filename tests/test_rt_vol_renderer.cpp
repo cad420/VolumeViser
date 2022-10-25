@@ -17,7 +17,7 @@ int main(int argc, char** argv){
 
     // volume
     GridVolume::GridVolumeCreateInfo volume_info{};
-    auto volume_uid = resc_ins.GetHostRef(host_resc_uid)->RegisterGridVolume(volume_info);
+    auto volume = NewHandle<GridVolume>(RescAccess::Shared, volume_info);
 
     FixedHostMemMgr::FixedHostMemMgrCreateInfo block_pool_info{};
     auto block_pool_uid = resc_ins.GetHostRef(host_resc_uid)->RegisterFixedHostMemMgr(block_pool_info);
@@ -56,7 +56,6 @@ int main(int argc, char** argv){
 
     // render loop
     {
-        auto volume_ref = resc_ins.GetHostRef(host_resc_uid)->GetGridVolumeRef(volume_uid);
         // handle events
 
         // config per-frame params
@@ -70,7 +69,7 @@ int main(int argc, char** argv){
         intersect_blocks.clear();
 
         ComputeIntersectedBlocksWithViewFrustum(intersect_blocks,
-                                                *volume_ref,
+                                                *volume,
                                                 camera_view_frustum,
                                                 camera.pos,
                                                 [](float)->int{
@@ -119,7 +118,7 @@ int main(int argc, char** argv){
             int lod = missed_block.first.GetLOD();
             task_mp[lod].emplace_back([&,block = missed_block.first,
                                        block_handle = std::move(missed_block.second)]()mutable{
-                volume_ref->ReadBlock(block, *block_handle);
+                volume->ReadBlock(block, *block_handle);
                 block_handle.SetUID(block.ToUnifiedRescUID());
                 block_handle.ConvertWriteToReadLock();
                 if(!render_async)//note!!!
@@ -162,7 +161,7 @@ int main(int argc, char** argv){
 
         // bind resource and render
         if(!host_blocks.empty()){
-            rt_vol_renderer.BindPTBuffer(page_table->GetPageTable()->GetHandle());
+            rt_vol_renderer.BindPTBuffer(page_table->GetPageTable().GetHandle());
 
         }
 

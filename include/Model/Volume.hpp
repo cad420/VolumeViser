@@ -16,7 +16,7 @@ VISER_BEGIN
 //目前GPU的解压只支持10bit的yuv，对于16位的数据来说，可能略有不足，而对于CPU则有12bit的支持，甚至14bit
 //使用CUDA host内存，可以利用DMA优势，加快数据从CPU到GPU的传输速率
 class GridVolumePrivate;
-class GridVolume{
+class GridVolume : public UnifiedRescBase{
 public:
     struct BlockUID{
         //不超过65535
@@ -43,7 +43,7 @@ public:
 
         UnifiedRescUID ToUnifiedRescUID() const{
             return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
-                    (((size_t)w) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);
+                    (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);
         }
 
         //转换成xyzw后判断是否相等
@@ -54,9 +54,16 @@ public:
 
         bool IsValid() const;
 
+        bool IsBlack() const{
+            return (w >> 8) & 1;
+        }
+
+        bool IsSparse() const{
+            return (w >> 8) & 2;
+        }
+
         int GetLOD() const{
-            assert(w <= 0xffu);
-            return static_cast<int>(w);
+            return static_cast<int>(w & 0xff);
         }
     };
     inline static BlockUID INVALID_BLOCK_UID = { 0xffffu,  0xffffu,  0xfffu, 0xffu};
@@ -75,13 +82,13 @@ public:
     ~GridVolume();
 
     // 整体的加锁，可选的
-    void Lock();
+    void Lock() override;
 
-    void UnLock();
+    void UnLock() override;
 
     GridVolumeDesc GetDesc() const;
 
-    UnifiedRescUID GetUID() const;
+    UnifiedRescUID GetUID() const override;
 
     // 读取数据块，内部完成解压
     CUDAHostBuffer ReadBlock(const BlockUID& uid);

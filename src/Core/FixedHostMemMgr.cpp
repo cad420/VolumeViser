@@ -64,19 +64,14 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
     }
     else{
         if(_->freed.empty()){
-            auto res = _->lru->back_value();
-            if(res.has_value()){
-                return res.value();
-            }
-            else{
-                assert(false);
-            }
+            auto res = _->lru->back();
+            _->lru->emplace_back(uid, std::move(res.second));
         }
         else{
             _->lru->emplace_back(uid, std::move(_->freed.front()));
             _->freed.pop();
-            return GetBlock(uid);
         }
+        return GetBlock(uid);
     }
 }
 

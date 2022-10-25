@@ -12,25 +12,9 @@ VISER_BEGIN
  * 因此可以有多个渲染器一起使用不冲突、不重合的资源。
  */
 
-int GetGPUCount();
-
 class GPUMemMgrPrivate;
 class GPUMemMgr : public UnifiedRescBase{
 public:
-    enum RescType{
-        Buffer,
-        PitchedBuffer,
-        Image1D,
-        Image2D,
-        Image3D
-    };
-
-
-
-    using GPUMemRescUID = size_t;
-
-
-
     struct GPUMemMgrCreateInfo{
         int GPUIndex;
         size_t MaxGPUMemBytes;
@@ -50,39 +34,27 @@ public:
 
     UnifiedRescUID GetUID() const override;
 
-    //创建GPU资源会返回一个句柄
+    // 创建GPU资源会返回一个句柄
     // create unique resource or shared resource
     // 如果是Shared的资源，提供加锁操作，Unique资源总是能加锁成功，而Shared则不一定
-    // Shared的资源会被记录在内部数据结构中，Unique资源则不会，所以需要调用者自己保管
-    Handle<CUDABuffer> AllocBuffer(RescAccess access);
+    // 通过Alloc得到的资源，不会被记录在内部，需要调用者自己保管，无论是Shared还是Unique
+    // 当可用内存不足时，会抛出异常
+    Handle<CUDABuffer> AllocBuffer(RescAccess access, size_t bytes);
 
-    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access);
+    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access, size_t width_bytes, size_t height, size_t ele_size);
 
-    Handle<CUDATexture> AllocTexture(RescAccess access);
-
-    template<typename T, int N>
-    Handle<CUDAImage<T,N>> AllocImage(RescAccess access);
-
-    //分配共享的三维纹理
-    template<typename T>
-    Handle<CUDAVolumeImage<T>> AllocVolumeImage(RescAccess access);
-
-    template<typename T>
-    std::vector<Handle<CUDAVolumeImage<T>>> GetAllSharedVolumeImage();
-// 假设有N个未被加锁的纹理，一次acquire需要k个纹理，如果k > N，则排队等待到足够的纹理再处理。
-// 每个纹理原先分别有a_i个需要的纹理块，
-// 那么进行降序排序后，选择前k个纹理，把其它未被选择/加锁的纹理中的纹理块直接拷贝到被选择的纹理处。
-// 对这k个纹理进行加锁。
-// 另外每次acquire加一个锁，表示每次只能有一个acquire在处理
+    using TextureCreateInfo = cub::cu_texture_wrap::texture_info;
+    Handle<CUDATexture> AllocTexture(RescAccess access, const TextureCreateInfo& info);
 
     using GPUVTexMgrCreateInfo = GPUVTexMgr::GPUVTexMgrCreateInfo;
     UnifiedRescUID RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo& info);
 
     Ref<GPUVTexMgr> GetGPUVTexMgrRef(UnifiedRescUID uid);
 
-
 protected:
-
+    friend class GPUVTexMgr;
+    //不再更新使用内存
+    Handle<CUDATexture> _AllocTexture(RescAccess access, const TextureCreateInfo& info);
 
     friend class ResourceMgr;
     std::unique_ptr<GPUMemMgrPrivate> _;

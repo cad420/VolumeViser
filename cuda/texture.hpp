@@ -8,6 +8,63 @@ CUB_BEGIN
 //同时存储array和texture对象
 class cu_texture_wrap{
 public:
+    enum address_mode {
+        e_wrap = 0,
+        e_clamp = 1,
+        e_mirror = 2,
+        e_border = 3
+    };
+
+    enum filter_mode {
+        e_nearest = 0,
+        e_linear = 1
+    };
+
+    enum read_mode{
+        e_raw = 0,
+        e_normalized_float = 1
+    };
+
+    enum tex_format{
+        e_uint8,
+        e_uint16,
+        e_float
+    };
+
+    struct texture_info{
+        tex_format format = e_uint8;
+        uint32_t channels = 1;
+        address_mode address = e_wrap;
+        filter_mode filter = e_linear;
+        read_mode read = e_normalized_float;
+        cu_extent extent;
+        cu_array3d_type type;
+        bool normalized_coords = true;
+
+        size_t alloc_bytes() const{
+            size_t bytes = 0;
+            switch (format) {
+                case e_uint8: bytes = 1; break;
+                case e_uint16: bytes = 2; break;
+                case e_float: bytes = 4; break;
+            }
+            bytes *= channels;
+            bytes *= extent.width * extent.height * extent.depth;
+            return bytes;
+        }
+    };
+
+    cu_texture_wrap(const texture_info& info, cu_context ctx){
+
+    }
+    cu_context get_context() const {
+        return ctx;
+    }
+protected:
+
+    cudaArray_t array;
+    cudaTextureObject_t tex;
+    cu_context ctx;
 
 };
 
@@ -44,7 +101,7 @@ public:
     }
 
     template<typename E, int N>
-    cu_texture(const cu_array<E, N>& array, const texture_info& info){
+    cu_texture(const cu_array<E, N>& array, const texture_info& info, cu_context ctx){
 
         GET_CTX_SCOPE_SET(array)
 

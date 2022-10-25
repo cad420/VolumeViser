@@ -116,5 +116,17 @@ VISER_BEGIN
 
     }
 
+    void CRTVolumeRenderer::Lock() {
+
+    }
+
+    void CRTVolumeRenderer::UnLock() {
+
+    }
+
+    UnifiedRescUID CRTVolumeRenderer::GetUID() const {
+        return 0;
+    }
+
 
 VISER_END

@@ -320,27 +320,34 @@ namespace detail {
     };
 }
     template<typename T, int N>
-    cu_task cu_memory_transfer(const cu_array<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info = {}){
+    cu_task cu_memory_transfer(const cu_array<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info){
         CHECK_CTX_SAME(src, dst)
         return detail::cu_array_transfer<T, N>::transfer(src, dst, info);
     }
 
     template<typename T, int N>
-    cu_task cu_memory_transfer(const cu_array<T, N>& src, const cu_array<T, N>& dst, const memory_transfer_info& info = {}){
+    cu_task cu_memory_transfer(const cu_array<T, N>& src, const cu_array<T, N>& dst, const memory_transfer_info& info){
         CHECK_CTX_SAME(src, dst)
         return detail::cu_array_transfer<T, N>::transfer(src, dst, info);
     }
 
     template<typename T, int N>
-    cu_task cu_memory_transfer(const buffer_view<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info = {}){
+    cu_task cu_memory_transfer(const buffer_view<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info){
         CHECK_CTX_SAME(src, dst)
         return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
     }
 
     template<typename T, int N>
-    cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& dst, const memory_transfer_info& info = {}){
+    cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& dst, const memory_transfer_info& info){
         CHECK_CTX_SAME(src, dst)
         return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
+    }
+
+
+    inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_wrap& dst, const memory_transfer_info& info){
+        CHECK_CTX_SAME(src, dst)
+        //todo
+        return cu_task{[](cu_stream&){}};
     }
 
 CUB_END

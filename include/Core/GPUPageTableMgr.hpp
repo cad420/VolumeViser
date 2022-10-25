@@ -7,22 +7,30 @@ VISER_BEGIN
 
 //只负责管理一个gpu上对应vtexture的使用情况
 class GPUPageTableMgrPrivate;
-class GPUPageTableMgr{
+class GPUPageTableMgr : public UnifiedRescBase{
 public:
-    friend class GPUVTexMgr;
+    struct GPUPageTableMgrCreateInfo{
+        int vtex_count;
+        Int3 vtex_block_dim;
+    };
+
+    GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info);
 
     ~GPUPageTableMgr();
 
-    void Lock();
+    void Lock() override;
 
-    void UnLock();
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
 
     using Key = GridVolume::BlockUID;
+    inline static Key INVALID_KEY = GridVolume::INVALID_BLOCK_UID;
 
 // also used in gpu kernel
 #define TexCoordFlag_IsValid  0x1u
 #define TexCoordFlag_IsBlack  0x2u
-#define TexCoordFlag_IsSparse 0x3u
+#define TexCoordFlag_IsSparse 0x4u
 
 
     struct TexCoord{
@@ -36,6 +44,7 @@ public:
     };
 
     using Value = TexCoord;
+    inline static Value INVALID_VALUE = {0, 0, 0, 0, 0};
 
     using PageTableItem = std::pair<Key, Value>;
 
@@ -49,14 +58,10 @@ public:
     //释放最近一次GetAndLock传入的keys
     void Release(const std::vector<Key>& keys);
 
-    Ref<HashPageTable> GetPageTable();
+    HashPageTable& GetPageTable();
 
 protected:
-    struct GPUPageTableMgrCreateInfo{
-        int vtex_count;
-        Int3 vtex_ele_dim;
-    };
-    GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info);
+    friend class GPUVTexMgr;
 
     void Promote(const Key& key);
 
