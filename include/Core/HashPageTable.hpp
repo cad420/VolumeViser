@@ -46,7 +46,7 @@ public:
             if(positive)
                 ++i;
             positive = !positive;
-            if(i > HashTableSize){
+            if(i >= HashTableSize){
                 throw std::runtime_error("HashTable Get Full");
             }
         }

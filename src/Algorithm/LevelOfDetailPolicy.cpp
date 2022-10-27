@@ -20,8 +20,14 @@ VISER_BEGIN
 
     }
 
-    void ComputeUpBoundLOD(LevelOfDist& lod, int width, int height, float fov){
-
+    void ComputeUpBoundLOD(LevelOfDist& lods, float base_space, int width, int height, float fov){
+        float sampling_space = 0.5f * base_space;
+        //中心像素对应的光线夹角最大，距离上限最小
+        for(int lod = 0; lod < LevelOfDist::MaxLevelCount; lod++){
+            float space = sampling_space * (1 << lod);
+            float dy = height * space / (2.f * tan(0.5f * fov));
+            lods.LOD[lod] = dy;
+        }
     }
 
     template<>

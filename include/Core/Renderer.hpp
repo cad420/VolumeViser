@@ -7,15 +7,16 @@
 VISER_BEGIN
 
 
+using ImageHandle = Handle<CUDAPitchedBuffer>;
 
 struct FrameBuffer{
-    using ImageHandle = Handle<CUDAPitchedBuffer>;
-    using HostImageHandle = Handle<CUDABuffer>;
+    int frame_width = 0;
+    int frame_height = 0;
 
     ImageHandle color;
     ImageHandle depth;
-    std::vector<ImageHandle> attach;
 
+    std::vector<ImageHandle> attach;
 };
 //暂时只考虑体渲染，网格渲染的需求只有标注系统，因此网格渲染的部分完全
 //都在标注应用部分编写代码，而不作为核心库里的功能。
@@ -31,21 +32,21 @@ public:
         PhysicalBased
     };
 
-    using VolumeInfo = GridVolume::GridVolumeDesc;
 
     using RendererUID = size_t;
 
     virtual ~Renderer() = default;
 
-    virtual void SetVolume(const VolumeInfo&) = 0;
+    virtual void SetVolume(const VolumeParams&) = 0;
 
     virtual void SetRenderParams(const RenderParams&) = 0;
 
     virtual void SetPerFrameParams(const PerFrameParams&) = 0;
 
-    //返回Unique还是Shared的资源
-    virtual FrameBuffer GetRenderFrame(bool exclusive) = 0;
+    virtual void Render(FrameBuffer& frame) = 0;
 
+//    using RenderResult = cub::cu_result;
+//    virtual std::future<RenderResult> RenderAsync(FrameBuffer& frame) = 0;
 
     using VTextureHandle = Handle<CUDATexture>;
     using TextureUnit = int;
@@ -69,8 +70,8 @@ class CRTVolumeRendererPrivate;
 class CRTVolumeRenderer : public Renderer{
 public:
     struct CRTVolumeRendererCreateInfo{
-        Ref<GPUMemMgr> gpu_mem_mgr;
-        Ref<HostMemMgr> host_mem_mgr;
+        mutable Ref<GPUMemMgr> gpu_mem_mgr;
+        mutable Ref<HostMemMgr> host_mem_mgr;
         // other params...
 
     };
@@ -84,13 +85,13 @@ public:
 
     UnifiedRescUID GetUID() const override;
 
-    void SetVolume(const VolumeInfo&) override;
+    void SetVolume(const VolumeParams&) override;
 
     void SetRenderParams(const RenderParams&) override;
 
     void SetPerFrameParams(const PerFrameParams&) override;
 
-    FrameBuffer GetRenderFrame(bool exclusive) override;
+    void Render(FrameBuffer& frame) override;
 
     // 需要绑定纹理和页表两项资源
 

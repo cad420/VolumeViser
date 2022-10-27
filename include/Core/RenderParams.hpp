@@ -14,7 +14,24 @@ struct LevelOfDist{
     static constexpr int MaxLevelCount = 16;
     float LOD[MaxLevelCount] = {std::numeric_limits<float>::max()};
 };
-inline static const Float3 WorldUp = Float3{0.f, 1.f, 0.f};
+template<typename K, typename V>
+struct TransferFuncT{
+    using Key = K;
+    using Value = V;
+    std::map<Key, Value> pts;
+
+    std::vector<Value> Gen1DTF(int dim = 256) const ;
+
+    std::vector<Value> Gen2DTF(const std::vector<Value>& tf1d, int dim = 256) const ;
+
+    void Gen1DTF(Handle<CUDAHostBuffer>& buffer, int dim = 256) const ;
+
+    void Gen2DTF(Handle<CUDAHostBuffer>& tf1d, Handle<CUDAHostBuffer>& buffer, int dim = 256) const ;
+};
+using TransferFunc = TransferFuncT<float, Float4>;
+
+inline const Float3 WorldUp = Float3{0.f, 1.f, 0.f};
+
 struct Camera{
     Float3 pos;
     Float3 target;
@@ -24,7 +41,6 @@ struct Camera{
     float fov;
     int width;
     int height;
-
 
     Mat4 GetViewMatrix() const{
         return Transform::look_at(pos, target, up);
@@ -41,7 +57,12 @@ struct Camera{
     }
 
 };
-
+struct VolumeParams{
+    BoundingBox3D bound;
+    uint32_t block_length;
+    uint32_t padding;
+    UInt3 voxel_dim;
+};
 struct RenderParams{
     struct {
         bool updated = false;
@@ -52,12 +73,24 @@ struct RenderParams{
     }lod;
     struct {
         bool updated = false;
+        TransferFunc tf_pts;
+        int dim = 256;
     }tf;
+    struct {
+        bool use_2d_tf = false;
+    }other;
 };
 
 // 每一帧需要更新的参数，主要是相机
 struct PerFrameParams{
-
+    Float3 cam_pos;
+    float fov;
+    Float3 cam_dir;
+    int frame_width;
+    Float3 cam_right;
+    int frame_height;
+    Float3 cam_up;
+    float frame_w_over_h;
 };
 
 

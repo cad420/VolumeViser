@@ -44,6 +44,8 @@ CUB_BEGIN
     template<typename T>
     class buffer_view<T, 1> : public detail::buffer_view_base<T, 1>{
     public:
+        buffer_view() = default;
+
         buffer_view(void* ptr, size_t len)
         {
             this->ptr = ptr;
@@ -70,6 +72,8 @@ CUB_BEGIN
     template<typename T>
     class buffer_view<T, 2> : public detail::buffer_view_base<T, 2>{
     public:
+        buffer_view() = default;
+
         buffer_view(void* ptr, const pitched_buffer_info& info){
             this->ptr = ptr;
             this->pitched_info = info;
@@ -93,6 +97,8 @@ CUB_BEGIN
     template<typename T>
     class buffer_view<T, 3> : public detail::buffer_view_base<T, 3>{
     public:
+        buffer_view() = default;
+
         buffer_view(void* ptr, const pitched_buffer_info& info, const cu_extent& extent)
         : extent(extent)
         {
@@ -143,7 +149,6 @@ CUB_BEGIN
         }
 
         ~cu_buffer(){
-            CTX_SCOPE_SET
             if(type == e_cu_device){
                 CUB_CHECK(cuMemFree((CUdeviceptr)ptr));
             }
@@ -215,10 +220,22 @@ CUB_BEGIN
             info.ysize = height;
         }
         ~cu_buffer(){
-            CTX_SCOPE_SET
-
             CUB_CHECK(cuMemFree((CUdeviceptr)ptr));
 
+        }
+
+        template<typename T>
+        buffer_view<T,2> view_2d(size_t offset = 0) const {
+            assert(offset % info.pitch == 0);
+            if(sizeof(T) > ele_size){
+                throw std::logic_error("buffer view element size large than pitched memory alloc set");
+            }
+            auto height = info.ysize;
+            auto view = buffer_view<T, 2>(reinterpret_cast<unsigned char*>(ptr) + offset,
+                                          {info.pitch, info.xsize, height});
+            static_cast<detail::buffer_view_base<T, 2>&>(view).ctx = ctx;
+            static_cast<detail::buffer_view_base<T, 2>&>(view).type = e_cu_device;
+            return view;
         }
 
         template<typename T>
@@ -229,8 +246,8 @@ CUB_BEGIN
             }
             auto view = buffer_view<T, 2>(reinterpret_cast<unsigned char*>(ptr) + offset,
                                           {info.pitch, info.xsize, height});
-            static_cast<detail::buffer_view_base<T, 2>>(view).ctx = ctx;
-            static_cast<detail::buffer_view_base<T, 2>>(view).type = e_cu_device;
+            static_cast<detail::buffer_view_base<T, 2>&>(view).ctx = ctx;
+            static_cast<detail::buffer_view_base<T, 2>&>(view).type = e_cu_device;
             return view;
         }
 
@@ -243,8 +260,8 @@ CUB_BEGIN
             auto view = buffer_view<T, 3>(reinterpret_cast<unsigned char*>(ptr) + offset,
                                          {info.pitch, info.xsize, height * depth},
                                          {info.xsize / sizeof(T), height, depth});
-            static_cast<detail::buffer_view_base<T, 3>>(view).ctx = ctx;
-            static_cast<detail::buffer_view_base<T, 2>>(view).type = e_cu_device;
+            static_cast<detail::buffer_view_base<T, 3>&>(view).ctx = ctx;
+            static_cast<detail::buffer_view_base<T, 2>&>(view).type = e_cu_device;
             return view;
         }
 
@@ -263,7 +280,7 @@ CUB_BEGIN
         return cu_buffer<false>(size, type, *this);
     }
 
-    inline cu_buffer<true> cu_context::alloc_buffer_pitched(size_t width_bytes, size_t height, uint32_t ele_size) {
+    inline cu_buffer<true> cu_context::alloc_pitched_buffer(size_t width_bytes, size_t height, uint32_t ele_size) {
         return cu_buffer<true>(width_bytes, height, ele_size, *this);
     }
 

@@ -43,7 +43,10 @@ public:
 
     Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access, size_t width_bytes, size_t height, size_t ele_size);
 
-    using TextureCreateInfo = cub::cu_texture_wrap::texture_info;
+    struct TextureCreateInfo{
+        cub::texture_resc_info resc_info;
+        cub::texture_view_info view_info;
+    };
     Handle<CUDATexture> AllocTexture(RescAccess access, const TextureCreateInfo& info);
 
     using GPUVTexMgrCreateInfo = GPUVTexMgr::GPUVTexMgrCreateInfo;
@@ -53,8 +56,11 @@ public:
 
 protected:
     friend class GPUVTexMgr;
+    friend class CRTVolumeRenderer;
     //不再更新使用内存
     Handle<CUDATexture> _AllocTexture(RescAccess access, const TextureCreateInfo& info);
+
+    cub::cu_context _get_cuda_context();
 
     friend class ResourceMgr;
     std::unique_ptr<GPUMemMgrPrivate> _;

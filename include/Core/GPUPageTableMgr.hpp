@@ -38,6 +38,7 @@ public:
         uint16_t tid;//纹理索引
         uint16_t flag;//对于对应的key来说，是否是有效的，即是否原来存在于页表中
 
+
         bool Missed() const{
             return flag & TexCoordFlag_IsValid;
         }

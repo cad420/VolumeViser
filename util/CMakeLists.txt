@@ -5,7 +5,9 @@ option(ENABLE_OPENGL "" ON)
 file(GLOB_RECURSE
         UTIL_SRCS
         "*.hpp"
-        "*.cpp")
+        "*.cpp"
+        ${PROJECT_SOURCE_DIR}/deps/glad/src/glad.c
+        )
 
 add_library(
         vutil_lib

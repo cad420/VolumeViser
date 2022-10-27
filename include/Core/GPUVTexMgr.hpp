@@ -17,7 +17,7 @@ public:
         Int3 vtex_shape;
         int bits_per_sample;
         int samples_per_channel;
-        int vtex_block_size;
+        int vtex_block_length;
         bool is_float;
         // ...
         bool exclusive;
@@ -38,6 +38,10 @@ public:
 
     using TexCoord = GPUPageTableMgr::TexCoord;
     void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
+
+    void UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, TexCoord dst);
+
+    void Flush();
 
     using GPUTexUnit = uint32_t;
 

@@ -44,6 +44,8 @@ using CUDATex = cub::cu_texture;
 using CUDATexture = cub::cu_texture_wrap;
 constexpr int MaxCUDATextureCountPerGPU = 32;
 
+
+
 template<typename T>
 struct GeneralRescTraits{
     static constexpr bool value = false;
@@ -75,6 +77,7 @@ struct GeneralRescTraits<CUDABuffer>{
 inline constexpr bool IsGeneralResc = GeneralRescTraits<T>::value;
 
 using Float3 = vutil::vec3f;
+using Float4 = vutil::vec4f;
 
 using Int3 = vutil::tvec3<int>;
 using UInt3 = vutil::tvec3<uint32_t>;
@@ -129,7 +132,8 @@ public:
         GridVolumeBlock = 7,
         GPUPageTableMgr = 8,
         GPUVTexMgr = 9,
-        MaxEnum = 10
+        CRTVolRenderer,
+        MaxEnum = 11
     };
 
 

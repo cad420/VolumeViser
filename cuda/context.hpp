@@ -4,87 +4,64 @@
 
 CUB_BEGIN
 
-    enum memory_type{
-        e_cu_host,
-        e_cu_device
-    };
+/**
+ * @brief CUDA的上下文，分配各种CUDA相关的资源，不同上下文之间的资源是不可见的，
+ * 本质上是一个句柄，只有8bytes大小
+ */
+class cu_context{
+public:
+    cu_context() = default;
 
-    class cu_context{
+    cu_context(cu_physical_device device, uint32_t flags);
 
-    public:
-        cu_context() = default;
+    /**
+     * @brief 分配host或者device buffer
+     */
+    cu_buffer<false> alloc_buffer(size_t size, memory_type type);
 
-        cu_context(cu_physical_device device, uint32_t flags);
+    /**
+     * @brief 分配device上pitched buffer
+     */
+    cu_buffer<true> alloc_pitched_buffer(size_t width_bytes, size_t height, uint32_t ele_size);
 
-        cu_kernel create_kernel();
+    template<typename T, int N, typename... Args>
+    cu_array<T, N> alloc_array(Args&&... args) const;
 
+    /**
+     * @brief 分配包括了array的texture资源
+     */
+    cu_texture_wrap alloc_texture(const texture_resc_info& resc_info, const texture_view_info& view_info);
 
-        // alloc cuda device memory or host(pinned) memory
-        cu_buffer<false> alloc_buffer(size_t size, memory_type type);
+    bool operator==(const cu_context& other) const{
+        return ctx == other.ctx;
+    }
 
-        // alloc cuda device pitched memory
-        cu_buffer<true> alloc_buffer_pitched(size_t width_bytes, size_t height, uint32_t ele_size);
+    #define CHECK_CTX_SAME(a, b) assert(a.get_context() == b.get_context());
 
+    void push_ctx(cu_context other){
+        CUB_CHECK(cuCtxPushCurrent(other.ctx));
+    }
 
-        template<typename T, int N, typename... Args>
-        cu_array<T, N> alloc_array(Args&&... args) const;
+    cu_context pop_ctx(){
+        CUcontext t;
+        CUB_CHECK(cuCtxPopCurrent(&t));
+        return cu_context(t);
+    }
 
-        bool operator==(const cu_context& other) const{
-            return ctx == other.ctx;
-        }
+    void set_ctx(){
+        CUB_CHECK(cuCtxSetCurrent(ctx));
+    }
 
-        #define CHECK_CTX_SAME(a, b) assert(a.get_context() == b.get_context());
+    bool is_valid(){
+        return ctx;
+    }
 
-        struct Binder{
-            Binder(std::function<void()> f):f(std::move(f)){}
-            ~Binder(){
-                if(f)
-                    f();
-            }
-        private:
-            std::function<void()> f;
-        };
+private:
+    cu_context(CUcontext cu_ctx) : ctx(cu_ctx) {}
 
-        auto get(){
-            push_ctx();
-            return Binder([this](){
-                this->pop_ctx();
-            });
-        }
+    CUcontext ctx = nullptr;
+};
 
-        #define CTX_SCOPE_SET auto binder = ctx.get();
-
-        #define GET_CTX_SCOPE_SET(obj) auto bindier = obj.get_context().get();
-
-        void push_ctx(){
-
-            CUB_CHECK(cuCtxPushCurrent(ctx));
-        }
-
-
-        void pop_ctx(){
-
-            CUcontext t;
-            CUB_CHECK(cuCtxPopCurrent(&t));
-            if(t != ctx){
-                throw std::logic_error("cu_context popped context not right");
-            }
-        }
-
-        void set_ctx(){
-
-            CUB_CHECK(cuCtxSetCurrent(ctx));
-        }
-
-
-    private:
-        CUcontext ctx = nullptr;
-    };
-
-
-
-
-
-
+static_assert(sizeof(cu_context) == 8, "");
 
 CUB_END

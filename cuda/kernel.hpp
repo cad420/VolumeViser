@@ -1,9 +1,9 @@
 #pragma once
+
 #include "context.hpp"
 #include "stream.hpp"
+
 CUB_BEGIN
-
-
 
 namespace detail{
 #ifdef __NVCC__
@@ -25,56 +25,42 @@ struct cu_kernel_launch_info{
     uint32_t shared_mem_bytes = 0;
 };
 
-
 class cu_kernel{
 public:
-
-    explicit cu_kernel(cu_context ctx)
-    :ctx(ctx)
-    {
-
-    }
-
-    cu_context get_context() const {
-        return ctx;
-    }
-
+    /**
+     * @brief 以lambda函数形式启动kernel，函数参数类型必须是两个dim3，代表blockIdx和threadIdx
+     */
     template<typename F>
-    cu_task pending(const cu_kernel_launch_info& info, F func){
+    static cu_task pending(const cu_kernel_launch_info& info, F func){
         auto kernel = &detail::kernel_impl<F>;
         void* params[] = {&func};
         auto task = [=](cu_stream& stream) mutable {
             CUB_CHECK(cuLaunchKernel((CUfunction)kernel,
                            info.grid_dim.x,info.grid_dim.y,info.grid_dim.z,
                            info.block_dim.x,info.block_dim.y,info.block_dim.z,
-                           info.shared_mem_bytes,stream.stream,
+                           info.shared_mem_bytes,stream.lock().get(),
                            params, nullptr));
-            std::cout << "cu_kernel launch task: " << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z << std::endl;
+            CUB_WHEN_DEBUG(std::cout << "cu_kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
+                                     << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
         };
         return cu_task(task);
     }
+
     template<typename... Args>
-    cu_task pending(const cu_kernel_launch_info& info, void(*kernel)(Args...), Args... args){
+    static cu_task pending(const cu_kernel_launch_info& info, void(*kernel)(Args...), Args... args){
         void* params[sizeof...(args)] = {&args...};
         auto task = [=](cu_stream& stream) mutable {
             CUB_CHECK(cuLaunchKernel((CUfunction)kernel,
                                      info.grid_dim.x,info.grid_dim.y,info.grid_dim.z,
                                      info.block_dim.x,info.block_dim.y,info.block_dim.z,
-                                     info.shared_mem_bytes,stream.stream,
+                                     info.shared_mem_bytes,stream.lock().get(),
                                      params, nullptr));
-            std::cout << "cu_kernel launch task: " << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z << std::endl;
+            CUB_WHEN_DEBUG(std::cout << "cu_kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
+                                     << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
         };
         return cu_task(task);
     }
-private:
-    cu_context ctx;
+
 };
-
-
-    inline cu_kernel cu_context::create_kernel() {
-        return cu_kernel(*this);
-    }
-
-
 
 CUB_END

@@ -22,7 +22,15 @@ void ComputeIntersectedBlocksWithViewSpace(std::vector<GridVolume::BlockUID>& bl
                                              const ViewSpace& space,
                                              const Float3& block);
 
-void ComputeUpBoundLOD(LevelOfDist& lod, int width, int height, float fov);
+
+/**
+ * @brief 计算理论上不造成画面失真、闪烁、摩尔纹时每一个lod对应的最远距离
+ * @param base_space 一个体素表示的最小space，对应采样频率最高
+ * @param width 渲染帧的宽
+ * @param height 渲染帧的高
+ * @param fov 相机y方向的缩放角(radians)
+ */
+void ComputeUpBoundLOD(LevelOfDist& lod, float base_space, int width, int height, float fov);
 
 
 VISER_END

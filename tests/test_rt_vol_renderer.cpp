@@ -1,10 +1,59 @@
+
 #include <Core/Renderer.hpp>
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Core/HashPageTable.hpp>
 
 using namespace viser;
+using namespace vutil::gl;
+class rt_renderer: public gl_app_t{
+public:
+    using gl_app_t::gl_app_t;
+private:
+    void initialize() override {
+        GL_EXPR(glEnable(GL_DEPTH_TEST));
+        GL_EXPR(glClearColor(0, 0, 0, 0));
+        GL_EXPR(glClearDepth(1.0));
+
+
+    }
+
+    void frame() override {
+        handle_events();
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 7.f);
+        if(ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Press LCtrl to show/hide cursor");
+            ImGui::Text("Use W/A/S/D/Space/LShift to move");
+            ImGui::Text("FPS: %.0f", ImGui::GetIO().Framerate);
+            if (ImGui::Checkbox("VSync", &vsync)) {
+                window->set_vsync(vsync);
+            }
+
+        }
+
+
+
+
+
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
+
+    void destroy() override {
+
+    }
+
+private:
+    bool vsync = true;
+};
 
 int main(int argc, char** argv){
+    {
+        rt_renderer(window_desc_t{.size = {1200, 900},
+                                  .title = "rt test",
+                                  .resizeable = false,
+                                  .multisamples = 1}).run();
+        return 0;
+    }
     auto& resc_ins = ResourceMgr::GetInstance();
 
     // resource manager
@@ -53,6 +102,17 @@ int main(int argc, char** argv){
             rt_vol_renderer.BindVTexture(vt.second, vt.first);
         }
     }
+
+    // framebuffer
+    FrameBuffer framebuffer{1200, 900};
+
+    framebuffer.color = resc_ins.GetGPURef(gpu_resc_uid)->AllocPitchedBuffer(RescAccess::Unique,
+                                                                             framebuffer.frame_width * sizeof(uint32_t),
+                                                                             framebuffer.frame_height, sizeof(uint32_t));
+    framebuffer.color = resc_ins.GetGPURef(gpu_resc_uid)->AllocPitchedBuffer(RescAccess::Unique,
+                                                                             framebuffer.frame_width * sizeof(float),
+                                                                             framebuffer.frame_height, sizeof(float));
+
 
     // render loop
     {
@@ -120,9 +180,15 @@ int main(int argc, char** argv){
                                        block_handle = std::move(missed_block.second)]()mutable{
                 volume->ReadBlock(block, *block_handle);
                 block_handle.SetUID(block.ToUnifiedRescUID());
-                block_handle.ConvertWriteToReadLock();
                 if(!render_async)//note!!!
+                {
+                    block_handle.ConvertWriteToReadLock();
                     host_blocks[block] = std::move(block_handle);
+                }
+                else{
+                    //异步加载的数据只是加载到host mem pool中，然后释放写锁
+                    block_handle.ReleaseWriteLock();
+                }
             });
         }
         std::map<int, vutil::task_group_handle_t> task_groups;
@@ -155,7 +221,8 @@ int main(int argc, char** argv){
         for(auto& missed_block : blocks_info){
             if(!missed_block.second.Missed()) continue;
             auto& handle = host_blocks[missed_block.first];
-            gpu_vtex_ref->UploadBlockToGPUTex(handle, missed_block.second);
+            //这部分已经在CPU的数据块，调用异步memcpy到GPU
+            gpu_vtex_ref->UploadBlockToGPUTexAsync(handle, missed_block.second);
             handle.ReleaseReadLock();
         }
 
@@ -164,10 +231,11 @@ int main(int argc, char** argv){
             rt_vol_renderer.BindPTBuffer(page_table->GetPageTable().GetHandle());
 
         }
-
+        // flush transfer before render start
+        gpu_vtex_ref->Flush();
 
         // get result
-        auto render_frame = rt_vol_renderer.GetRenderFrame(true);
+        rt_vol_renderer.Render(framebuffer);
 
         // release resource
 

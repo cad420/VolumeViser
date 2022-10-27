@@ -88,17 +88,17 @@ VISER_BEGIN
     }
 
     Handle<CUDATexture> GPUMemMgr::AllocTexture(RescAccess access, const TextureCreateInfo& info) {
-        auto bytes = info.alloc_bytes();
+        auto bytes = info.resc_info.alloc_bytes();
         auto used = _->used_mem_bytes.fetch_add(bytes);
         if(used > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(bytes);
             throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
         }
-        return NewGeneralHandle<CUDATexture>(access, info, _->ctx);
+        return NewGeneralHandle<CUDATexture>(access, info.resc_info, info.view_info, _->ctx);
     }
 
     Handle<CUDATexture> GPUMemMgr::_AllocTexture(RescAccess access, const TextureCreateInfo& info) {
-        return NewGeneralHandle<CUDATexture>(access, info, _->ctx);
+        return NewGeneralHandle<CUDATexture>(access, info.resc_info, info.view_info, _->ctx);
     }
 
     UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUMemMgr::GPUVTexMgrCreateInfo &info) {
@@ -135,6 +135,9 @@ VISER_BEGIN
         return {_->vtex_mgr_mp.at(uid).get()};
     }
 
+    cub::cu_context GPUMemMgr::_get_cuda_context() {
+        return _->ctx;
+    }
 
 
 VISER_END

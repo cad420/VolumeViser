@@ -5,9 +5,7 @@
 #error "should include opengl header before this"
 #endif
 
-#include "math/vec4.hpp"
-#include "math/mat3_c.hpp"
-#include "math/transform3.hpp"
+#include "../math.hpp"
 #include "console/logger.hpp"
 #include "misc/concept.hpp"
 

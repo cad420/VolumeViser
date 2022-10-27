@@ -22,7 +22,7 @@ public:
         //不超过65535
         uint32_t x = 0xffff, y = 0xffff, z = 0xffff, w = 0xff;
 
-        BlockUID() = default;
+        CUB_CPU_GPU BlockUID() = default;
 
         BlockUID(UnifiedRescUID uid){
             x = uid & 0xffff;

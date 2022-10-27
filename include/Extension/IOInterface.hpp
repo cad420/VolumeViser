@@ -17,6 +17,7 @@ public:
         uint32_t block_length = 0;
         uint32_t padding = 0;
         UInt3 blocked_dim;
+        Float3 voxel_space;
         //preserved and not used
         bool decoding_cpu_only = false;
     };

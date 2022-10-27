@@ -5,8 +5,6 @@
 
 CUB_BEGIN
 
-
-
     template<typename T, int N>
     class cu_array;
 
@@ -50,7 +48,6 @@ CUB_BEGIN
             }
 
             virtual ~cu_array_base(){
-                auto binder = ctx.get();
                 CUB_CHECK(cuArrayDestroy(array));
             }
         protected:

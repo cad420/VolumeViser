@@ -36,6 +36,21 @@
 #define CUB_L1_CACHE_LINE_SIZE 128
 #endif
 
+#ifndef NDEBUG
+#define CUB_DEBUG
+#define CUB_WHEN_DEBUG(op) do { op; } while(false);
+#else
+#define CUB_WHEN_DEBUG(op) do { } while(false);
+#endif
+
+#define CUB_CHECK(expr) check_cuda_call(expr)
+
+#define CUB_BEGIN namespace cub{
+#define CUB_END }
+
+
+CUB_BEGIN
+
 class cuda_error : public std::runtime_error{
 public:
     using std::runtime_error::runtime_error;
@@ -97,18 +112,16 @@ private:
 
 
 
-#define CUB_CHECK(expr) check_cuda_call(expr)
-
-#define CUB_BEGIN namespace cub{
-#define CUB_END }
-
-
-CUB_BEGIN
 
 struct cu_extent{
     size_t width = 0;
     size_t height = 1;
     size_t depth = 1;
+};
+
+enum memory_type{
+    e_cu_host,
+    e_cu_device
 };
 
 class cu_context;
@@ -119,9 +132,10 @@ class cu_buffer;
 template<typename, int>
 class cu_array;
 class cu_texture;
+struct texture_resc_info;
+struct texture_view_info;
+class cu_texture_wrap;
 class cu_event;
 class cu_stream;
-
-
 
 CUB_END

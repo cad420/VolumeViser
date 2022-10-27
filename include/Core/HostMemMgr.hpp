@@ -23,7 +23,6 @@ public:
 
     struct HostMemMgrCreateInfo{
         size_t MaxCPUMemBytes;
-
     };
 
     explicit HostMemMgr(const HostMemMgrCreateInfo& info);
