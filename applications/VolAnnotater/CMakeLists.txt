@@ -1,0 +1,17 @@
+set(ENABLE_OPENGL ON)
+
+file(
+        GLOB_RECURSE
+        VolAnnotater_SRCS
+        "*.hpp"
+        "*.cpp"
+)
+
+add_executable(VolAnnotater ${VolAnnotater_SRCS})
+
+target_link_libraries(
+        VolAnnotater PRIVATE VolumeViserLib
+)
+
+target_compile_definitions(VolViewer PRIVATE cxx_std_20)
+

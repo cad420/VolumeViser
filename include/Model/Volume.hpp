@@ -71,7 +71,7 @@ public:
     using GridVolumeDesc = VolumeIOInterface::VolumeDesc;
 
     struct GridVolumeCreateInfo{
-        UnifiedRescUID host_mem_mgr_uid;
+        UnifiedRescUID host_mem_mgr_uid;//用于动态申请内存资源
         UnifiedRescUID gpu_mem_mgr_uid;
         uint32_t min_lod = 0, max_lod = 0;
         std::unordered_map<uint32_t, Handle<VolumeIOInterface>> lod_vol_file_io;

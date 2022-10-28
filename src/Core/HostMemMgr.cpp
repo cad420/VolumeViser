@@ -15,6 +15,7 @@ public:
     std::mutex g_mtx;
 
     UnifiedRescUID uid;
+
     static UnifiedRescUID GenRescUID(){
         static std::atomic<size_t> g_uid = 0;
         auto uid = g_uid.fetch_add(1);
@@ -23,6 +24,11 @@ public:
 };
 
 HostMemMgr::HostMemMgr(const HostMemMgr::HostMemMgrCreateInfo &info) {
+    auto free = vutil::get_free_memory_bytes();
+    if(free < info.MaxCPUMemBytes){
+        throw ViserResourceCreateError("Create CPUMemMgr exception : free memory is not enough for require size " + std::to_string(info.MaxCPUMemBytes));
+    }
+
     _ = std::make_unique<HostMemMgrPrivate>();
 
     _->max_mem_bytes = info.MaxCPUMemBytes;
@@ -53,13 +59,12 @@ UnifiedRescUID HostMemMgr::GetUID() const {
     return _->uid;
 }
 
-
 template<>
 Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes){
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
-        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc buffer with size: " + std::to_string(bytes));
+        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc pinned buffer with size: " + std::to_string(bytes));
     }
     return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::memory_type::e_cu_host, _->ctx);
 }
@@ -69,12 +74,12 @@ Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescA
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
-        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc buffer with size: " + std::to_string(bytes));
+        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc paged buffer with size: " + std::to_string(bytes));
     }
     return NewGeneralHandle<HostBuffer>(access, bytes);
 }
 
-UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const HostMemMgr::FixedHostMemMgrCreateInfo &info) {
+UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
     try{
         size_t alloc_size = info.fixed_block_size * info.fixed_block_num;
         auto used = _->used_mem_bytes.fetch_add(alloc_size);
@@ -82,6 +87,7 @@ UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const HostMemMgr::FixedHostMe
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
+
         LOG_DEBUG("Register FixedHostMemMgr cost free memory: {}, remain free: {}",
                   alloc_size, _->max_mem_bytes - used);
 
@@ -93,8 +99,8 @@ UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const HostMemMgr::FixedHostMe
         return uid;
     }
     catch (const std::exception& e) {
-
-
+        LOG_ERROR("RegisterFixedHostMemMgr failed with create info : (fixed_block_size {}, fixed_block_num {})",
+                  info.fixed_block_size, info.fixed_block_num);
         throw ViserResourceCreateError(std::string("Register FixedHostMemMgr exception : ") + e.what());
     }
 }
@@ -103,11 +109,4 @@ Ref<FixedHostMemMgr> HostMemMgr::GetFixedHostMemMgrRef(UnifiedRescUID uid) {
     return Ref<FixedHostMemMgr>(_->fixed_host_mgr_mp.at(uid).get());
 }
 
-
-
-
-
-
 VISER_END
-
-

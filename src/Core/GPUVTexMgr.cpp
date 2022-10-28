@@ -26,7 +26,6 @@ public:
 
     cub::cu_submitted_tasks submitted_tasks;
 
-
     std::mutex g_mtx;
 
     UnifiedRescUID uid;

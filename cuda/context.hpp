@@ -33,13 +33,13 @@ public:
     cu_texture_wrap alloc_texture(const texture_resc_info& resc_info, const texture_view_info& view_info);
 
     bool operator==(const cu_context& other) const{
-        return ctx == other.ctx;
+        return _->ctx == other._->ctx;
     }
 
     #define CHECK_CTX_SAME(a, b) assert(a.get_context() == b.get_context());
 
     void push_ctx(cu_context other){
-        CUB_CHECK(cuCtxPushCurrent(other.ctx));
+        CUB_CHECK(cuCtxPushCurrent(other._->ctx));
     }
 
     cu_context pop_ctx(){
@@ -49,19 +49,35 @@ public:
     }
 
     void set_ctx(){
-        CUB_CHECK(cuCtxSetCurrent(ctx));
+        CUB_CHECK(cuCtxSetCurrent(_->ctx));
     }
 
     bool is_valid(){
-        return ctx;
+        return _ && _->ctx;
     }
 
+    size_t get_free_memory_bytes(){
+        size_t free;
+        CUB_CHECK(cuMemGetInfo(&free, nullptr));
+        return free;
+    }
+
+    CUcontext _get_handle(){
+        return _->ctx;
+    }
 private:
-    cu_context(CUcontext cu_ctx) : ctx(cu_ctx) {}
+    cu_context(CUcontext cu_ctx){
+        _->ctx = cu_ctx;
+    }
 
-    CUcontext ctx = nullptr;
+    struct Inner{
+        ~Inner(){
+            CUB_CHECK(cuCtxSetCurrent(ctx));
+            CUB_CHECK(cuCtxDestroy(ctx));
+        }
+        CUcontext ctx = nullptr;
+    };
+    std::shared_ptr<Inner> _ = std::make_shared<Inner>();
 };
-
-static_assert(sizeof(cu_context) == 8, "");
 
 CUB_END

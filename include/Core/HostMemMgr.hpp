@@ -1,35 +1,29 @@
 #pragma once
 
-#include <Common/Common.hpp>
-#include "FixedHostMemMgr.hpp"
 #include <Model/Volume.hpp>
-
-//使用cuda的host malloc函数分配得到的内存，因为是pinned的，可以更快地由CPU传输到GPU
-//自定义优先级的缓存管理
-//建立了CPU内存的缓存层，以及适用于transfer from CPU to GPU
+#include <Core/FixedHostMemMgr.hpp>
 
 VISER_BEGIN
+
+//使用CUDA的host malloc函数分配得到的内存，因为是pinned的，可以更快地由CPU传输到GPU
+//理论上一个进程只需要一个HostMemMgr实例，以后可以扩展到一个体数据对应一个HostMemMgr
+
 class HostMemMgrPrivate;
-
-
-
 class HostMemMgr : public UnifiedRescBase{
 public:
-
     enum RescType{
         Paged = 0,
         Pinned = 1
     };
 
     struct HostMemMgrCreateInfo{
-        size_t MaxCPUMemBytes;
+        size_t MaxCPUMemBytes = 0;
     };
 
     explicit HostMemMgr(const HostMemMgrCreateInfo& info);
 
     ~HostMemMgr();
 
-    // 整体的加锁
     void Lock();
 
     void UnLock();
@@ -44,7 +38,6 @@ public:
 
 #define AllocPinnedHostMem(access, bytes) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes)
 
-
     template<>
     Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(RescAccess access, size_t bytes);
 
@@ -55,11 +48,8 @@ public:
 
     Ref<FixedHostMemMgr> GetFixedHostMemMgrRef(UnifiedRescUID uid);
 
-
 protected:
-    friend class ResourceMgr;
     std::unique_ptr<HostMemMgrPrivate> _;
 };
-
 
 VISER_END

@@ -30,10 +30,6 @@ private:
 
         }
 
-
-
-
-
         ImGui::End();
         ImGui::PopStyleVar();
     }
@@ -47,13 +43,7 @@ private:
 };
 
 int main(int argc, char** argv){
-    {
-        rt_renderer(window_desc_t{.size = {1200, 900},
-                                  .title = "rt test",
-                                  .resizeable = false,
-                                  .multisamples = 1}).run();
-        return 0;
-    }
+
     auto& resc_ins = ResourceMgr::GetInstance();
 
     // resource manager
@@ -238,7 +228,7 @@ int main(int argc, char** argv){
         rt_vol_renderer.Render(framebuffer);
 
         // release resource
-
+        // 这里必须等待已有的资源上传到GPU完成
         page_table->Release(intersect_blocks);
 
         // swap buffer

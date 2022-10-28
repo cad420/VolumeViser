@@ -21,8 +21,9 @@ VUTIL_BEGIN
             should_call = false;
         }
         void call(){
-            assert(should_call && bomb);
-            bomb();
+            assert(should_call);
+            if(bomb)
+                bomb();
             should_call = false;
         }
     };

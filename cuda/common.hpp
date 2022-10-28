@@ -110,9 +110,6 @@ private:
     CUresult ret;
 };
 
-
-
-
 struct cu_extent{
     size_t width = 0;
     size_t height = 1;

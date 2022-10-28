@@ -107,14 +107,16 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
             };
         }
     }
-
-
 }
 
 void GPUPageTableMgr::Release(const std::vector<Key>& keys) {
     for(auto& key : keys){
         auto& [tid, coord] = _->record_block_mp.at(key);
-        _->tex_table[tid][coord].rw_lk.unlock_read();
+        auto& lk = _->tex_table[tid][coord].rw_lk;
+        if(lk.is_write_locked())
+            lk.unlock_write();
+        else
+            lk.unlock_read();
     }
 }
 

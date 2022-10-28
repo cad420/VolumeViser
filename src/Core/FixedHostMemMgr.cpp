@@ -29,7 +29,6 @@ FixedHostMemMgr::FixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
 
     _->lru =  std::make_unique<FixedHostMemMgrPrivate::LRUCache>(info.fixed_block_num);
 
-    //空闲资源创建时赋予General的UID类型
     for(int i = 0; i < info.fixed_block_num; i++){
         auto handle = info.host_mem_mgr->AllocPinnedHostMem(RescAccess::Shared, info.fixed_block_size);
         assert(CheckUnifiedRescUID(handle.GetUID()));
@@ -37,8 +36,6 @@ FixedHostMemMgr::FixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
     }
 
     _->uid = _->GenRescUID();
-
-
 }
 
 FixedHostMemMgr::~FixedHostMemMgr() {
@@ -64,19 +61,14 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
     }
     else{
         if(_->freed.empty()){
-            auto res = _->lru->back();
-            _->lru->emplace_back(uid, std::move(res.second));
+            _->lru->back().first = uid;
         }
         else{
             _->lru->emplace_back(uid, std::move(_->freed.front()));
             _->freed.pop();
         }
-        return GetBlock(uid);
+        return _->lru->get_value(uid).value();
     }
 }
 
-
-
 VISER_END
-
-

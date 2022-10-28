@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Common.hpp>
 #include <Model/Volume.hpp>
 
 VISER_BEGIN
@@ -24,7 +23,6 @@ public:
 
     ~FixedHostMemMgr();
 
-    // 整体的加锁
     void Lock() override;
 
     void UnLock() override;
@@ -39,7 +37,5 @@ public:
 protected:
     std::unique_ptr<FixedHostMemMgrPrivate> _;
 };
-
-
 
 VISER_END

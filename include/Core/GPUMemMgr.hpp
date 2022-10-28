@@ -18,7 +18,6 @@ public:
     struct GPUMemMgrCreateInfo{
         int GPUIndex;
         size_t MaxGPUMemBytes;
-
     };
 
     //注意 一个GPUMemMgr代表一个cuda context 一般一个gpu对应一个GPUMemMgr
@@ -27,7 +26,6 @@ public:
 
     ~GPUMemMgr();
 
-    // 整体的加锁
     void Lock() override;
 
     void UnLock() override;

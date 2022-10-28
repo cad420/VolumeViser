@@ -11,6 +11,7 @@
 
 VUTIL_BEGIN
 
+    size_t get_free_memory_bytes();
 
     template <typename T>
     void call_destructor(T& obj) noexcept{

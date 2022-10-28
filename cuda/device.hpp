@@ -62,7 +62,7 @@ private:
 };
 
 inline cu_context::cu_context(cu_physical_device device, uint32_t flags) {
-    CUB_CHECK(cuCtxCreate(&ctx, flags, device.device));
+    CUB_CHECK(cuCtxCreate(&_->ctx, flags, device.device));
     set_ctx();
 }
 

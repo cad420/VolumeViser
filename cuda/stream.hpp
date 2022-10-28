@@ -48,6 +48,7 @@ public:
     }
 
     cu_result wait(){
+        _->ctx.set_ctx();
         return cuStreamSynchronize(_->stream);
     }
 

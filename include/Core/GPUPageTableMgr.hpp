@@ -32,14 +32,12 @@ public:
 #define TexCoordFlag_IsBlack  0x2u
 #define TexCoordFlag_IsSparse 0x4u
 
-
     struct TexCoord{
         uint32_t sx, sy, sz;//一块纹理内部的偏移坐标
         uint16_t tid;//纹理索引
         uint16_t flag;//对于对应的key来说，是否是有效的，即是否原来存在于页表中
 
-
-        bool Missed() const{
+        bool Missed() const {
             return flag & TexCoordFlag_IsValid;
         }
     };
@@ -61,10 +59,10 @@ public:
 
     HashPageTable& GetPageTable();
 
+    void Promote(const Key& key);
+
 protected:
     friend class GPUVTexMgr;
-
-    void Promote(const Key& key);
 
     std::unique_ptr<GPUPageTableMgrPrivate> _;
 };
