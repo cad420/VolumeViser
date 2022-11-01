@@ -31,20 +31,22 @@ public:
     UnifiedRescUID GetUID() const;
 
     template<typename T, RescType type>
-    Handle<T> AllocHostMem(RescAccess access, size_t bytes) = delete;
+    Handle<T> AllocHostMem(RescAccess access, size_t bytes, bool required = false) = delete;
 
     template<>
-    Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(RescAccess access, size_t bytes);
+    Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(RescAccess access, size_t bytes, bool required);
 
-#define AllocPinnedHostMem(access, bytes) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes)
+#define AllocPinnedHostMem(access, bytes, required) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes,required)
 
     template<>
-    Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(RescAccess access, size_t bytes);
+    Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(RescAccess access, size_t bytes, bool required);
 
-#define AllocPagedHostMem(access, bytes) AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>(access, bytes)
+#define AllocPagedHostMem(access, bytes, required) AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>(access,bytes,required)
 
     using FixedHostMemMgrCreateInfo = FixedHostMemMgr::FixedHostMemMgrCreateInfo;
     UnifiedRescUID RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo& info);
+
+    void UnRegisterFixedHostMemMgr(UnifiedRescUID uid);
 
     Ref<FixedHostMemMgr> GetFixedHostMemMgrRef(UnifiedRescUID uid);
 

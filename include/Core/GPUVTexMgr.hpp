@@ -13,6 +13,7 @@ class GPUVTexMgr : public UnifiedRescBase{
 public:
     struct GPUVTexMgrCreateInfo{
         mutable Ref<GPUMemMgr> gpu_mem_mgr;
+        mutable Ref<HostMemMgr> host_mem_mgr;
         int vtex_count;
         Int3 vtex_shape;
         int bits_per_sample;

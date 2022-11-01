@@ -49,11 +49,13 @@ struct GeneralRescTraits{
     static constexpr bool value = false;
 };
 
+struct FrameBuffer;
+
 template<> struct GeneralRescTraits<CUDABuffer>       { static constexpr bool value = true; };
 template<> struct GeneralRescTraits<CUDAPitchedBuffer>{ static constexpr bool value = true; };
 template<> struct GeneralRescTraits<CUDATexture>      { static constexpr bool value = true; };
 template<> struct GeneralRescTraits<HostBuffer>       { static constexpr bool value = true; };
-
+template<> struct GeneralRescTraits<FrameBuffer>      { static constexpr bool value = true; };
 
 template<typename T>
 inline constexpr bool IsGeneralResc = GeneralRescTraits<T>::value;
@@ -134,7 +136,7 @@ inline UnifiedRescUID GenInvalidUnifiedRescUID(UnifiedRescType type){
 }
 
 inline UnifiedRescUID GenGeneralUnifiedRescUID(){
-    static std::atomic<size_t> g_uid = 0;
+    static std::atomic<size_t> g_uid = 1;
     auto uid = g_uid.fetch_add(1);
     return GenUnifiedRescUID(uid, UnifiedRescType::General);
 }
@@ -352,27 +354,34 @@ public:
     }
 
     Handle(const Handle& other){
-        if(_->access == RescAccess::Unique){
-            assert(false);
+        if(_){
+            if (_->access == RescAccess::Unique) {
+                assert(false);
+            } else if (_->access == RescAccess::Shared) {
+                _ = other._;
+            } else
+                assert(false);
         }
-        else if(_->access == RescAccess::Shared){
+        else{
             _ = other._;
         }
-        else
-            assert(false);
     }
 
     Handle& operator=(const Handle& other){
-        if(_->access == RescAccess::Unique){
-            assert(false);
+        if(_){
+            if (_->access == RescAccess::Unique) {
+                assert(false);
+            } else if (_->access == RescAccess::Shared) {
+                Destroy();
+                new(this) Handle(other);
+                return *this;
+            } else
+                assert(false);
         }
-        else if(_->access == RescAccess::Shared){
+        else{
             Destroy();
-            new(this) Handle(other);
-            return *this;
+            _ = other._;
         }
-        else
-            assert(false);
         return *this;
     }
 
@@ -432,7 +441,7 @@ public:
 private:
     struct Inner{
         vutil::rw_spinlock_t rw_lk;
-        RescAccess access;
+        RescAccess access = RescAccess::Shared;
         std::shared_ptr<T> resc;
         UnifiedRescUID uid = INVALID_RESC_ID;
         std::function<void(UnifiedRescUID)> callback;

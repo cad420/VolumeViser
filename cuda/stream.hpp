@@ -48,7 +48,8 @@ public:
     }
 
     cu_result wait(){
-        _->ctx.set_ctx();
+        //todo
+//        _->ctx.set_ctx();
         return cuStreamSynchronize(_->stream);
     }
 
@@ -71,6 +72,13 @@ public:
         return _->ctx.is_valid();
     }
 
+    cu_context get_context() const{
+        return _->ctx;
+    }
+
+    cu_context get_context(){
+        return _->ctx;
+    }
 private:
     cu_stream(std::nullptr_t, cu_context ctx)
     {

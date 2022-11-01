@@ -2,7 +2,7 @@
 
 #include <Common/Common.hpp>
 #include <Model/Volume.hpp>
-
+#include "HostMemMgr.hpp"
 VISER_BEGIN
 
 //只负责管理一个gpu上对应vtexture的使用情况
@@ -10,6 +10,8 @@ class GPUPageTableMgrPrivate;
 class GPUPageTableMgr : public UnifiedRescBase{
 public:
     struct GPUPageTableMgrCreateInfo{
+        mutable Ref<GPUMemMgr> gpu_mem_mgr;
+        mutable Ref<HostMemMgr> host_mem_mgr;
         int vtex_count;
         Int3 vtex_block_dim;
     };

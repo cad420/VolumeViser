@@ -20,6 +20,21 @@ public:
         Float3 voxel_space;
         //preserved and not used
         bool decoding_cpu_only = false;
+
+        friend std::ostream& operator<<(std::ostream& os, const VolumeDesc& desc){
+            os << "VolumeDesc Info : "
+               << "\n\tvolume_name : " << desc.volume_name
+               << "\n\tbits_per_sample : " << desc.bits_per_sample
+               << "\n\tsamples_per_voxel : " << desc.samples_per_voxel
+               << "\n\tis_float : " << desc.is_float
+               << "\n\tshape : " << desc.shape
+               << "\n\tblock_length : " << desc.block_length
+               << "\n\tpadding : " << desc.padding
+               << "\n\tblocked_dim : " << desc.blocked_dim
+               << "\n\tvoxel_space : " << desc.voxel_space
+               << "\n\tdecoding_cpu_only : " << desc.decoding_cpu_only;
+            return os;
+        }
     };
 
     virtual VolumeDesc GetVolumeDesc() = 0;
@@ -34,7 +49,7 @@ public:
     virtual void WriteVolumeRegion(const Int3& beg_pos, const Int3& end_pos, const void* ptr) = 0;
 
     static UnifiedRescUID GenUnifiedRescUID(){
-        std::atomic<size_t> g_uid = 0;
+        std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::VolumeIO);
     }

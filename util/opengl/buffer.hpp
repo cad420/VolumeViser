@@ -316,4 +316,17 @@ VUTIL_GL_BEGIN
         size_t size_ = 0;
     };
 
+    //GL_DYNAMIC_COPY
+    class pixel_unpack_buffer : public buffer_t{
+    public:
+        void bind() const noexcept {
+            assert(handle_);
+            GL_EXPR(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, handle_));
+        }
+        void unbind() const noexcept {
+            assert(handle_);
+            GL_EXPR(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
+        }
+    };
+
 VUTIL_GL_END

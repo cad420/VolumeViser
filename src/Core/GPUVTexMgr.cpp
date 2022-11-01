@@ -30,7 +30,7 @@ public:
 
     UnifiedRescUID uid;
     static UnifiedRescUID GenRescUID(){
-        static std::atomic<size_t> g_uid;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return GenUnifiedRescUID(uid, UnifiedRescType::GPUVTexMgr);
     }
@@ -92,9 +92,12 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     }
 
     GPUPageTableMgr::GPUPageTableMgrCreateInfo pt_info{
+        .gpu_mem_mgr = Ref<GPUMemMgr>(info.gpu_mem_mgr._get_ptr(), false),
+        .host_mem_mgr = Ref<HostMemMgr>(info.host_mem_mgr._get_ptr(), false),
         .vtex_count = info.vtex_count,
         .vtex_block_dim = info.vtex_shape / info.vtex_block_length
     };
+
     _->pt_mgr = std::make_unique<GPUPageTableMgr>(pt_info);
 
     _->vtex_count = info.vtex_count;
@@ -104,7 +107,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     _->vtex_block_dim = info.vtex_shape / info.vtex_block_length;
     _->vtex_block_size_bytes = (size_t)_->vtex_ele_size * _->vtex_block_length * _->vtex_block_length * _->vtex_block_length;
 
-    _->GenRescUID();
+    _->uid = _->GenRescUID();
 }
 
 GPUVTexMgr::~GPUVTexMgr() {

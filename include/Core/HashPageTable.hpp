@@ -1,7 +1,8 @@
 #pragma once
 
 #include "GPUPageTableMgr.hpp"
-
+#include "GPUMemMgr.hpp"
+#include "HostMemMgr.hpp"
 
 VISER_BEGIN
 
@@ -14,10 +15,16 @@ public:
     inline static HashTableKey INVALID_KEY = GPUPageTableMgr::INVALID_KEY;
     inline static HashTableValue INVALID_VALUE = GPUPageTableMgr::INVALID_VALUE;
 
-    HashPageTable(){
+
+
+    HashPageTable(Ref<GPUMemMgr> gpu_mem_mgr, Ref<HostMemMgr> host_mem_mgr){
+        ctx = gpu_mem_mgr->_get_cuda_context();
+        hash_page_table = gpu_mem_mgr->AllocBuffer(RescAccess::Shared, HashTableSize * sizeof(HashTableItem));
+        hhpt = host_mem_mgr->AllocPinnedHostMem(RescAccess::Shared, HashTableSize * sizeof(HashTableItem), false);
         Clear();
         dirty = false;
     }
+
 
     uint32_t GetHashValue(const HashTableKey& key){
         static_assert(sizeof(HashTableKey) == sizeof(int) * 4, "");
@@ -66,14 +73,26 @@ public:
         if(dirty) Update();
         return hash_page_table;
     }
+    //host memory, decide how to transfer by user
+    Handle<CUDABuffer> GetHostHandle(){
+        return hhpt;
+    }
 
 private:
+    //暂时使用null stream上传，因为数据量很小
     void Update(){
-        //todo transfer to device buffer
+        cub::memory_transfer_info info{
+            .width_bytes = HashTableSize * sizeof(HashTableItem),
+            .height = 1,
+            .depth = 1
+        };
+        cub::cu_memory_transfer(hhpt->view_1d<HashTableItem>(HashTableSize),
+                hash_page_table->view_1d<HashTableItem>(HashTableSize), info).launch(cub::cu_stream::null(ctx));
 
         dirty = false;
     }
 private:
+    cub::cu_context ctx;
     bool dirty = false;
     Handle<CUDAHostBuffer> hhpt;
     Handle<CUDABuffer> hash_page_table;

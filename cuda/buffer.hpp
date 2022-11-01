@@ -57,7 +57,7 @@ CUB_BEGIN
         }
 
         CUB_CPU_GPU size_t size() const {
-            return this->pitched_info.xsize / sizeof(T);
+            return this->pitched_info.xsize;
         }
 
         CUB_CPU_GPU auto sub_view(size_t origin, size_t len){
@@ -85,7 +85,7 @@ CUB_BEGIN
         }
 
         CUB_CPU_GPU size_t width() const{
-            return this->pitched_info.xsize / sizeof(T);
+            return this->pitched_info.xsize;
         }
 
         CUB_CPU_GPU size_t height() const{
@@ -144,7 +144,7 @@ CUB_BEGIN
             }
             else if(type == e_cu_host){
                 CUB_CHECK(cuMemAllocHost(&ptr, size));
-                CUB_CHECK(cuMemHostRegister(ptr, size, CU_MEMHOSTREGISTER_PORTABLE));
+//                CUB_CHECK(cuMemHostRegister(ptr, size, CU_MEMHOSTREGISTER_PORTABLE));
             }
         }
 
@@ -153,7 +153,7 @@ CUB_BEGIN
                 CUB_CHECK(cuMemFree((CUdeviceptr)ptr));
             }
             else if(type == e_cu_host){
-                CUB_CHECK(cuMemHostUnregister(ptr));
+//                CUB_CHECK(cuMemHostUnregister(ptr));
                 CUB_CHECK(cuMemFreeHost(ptr));
             }
         }
@@ -211,12 +211,12 @@ CUB_BEGIN
     template<>
     class cu_buffer<true>{
     public:
-        cu_buffer(size_t width_bytes, size_t height, uint32_t ele_size, cu_context ctx)
+        cu_buffer(size_t width, size_t height, uint32_t ele_size, cu_context ctx)
         :ele_size(ele_size), ctx(ctx)
         {
             ctx.set_ctx();
-            CUB_CHECK(cuMemAllocPitch((CUdeviceptr*)(&ptr), &info.pitch, width_bytes, height, ele_size));
-            info.xsize = width_bytes;
+            CUB_CHECK(cuMemAllocPitch((CUdeviceptr*)(&ptr), &info.pitch, width * ele_size, height, ele_size));
+            info.xsize = width;
             info.ysize = height;
         }
         ~cu_buffer(){

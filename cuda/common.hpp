@@ -43,7 +43,7 @@
 #define CUB_WHEN_DEBUG(op) do { } while(false);
 #endif
 
-#define CUB_CHECK(expr) check_cuda_call(expr)
+#define CUB_CHECK(expr) ::cub::check_cuda_call(expr)
 
 #define CUB_BEGIN namespace cub{
 #define CUB_END }

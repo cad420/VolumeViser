@@ -8,7 +8,7 @@ VISER_BEGIN
 //一个进程只需要有一个该实例，管理注册的host和device资源
 
 class ResourceMgrPrivate;
-class ResourceMgr final : public UnifiedRescBase{
+class ResourceMgr final : public UnifiedRescBase, vutil::no_copy_t{
 public:
     enum ResourceType{
         Host,

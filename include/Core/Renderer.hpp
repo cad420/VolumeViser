@@ -6,17 +6,12 @@
 
 VISER_BEGIN
 
-
-using ImageHandle = Handle<CUDAPitchedBuffer>;
-
 struct FrameBuffer{
     int frame_width = 0;
     int frame_height = 0;
 
-    ImageHandle color;
-    ImageHandle depth;
-
-    std::vector<ImageHandle> attach;
+    CUDABufferView2D<uint32_t> color;
+    CUDABufferView2D<float> depth;
 };
 //暂时只考虑体渲染，网格渲染的需求只有标注系统，因此网格渲染的部分完全
 //都在标注应用部分编写代码，而不作为核心库里的功能。
@@ -43,7 +38,7 @@ public:
 
     virtual void SetPerFrameParams(const PerFrameParams&) = 0;
 
-    virtual void Render(FrameBuffer& frame) = 0;
+    virtual void Render(Handle<FrameBuffer> frame) = 0;
 
 //    using RenderResult = cub::cu_result;
 //    virtual std::future<RenderResult> RenderAsync(FrameBuffer& frame) = 0;
@@ -91,7 +86,7 @@ public:
 
     void SetPerFrameParams(const PerFrameParams&) override;
 
-    void Render(FrameBuffer& frame) override;
+    void Render(Handle<FrameBuffer> frame) override;
 
     // 需要绑定纹理和页表两项资源
 

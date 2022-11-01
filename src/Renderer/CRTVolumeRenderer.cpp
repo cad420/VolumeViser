@@ -263,8 +263,11 @@ VISER_BEGIN
 
             return ret;
         }
+        CUB_KERNEL void TestKernel(){
 
+        }
         CUB_KERNEL void CRTVolumeRenderKernel(CTRVolumeRenderKernelParams params){
+            return;
             const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
             const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
             const unsigned int thread_count = blockDim.x * blockDim.y;
@@ -329,7 +332,7 @@ VISER_BEGIN
         static constexpr uint32_t shared_mem_size = 32u << 10;
 
         static UnifiedRescUID GenRescUID(){
-            static std::atomic<size_t> g_uid = 0;
+            static std::atomic<size_t> g_uid = 1;
             auto uid = g_uid.fetch_add(1);
             return GenUnifiedRescUID(uid, UnifiedRescType::CRTVolRenderer);
         }
@@ -417,18 +420,17 @@ VISER_BEGIN
         _->kernel_params.cu_per_frame_params.frame_w_over_h = per_frame_params.frame_w_over_h;
     }
 
-    void CRTVolumeRenderer::Render(FrameBuffer& frame) {
+    void CRTVolumeRenderer::Render(Handle<FrameBuffer> frame) {
         const dim3 tile = {16u, 16u, 1u};
-        auto clk = frame.color.AccessLock(AccessType::Write);
-        auto dlk = frame.depth.AccessLock(AccessType::Write);
-        _->kernel_params.framebuffer.color = frame.color->view_2d<uint32_t>();
-        _->kernel_params.framebuffer.depth = frame.depth->view_2d<float>();
+        _->kernel_params.framebuffer.color = frame->color;
+        _->kernel_params.framebuffer.depth = frame->depth;
         cub::cu_kernel_launch_info launch_info;
         launch_info.shared_mem_bytes = CRTVolumeRendererPrivate::shared_mem_size;
         launch_info.block_dim = tile;
-        launch_info.grid_dim = {(frame.frame_width + tile.x - 1) / tile.x,
-                                (frame.frame_height + tile.y - 1) / tile.y, 1};
-        auto render_task = cub::cu_kernel::pending(launch_info, CRTVolumeRenderKernel, _->kernel_params);
+        launch_info.grid_dim = {(frame->frame_width + tile.x - 1) / tile.x,
+                                (frame->frame_height + tile.y - 1) / tile.y, 1};
+        void* params[] = {&_->kernel_params};
+        auto render_task = cub::cu_kernel::pending(launch_info, &CRTVolumeRenderKernel, params);
         try{
             render_task.launch(_->render_stream).check_error_on_throw();
         }

@@ -14,11 +14,16 @@ ResourceMgr& ResourceMgr::GetInstance() {
     static ResourceMgr ins;
     return ins;
 }
-
-static auto init = [](){
-    LOG_DEBUG("ResourceMgr init successfully...");
-    return ResourceMgr::GetInstance().GetUID();
+struct resc_init{
+    resc_init(){
+        static auto _ = [](){
+            VISER_WHEN_DEBUG(std::cout << "ResourceMgr init successfully..." << std::endl)
+            ResourceMgr::GetInstance().GetUID();
+            return 0;
+        }();
+    }
 };
+inline resc_init _resc_init = resc_init();
 
 Ref<ResourceMgr> ResourceMgr::GetInstanceSafe() {
     return Ref<ResourceMgr>(&GetInstance());

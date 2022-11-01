@@ -37,7 +37,7 @@ VUTIL_GL_BEGIN
                 destroy();
             }
             catch(const std::exception& err){
-                std::cerr<<err.what()<<std::endl;
+                std::cerr << err.what() << std::endl;
             }
         }
     protected:

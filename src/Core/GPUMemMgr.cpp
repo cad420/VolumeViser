@@ -18,7 +18,7 @@ public:
     UnifiedRescUID uid;
 
     static UnifiedRescUID GenRescUID(){
-        static std::atomic<size_t> g_uid = 0;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return GenUnifiedRescUID(uid, UnifiedRescType::GPUMemMgr);
     }
@@ -73,14 +73,14 @@ Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access, size_t bytes) {
     return NewGeneralHandle<CUDABuffer>(access, bytes, cub::memory_type::e_cu_device, _->ctx);
 }
 
-Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access, size_t width_bytes, size_t height, size_t ele_size) {
-    auto bytes = width_bytes * height;
+Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access, size_t width, size_t height, size_t ele_size) {
+    auto bytes = width * height * ele_size;
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
     }
-    return NewGeneralHandle<CUDAPitchedBuffer>(access, width_bytes, height, ele_size, _->ctx);
+    return NewGeneralHandle<CUDAPitchedBuffer>(access, width, height, ele_size, _->ctx);
 }
 
 Handle<CUDATexture> GPUMemMgr::AllocTexture(RescAccess access, const TextureCreateInfo& info) {
@@ -102,7 +102,7 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         size_t alloc_size = (size_t)info.vtex_count * info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z
                 * info.bits_per_sample * info.samples_per_channel / 8;
         auto used = _->used_mem_bytes.fetch_add(alloc_size);
-        if(used > _->max_mem_bytes){
+        if(used + alloc_size > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
@@ -119,9 +119,9 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     }
     catch (const std::exception& e) {
         LOG_ERROR("RegisterGPUVTexMgr failed with create info: "
-                  "(vtex_count {}, vtex_shape {} {} {},"
-                  "bits_per_sample {}, samplers_per_channle {},"
-                  "vtex_block_length {}, is_float {}, exclusive {})",
+                  "\n\t(vtex_count {}, vtex_shape {} {} {},"
+                  "\n\tbits_per_sample {}, samplers_per_channle {},"
+                  "\n\tvtex_block_length {}, is_float {}, exclusive {})",
                   info.vtex_count, info.vtex_shape.x, info.vtex_shape.y, info.vtex_shape.z,
                   info.bits_per_sample, info.samples_per_channel, info.vtex_block_length, info.is_float, info.exclusive);
 
@@ -134,7 +134,7 @@ Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
     return {_->vtex_mgr_mp.at(uid).get()};
 }
 
-cub::cu_context GPUMemMgr::_get_cuda_context() {
+cub::cu_context GPUMemMgr::_get_cuda_context() const {
     return _->ctx;
 }
 

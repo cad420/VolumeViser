@@ -47,14 +47,12 @@ public:
     }
 
     template<typename... Args>
-    static cu_task pending(const cu_kernel_launch_info& info, void(*kernel)(Args...), Args... args){
-        void* params[sizeof...(args)] = {&args...};
+    static cu_task pending(const cu_kernel_launch_info& info, void(*kernel)(Args...), void** params){
         auto task = [=](cu_stream& stream) mutable {
-            CUB_CHECK(cuLaunchKernel((CUfunction)kernel,
-                                     info.grid_dim.x,info.grid_dim.y,info.grid_dim.z,
-                                     info.block_dim.x,info.block_dim.y,info.block_dim.z,
-                                     info.shared_mem_bytes,stream.lock().get(),
-                                     params, nullptr));
+//            stream.get_context().set_ctx();
+            CUB_CHECK(cudaLaunchKernel((const void*)kernel,
+                             info.grid_dim, info.block_dim,params,
+                                     info.shared_mem_bytes, stream.lock().get()));
             CUB_WHEN_DEBUG(std::cout << "cu_kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
                                      << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
         };

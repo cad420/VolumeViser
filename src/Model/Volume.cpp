@@ -17,7 +17,7 @@ public:
     UnifiedRescUID uid;
 
     static UnifiedRescUID GenRescUID() {
-        static std::atomic<size_t> g_uid = 0;
+        static std::atomic<size_t> g_uid = 1;
         auto _ = g_uid.fetch_add(1);
         return GenUnifiedRescUID(_, UnifiedRescType::GridVolume);
     }
@@ -55,7 +55,7 @@ GridVolume::GridVolume(const GridVolume::GridVolumeCreateInfo &info) {
 
     _->uid = _->GenRescUID();
 
-    for(uint32_t lod = info.min_lod; lod <= info.max_lod; lod++){
+    for(uint32_t lod = 0; lod < info.levels; lod++){
         assert(_->lod_vol_file_io.count(lod) != 0);
     }
 

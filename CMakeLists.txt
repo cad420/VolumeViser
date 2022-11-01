@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(VolumeViser LANGUAGES CXX C CUDA)
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+
 add_subdirectory(cuda)
 
 add_subdirectory(util)
@@ -33,7 +35,7 @@ target_include_directories(
 target_link_libraries(VolumeViserLib PUBLIC
         culib vutil_lib)
 
-target_link_libraries(VolumeViserLib PRIVATE
+target_link_libraries(VolumeViserLib PUBLIC
         VolumeUtils)
 
 

@@ -24,12 +24,12 @@ public:
     //被cache机制淘汰的才会被erase
     std::unordered_map<BlockUID, TexCoordIndex> record_block_mp;
 
-    HashPageTable hpt;
+    std::unique_ptr<HashPageTable> hpt;
 
     size_t total_items = 0;
 
     static UnifiedRescUID GenRescUID(){
-        static std::atomic<size_t> g_uid = 0;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return GenUnifiedRescUID(uid, UnifiedRescType::GPUPageTableMgr);
     }
@@ -40,6 +40,9 @@ public:
 
 GPUPageTableMgr::GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info) {
     _ = std::make_unique<GPUPageTableMgrPrivate>();
+
+    _->hpt = std::make_unique<HashPageTable>(Ref<GPUMemMgr>(info.gpu_mem_mgr._get_ptr(), false),
+                                             Ref<HostMemMgr>(info.host_mem_mgr._get_ptr(), false));
 
     _->uid = _->GenRescUID();
 }
@@ -121,21 +124,21 @@ void GPUPageTableMgr::Release(const std::vector<Key>& keys) {
 }
 
 HashPageTable& GPUPageTableMgr::GetPageTable() {
-    _->hpt.Clear();
+    _->hpt->Clear();
     for(auto& [block_uid, tex_coord] : _->record_block_mp){
         auto& [tid, coord] = tex_coord;
         if(_->tex_table[tid][coord].rw_lk.is_write_locked()){
-            _->hpt.Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid,
+            _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid,
                                        0}});
         }
         else{
             uint16_t flag = TexCoordFlag_IsValid;
             if(block_uid.IsBlack()) flag |= TexCoordFlag_IsBlack;
             if(block_uid.IsSparse()) flag |= TexCoordFlag_IsSparse;
-            _->hpt.Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, flag}});
+            _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, flag}});
         }
     }
-    return _->hpt;
+    return *_->hpt;
 }
 
 void GPUPageTableMgr::Promote(const Key &key) {

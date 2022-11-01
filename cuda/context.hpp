@@ -71,10 +71,12 @@ private:
     }
 
     struct Inner{
-        ~Inner(){
-            CUB_CHECK(cuCtxSetCurrent(ctx));
-            CUB_CHECK(cuCtxDestroy(ctx));
-        }
+//        ~Inner(){
+//            if(ctx){
+//                CUB_CHECK(cuCtxSetCurrent(ctx));
+//                CUB_CHECK(cuCtxDestroy(ctx));
+//            }
+//        }
         CUcontext ctx = nullptr;
     };
     std::shared_ptr<Inner> _ = std::make_shared<Inner>();

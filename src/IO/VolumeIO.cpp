@@ -63,12 +63,11 @@ void EBVolumeFile::ReadVolumeRegion(const Int3 &beg_pos, const Int3 &end_pos, vo
     size_t bytes = (size_t)_->desc.bits_per_sample * _->desc.samples_per_voxel * region.x * region.y * region.z;
     if(block_idx * (int)_->desc.block_length == block_beg_pos
     && (end_pos - beg_pos - Int3(_->desc.padding)) == Int3(_->desc.block_length)){
-        _->vol_reader->ReadBlockData({block_idx.x, block_idx.y, block_idx.y}, ptr, bytes);
+        _->vol_reader->ReadBlockData({block_idx.x, block_idx.y, block_idx.y}, ptr);
     }
     else{
         LOG_DEBUG("NOTE: ReadVolumeRegion is not block!!!");
-        _->vol_reader->ReadVolumeData(beg_pos.x, beg_pos.y, beg_pos.z, end_pos.x, end_pos.y, end_pos.z,
-                                      ptr, bytes);
+        _->vol_reader->ReadVolumeData(beg_pos.x, beg_pos.y, beg_pos.z, end_pos.x, end_pos.y, end_pos.z, ptr);
     }
 }
 

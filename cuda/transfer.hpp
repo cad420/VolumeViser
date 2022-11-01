@@ -28,15 +28,15 @@ namespace detail {
     struct cu_buffer_transfer<T, 1> {
         static cu_task transfer(const buffer_view<T, 1> &src, const buffer_view<T, 1> &dst, const memory_transfer_info &info) {
             return {[=](cu_stream &stream) {
-                auto src_p = reinterpret_cast<unsigned char *>(src.data()) + info.src_x_bytes;
-                auto dst_p = reinterpret_cast<unsigned char *>(dst.data()) + info.dst_x_bytes;
+                auto src_p = reinterpret_cast<const unsigned char *>(src.data()) + info.src_x_bytes;
+                auto dst_p = reinterpret_cast<const unsigned char *>(dst.data()) + info.dst_x_bytes;
                 CUB_CHECK(cuMemcpyAsync((CUdeviceptr) dst_p, (CUdeviceptr) src_p, info.width_bytes, stream._->stream));
             }};
         }
 
         static cu_task transfer(const buffer_view<T, 1> &src, const cu_array<T, 1> &dst, const memory_transfer_info &info) {
             return {[=](cu_stream &stream) {
-                auto src_p = reinterpret_cast<unsigned char *>(src.data()) + info.src_x_bytes;
+                auto src_p = reinterpret_cast<const unsigned char *>(src.data()) + info.src_x_bytes;
                 if (src.is_device()) {
                     CUB_CHECK(cuMemcpyDtoA(dst.get_handle(), info.dst_x_bytes, (CUdeviceptr) src_p, info.width_bytes));
                 } else {

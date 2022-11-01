@@ -71,6 +71,7 @@ class cu_texture_wrap{
 public:
     cu_texture_wrap(const texture_resc_info& resc_info, const texture_view_info& view_info, cu_context ctx){
         cudaChannelFormatDesc desc;
+        std::memset(&desc, 0, sizeof(desc));
         int* p = reinterpret_cast<int*>(&desc);
         int bits = get_fmt_bits(resc_info.format);
         for(int i = 0; i < resc_info.channels; ++i)
@@ -88,6 +89,7 @@ public:
         resc_desc.res.array.array = array;
 
         cudaTextureDesc tex_desc;
+        std::memset(&tex_desc, 0, sizeof(tex_desc));
         switch (view_info.address) {
             case e_wrap : tex_desc.addressMode[0] = cudaAddressModeWrap; break;
             case e_clamp : tex_desc.addressMode[0] = cudaAddressModeClamp; break;

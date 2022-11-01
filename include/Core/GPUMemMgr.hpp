@@ -39,7 +39,7 @@ public:
     // 当可用内存不足时，会抛出异常
     Handle<CUDABuffer> AllocBuffer(RescAccess access, size_t bytes);
 
-    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access, size_t width_bytes, size_t height, size_t ele_size);
+    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access, size_t width, size_t height, size_t ele_size);
 
     struct TextureCreateInfo{
         cub::texture_resc_info resc_info;
@@ -55,10 +55,11 @@ public:
 protected:
     friend class GPUVTexMgr;
     friend class CRTVolumeRenderer;
+    friend class HashPageTable;
     //不再更新使用内存
     Handle<CUDATexture> _AllocTexture(RescAccess access, const TextureCreateInfo& info);
 
-    cub::cu_context _get_cuda_context();
+    cub::cu_context _get_cuda_context() const ;
 
     friend class ResourceMgr;
     std::unique_ptr<GPUMemMgrPrivate> _;

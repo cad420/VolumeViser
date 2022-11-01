@@ -17,7 +17,7 @@ public:
     UnifiedRescUID uid;
 
     static UnifiedRescUID GenRescUID(){
-        static std::atomic<size_t> g_uid = 0;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return GenUnifiedRescUID(uid, UnifiedRescType::HostMemMgr);
     }
@@ -60,21 +60,27 @@ UnifiedRescUID HostMemMgr::GetUID() const {
 }
 
 template<>
-Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes){
-    auto used = _->used_mem_bytes.fetch_add(bytes);
-    if(used > _->max_mem_bytes){
-        _->used_mem_bytes.fetch_sub(bytes);
-        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc pinned buffer with size: " + std::to_string(bytes));
+Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes, bool required){
+    if(!required){
+        auto used = _->used_mem_bytes.fetch_add(bytes);
+        if (used > _->max_mem_bytes) {
+            _->used_mem_bytes.fetch_sub(bytes);
+            throw ViserResourceCreateError(
+                    "No enough free memory for HostMemMgr to alloc pinned buffer with size: " + std::to_string(bytes));
+        }
     }
     return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::memory_type::e_cu_host, _->ctx);
 }
 
 template<>
-Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescAccess access, size_t bytes){
-    auto used = _->used_mem_bytes.fetch_add(bytes);
-    if(used > _->max_mem_bytes){
-        _->used_mem_bytes.fetch_sub(bytes);
-        throw ViserResourceCreateError("No enough free memory for HostMemMgr to alloc paged buffer with size: " + std::to_string(bytes));
+Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescAccess access, size_t bytes, bool required){
+    if(!required){
+        auto used = _->used_mem_bytes.fetch_add(bytes);
+        if (used > _->max_mem_bytes) {
+            _->used_mem_bytes.fetch_sub(bytes);
+            throw ViserResourceCreateError(
+                    "No enough free memory for HostMemMgr to alloc paged buffer with size: " + std::to_string(bytes));
+        }
     }
     return NewGeneralHandle<HostBuffer>(access, bytes);
 }
