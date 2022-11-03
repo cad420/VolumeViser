@@ -93,7 +93,7 @@ protected:
 
 class cu_event{
 public:
-    cu_event(bool enable_blocking = true, bool enable_timing = false){
+    cu_event(bool enable_blocking = true, bool enable_timing = true){
         uint32_t flags = 0;
         if(enable_blocking)
             flags |= CU_EVENT_BLOCKING_SYNC;

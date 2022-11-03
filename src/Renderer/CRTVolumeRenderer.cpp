@@ -263,13 +263,24 @@ VISER_BEGIN
 
             return ret;
         }
-        CUB_KERNEL void TestKernel(){
-
+        CUB_GPU uint32_t Float4ToUInt(const float4& f){
+            uint32_t ret = (uint32_t)(saturate(f.x) * 255u)
+                         | ((uint32_t)(saturate(f.y) * 255u) << 8)
+                         | ((uint32_t)(saturate(f.z) * 255u) << 16)
+                         | ((uint32_t)(saturate(f.w) * 255u) << 24);
+            return ret;
         }
         CUB_KERNEL void CRTVolumeRenderKernel(CTRVolumeRenderKernelParams params){
-            return;
             const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
             const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+            if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
+                return;
+            float4 rgba = make_float4((x + 0.5) / params.cu_per_frame_params.frame_width,
+                                      (y + 0.5) / params.cu_per_frame_params.frame_height, 0.0, 1.0);
+            params.framebuffer.color.at(x, y) = Float4ToUInt(rgba);
+
+            return;
+
             const unsigned int thread_count = blockDim.x * blockDim.y;
             const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
             const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;

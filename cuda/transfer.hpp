@@ -345,7 +345,9 @@ cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& d
 
 
 inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_wrap& dst, const memory_transfer_info& info){
-    CHECK_CTX_SAME(src, dst)
+    if(src.get_type() == memory_type::e_cu_device){
+        CHECK_CTX_SAME(src, dst)
+    }
     return cu_task{[&](cu_stream& stream){
         CUDA_MEMCPY3D m;
         std::memset(&m, 0, sizeof(m));

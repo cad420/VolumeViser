@@ -86,7 +86,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     };
     for(int i = 0; i < info.vtex_count; i++){
         auto tex_handle = info.gpu_mem_mgr->_AllocTexture(RescAccess::Shared, tex_info);
-        auto tex_uid = tex_handle.GetUID();
+        auto tex_uid = i;
         assert(_->tex_mp.count(tex_uid) == 0);
         _->tex_mp[tex_uid] = std::move(tex_handle);
     }

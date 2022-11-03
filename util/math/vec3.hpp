@@ -21,6 +21,9 @@ VUTIL_BEGIN
         tvec3(const self_t& v) noexcept;
         tvec3(const tvec<T,3>& v) noexcept;
 
+        template<typename U>
+        tvec3(const tvec3<U>& v) noexcept;
+
         bool is_zero() const noexcept;
 
         bool is_finite() const noexcept;

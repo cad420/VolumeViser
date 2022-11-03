@@ -263,7 +263,7 @@ VUTIL_GL_BEGIN
                     detail::dt_to_tt<DataT>::type,data
             ));
             GL_EXPR(glPixelStorei(GL_UNPACK_ALIGNMENT,old_row_align));
-            GL_EXPR(glGenerateTextureMipmap(handle_));
+//            GL_EXPR(glGenerateTextureMipmap(handle_));
         }
 
         void set_texture_param(GLenum param_name,GLint param_value){

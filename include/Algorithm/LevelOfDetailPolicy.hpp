@@ -11,10 +11,11 @@ VISER_BEGIN
 
 
 void ComputeIntersectedBlocksWithViewFrustum(std::vector<GridVolume::BlockUID>& blocks,
-                                             const GridVolume& volume,
-                                             const Frustum& funstum,
-                                             const Float3& view,
-                                             std::function<int(float)> lod);
+                                             const Float3& block_space,
+                                             const UInt3& block_dim,
+                                             const BoundingBox3D& volume_box,
+                                             const Frustum& frustum,
+                                             std::function<int(const BoundingBox3D& box)> lod);
 
 template<typename ViewSpace>
 void ComputeIntersectedBlocksWithViewSpace(std::vector<GridVolume::BlockUID>& blocks,

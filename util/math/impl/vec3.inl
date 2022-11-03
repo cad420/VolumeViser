@@ -34,6 +34,13 @@ VUTIL_BEGIN
     {
 
     }
+    template <typename T>
+    template<typename U>
+    tvec3<T>::tvec3(const tvec3<U>& v) noexcept
+    :x(T(v.x)), y(T(v.y)), z(T(v.z))
+    {
+
+    }
 
     template <typename T>
     tvec3<T>::tvec3(const tvec<T,3>& v) noexcept

@@ -298,7 +298,7 @@ public:
     }
 
     void SetUID(UnifiedRescUID uid){
-        assert(IsValid());
+//        assert(IsValid());
         _->uid = uid;
     }
 
@@ -473,5 +473,17 @@ inline BoxVisibility GetBoxVisibility(const Frustum& frustum, const BoundingBox3
     return vutil::get_box_visibility(frustum, box);
 }
 
+inline BoundingBox3D FrustumToBoundingBox3D(const Frustum& frustum){
+    BoundingBox3D box;
+    for(int i = 0; i < 8; i++){
+        box.low.x = std::min(box.low.x, frustum.frustum_corners[i].x);
+        box.low.y = std::min(box.low.y, frustum.frustum_corners[i].y);
+        box.low.z = std::min(box.low.z, frustum.frustum_corners[i].z);
+        box.high.x = std::max(box.high.x, frustum.frustum_corners[i].x);
+        box.high.y = std::max(box.high.y, frustum.frustum_corners[i].y);
+        box.high.z = std::max(box.high.z, frustum.frustum_corners[i].z);
+    }
+    return box;
+}
 
 VISER_END

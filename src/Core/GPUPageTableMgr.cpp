@@ -44,6 +44,20 @@ GPUPageTableMgr::GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info) {
     _->hpt = std::make_unique<HashPageTable>(Ref<GPUMemMgr>(info.gpu_mem_mgr._get_ptr(), false),
                                              Ref<HostMemMgr>(info.host_mem_mgr._get_ptr(), false));
 
+    _->total_items = info.vtex_count * info.vtex_block_dim.x * info.vtex_block_dim.y * info.vtex_block_dim.z;
+
+    _->lru = std::make_unique<vutil::lru_t<GridVolume::BlockUID, GPUPageTableMgrPrivate::TexCoordIndex>>(_->total_items);
+
+    for(uint32_t tid = 0; tid < info.vtex_count; ++tid){
+        for(uint32_t ix = 0; ix < info.vtex_block_dim.x; ++ix){
+            for(uint32_t iy = 0; iy < info.vtex_block_dim.y; ++iy){
+                for(uint32_t iz = 0; iz < info.vtex_block_dim.z; ++iz){
+                    _->freed.emplace(GPUPageTableMgrPrivate::TexCoordIndex{tid,{ix, iy, iz}});
+                }
+            }
+        }
+    }
+
     _->uid = _->GenRescUID();
 }
 
@@ -66,8 +80,6 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
     if(keys.size() > _->total_items){
         throw std::runtime_error("Too many keys for GPUPageTableMgr to GetAndLock");
     }
-
-    items.clear();
 
     for(auto key : keys){
         auto value = _->lru->get_value(key);

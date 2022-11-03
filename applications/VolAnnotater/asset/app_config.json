@@ -1,0 +1,11 @@
+{
+  "max_host_mem_gb" : 8,
+  "max_render_gpu_mem_gb" : 6,
+  "max_compute_gpu_mem_gb" : 6,
+  "render_gpu_index": 0,
+  "compute_gpu_index":0,
+  "max_fixed_host_mem_gb": 6,
+  "async_decoding_threads_count":2,
+  "virtual_texture_count": 5,
+  "virtual_texture_shape": [1024,1024,1024]
+}

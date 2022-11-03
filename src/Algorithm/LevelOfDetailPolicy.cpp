@@ -1,14 +1,59 @@
 #include <Algorithm/LevelOfDetailPolicy.hpp>
-
+#include <unordered_set>
 VISER_BEGIN
 
 
 
     void ComputeIntersectedBlocksWithViewFrustum(std::vector<GridVolume::BlockUID>& blocks,
-                                                 const GridVolume& volume,
-                                                 const Frustum & space,
-                                                 const Float3& view,
-                                                 std::function<int(float)> lod){
+                                                 const Float3& block_space,
+                                                 const UInt3& block_dim,
+                                                 const BoundingBox3D& volume_box,
+                                                 const Frustum& frustum,
+                                                 std::function<int(const BoundingBox3D&)> lod){
+        auto box = FrustumToBoundingBox3D(frustum);
+        box &= volume_box;
+        box = {box.low - volume_box.low, box.high - volume_box.low};
+        assert(box.low.x >= 0 && box.low.y >= 0 && box.low.z >= 0);
+        assert(box.high.x > box.low.x && box.high.y > box.low.y && box.high.z > box.low.z);
+        auto idx_beg = UInt3(box.low / block_space);
+        auto idx_end = UInt3(box.high/ block_space) + UInt3(1);
+        idx_end.x = std::min(idx_end.x, block_dim.x);
+        idx_end.y = std::min(idx_end.y, block_dim.y);
+        idx_end.z = std::min(idx_end.z, block_dim.z);
+        std::vector<std::pair<GridVolume::BlockUID, BoundingBox3D>> lod0_blocks;
+        for(auto z = idx_beg.z; z < idx_end.z; z++){
+            for(auto y = idx_beg.y; y < idx_end.y; y++){
+                for(auto x = idx_beg.x; x < idx_end.x; x++){
+                    GridVolume::BlockUID block_uid = {x, y, z, 0};
+                    BoundingBox3D block_box = {{
+                        volume_box.low.x + x * block_space.x,
+                        volume_box.low.y + y * block_space.y,
+                        volume_box.low.z + z * block_space.z
+                        },{
+                        volume_box.low.x + (x + 1) * block_space.x,
+                        volume_box.low.y + (y + 1) * block_space.y,
+                        volume_box.low.z + (z + 1) * block_space.z
+                    }};
+                    if(GetBoxVisibility(frustum, block_box) != BoxVisibility::Invisible){
+                        lod0_blocks.emplace_back(block_uid, block_box);
+                    }
+                }
+            }
+        }
+        LOG_DEBUG("Lod0 intersect blocks count : {}", lod0_blocks.size());
+        std::unordered_set<GridVolume::BlockUID> res;
+        for(auto& b : lod0_blocks){
+            uint32_t l = lod(b.second);
+            UInt3 idx = {b.first.x, b.first.y, b.first.z};
+            for(int i = 0; i < l; ++i){
+                idx = (idx + UInt3(1)) / 2u;
+            }
+            res.insert(GridVolume::BlockUID{idx.x, idx.y, idx.z, l});
+        }
+        blocks.reserve(res.size());
+        for(auto& b : res){
+            blocks.emplace_back(b);
+        }
 
     }
 
