@@ -1,6 +1,7 @@
 #include <Core/GPUVTexMgr.hpp>
 #include <Core/GPUPageTableMgr.hpp>
 #include <Core/GPUMemMgr.hpp>
+#include <Core/HashPageTable.hpp>
 VISER_BEGIN
 
 class GPUVTexMgrPrivate{
@@ -25,6 +26,7 @@ public:
     cub::cu_stream transfer_stream;
 
     cub::cu_submitted_tasks submitted_tasks;
+    std::unordered_map<size_t, GPUPageTableMgr::TexCoord> submitted_items;
 
     std::mutex g_mtx;
 
@@ -41,6 +43,9 @@ public:
         info.src_x_bytes = 0;
         info.src_y = 0;
         info.src_z = 0;
+        info.dst_x_bytes = tex_coord.sx * vtex_block_length * vtex_ele_size;
+        info.dst_y = tex_coord.sy * vtex_block_length;
+        info.dst_z = tex_coord.sz * vtex_block_length;
         info.width_bytes = vtex_block_length * vtex_ele_size;
         info.height = vtex_block_length;
         info.depth = vtex_block_length;
@@ -135,22 +140,30 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     //因为可能渲染启动的时候，拷贝没有完成，内部也会做一些同步，比如读之前必须等待写完成
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
     cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
-
+    _->pt_mgr->GetPageTable().Update({GridVolume::BlockUID(src.GetUID()), dst});
 }
 
 void GPUVTexMgr::UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, GPUVTexMgr::TexCoord dst) {
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
     _->submitted_tasks.add(
             cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info)
-            .launch_async(_->transfer_stream));
-
+            .launch_async(_->transfer_stream), src.GetUID());
+    _->submitted_items[src.GetUID()] = dst;
 }
 
 void GPUVTexMgr::Flush() {
+    //这里调用GPUPageTableMgr的Promote 将写锁改为读锁
     auto ret = _->submitted_tasks.wait();
-    for(const auto& r : ret){
+    for(const auto& [uid, r] : ret){
         if(r.error()){
             LOG_ERROR("{}, {}", r.name(), r.msg());
+        }
+        else{
+            auto tex_coord = _->submitted_items[uid];
+            tex_coord.flag = TexCoordFlag_IsValid;
+            _->submitted_items.erase(uid);
+//            _->pt_mgr->GetPageTable().Update({GridVolume::BlockUID(uid), tex_coord});
+            _->pt_mgr->Promote(GridVolume::BlockUID(uid));
         }
     }
     LOG_DEBUG("GPUVTexMgr Flush...");

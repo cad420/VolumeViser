@@ -144,6 +144,7 @@ CUB_BEGIN
             }
             else if(type == e_cu_host){
                 CUB_CHECK(cuMemAllocHost(&ptr, size));
+                std::memset(ptr, 0, size);
 //                CUB_CHECK(cuMemHostRegister(ptr, size, CU_MEMHOSTREGISTER_PORTABLE));
             }
         }

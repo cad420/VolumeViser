@@ -402,9 +402,12 @@ public:
     //统一销毁资源，不管是Unique还是Shared的
     //应该在没有被锁住的情况下调用
     void Destroy(){
-        _->callback(_->uid);
-        _->resc.reset();
-        _.reset();
+        if(_){
+            if(_->callback)
+                _->callback(_->uid);
+            _->resc.reset();
+            _.reset();
+        }
     }
 
     bool IsValid() const{

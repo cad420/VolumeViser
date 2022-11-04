@@ -70,6 +70,8 @@ inline bool is_float(tex_format fmt) {
 class cu_texture_wrap{
 public:
     cu_texture_wrap(const texture_resc_info& resc_info, const texture_view_info& view_info, cu_context ctx){
+        this->ctx = ctx;
+        ctx.set_ctx();
         cudaChannelFormatDesc desc;
         std::memset(&desc, 0, sizeof(desc));
         int* p = reinterpret_cast<int*>(&desc);

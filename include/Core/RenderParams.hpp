@@ -78,6 +78,9 @@ struct RenderParams{
     }tf;
     struct {
         bool use_2d_tf = false;
+        float ray_step = 0.f;
+        float max_ray_dist = 0.f;
+        Float3 inv_tex_shape;
     }other;
 };
 
@@ -91,6 +94,7 @@ struct PerFrameParams{
     int frame_height;
     Float3 cam_up;
     float frame_w_over_h;
+    int debug_mode = 0;
 };
 
 

@@ -14,7 +14,12 @@ VISER_BEGIN
         box &= volume_box;
         box = {box.low - volume_box.low, box.high - volume_box.low};
         assert(box.low.x >= 0 && box.low.y >= 0 && box.low.z >= 0);
-        assert(box.high.x > box.low.x && box.high.y > box.low.y && box.high.z > box.low.z);
+        if(!(box.high.x > box.low.x && box.high.y > box.low.y && box.high.z > box.low.z)){
+            return;
+            auto b = FrustumToBoundingBox3D(frustum);
+
+            LOG_DEBUG("frustum box : {} {} {}, {} {} {}", b.low.x, b.low.y, b.low.z, b.high.x, b.high.y, b.high.z);
+        }
         auto idx_beg = UInt3(box.low / block_space);
         auto idx_end = UInt3(box.high/ block_space) + UInt3(1);
         idx_end.x = std::min(idx_end.x, block_dim.x);
@@ -37,6 +42,9 @@ VISER_BEGIN
                     if(GetBoxVisibility(frustum, block_box) != BoxVisibility::Invisible){
                         lod0_blocks.emplace_back(block_uid, block_box);
                     }
+                    else{
+                        LOG_DEBUG("invisible block : {} {} {}",block_uid.x, block_uid.y, block_uid.z);
+                    }
                 }
             }
         }
@@ -46,7 +54,7 @@ VISER_BEGIN
             uint32_t l = lod(b.second);
             UInt3 idx = {b.first.x, b.first.y, b.first.z};
             for(int i = 0; i < l; ++i){
-                idx = (idx + UInt3(1)) / 2u;
+                idx = idx / 2u;
             }
             res.insert(GridVolume::BlockUID{idx.x, idx.y, idx.z, l});
         }

@@ -13,13 +13,17 @@ VISER_BEGIN
             ptr[cur] = pt.second;
             if(first){
                 last = cur;
+                first = false;
                 continue;
             }
-            int d = last - cur;
+            int d = cur - last;
             for(int i = last + 1; i < cur; i++){
+                auto v = ptr[last], vv = ptr[cur];
                 ptr[i] = ptr[last] * static_cast<Key>(cur - i) / static_cast<Key>(d)
                         + ptr[cur] * static_cast<Key>(i - last) / static_cast<Key>(d);
+                std::cout << "i: " << i << ", " << ptr[i] << std::endl;
             }
+            last = cur;
         }
     }
 

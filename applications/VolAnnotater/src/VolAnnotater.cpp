@@ -6,6 +6,7 @@
 #include <json.hpp>
 #include <fstream>
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
+#define FOV 30.f
 class VolAnnotaterApp : public gl_app_t{
     // *.lod.desc.json
     void loadLODVolumeData(const std::string& lod_filename){
@@ -128,8 +129,38 @@ class VolAnnotaterApp : public gl_app_t{
 
 
         ComputeUpBoundLOD(lod, render_base_space, offscreen.frame_width, offscreen.frame_height,
-                          vutil::deg2rad(45.f));
+                          vutil::deg2rad(FOV));
         lod.LOD[max_lod] = std::numeric_limits<float>::max();
+
+        VolumeParams vol_params;
+        vol_params.block_length = volume_desc.block_length;
+        vol_params.padding = volume_desc.padding;
+        vol_params.voxel_dim = volume_desc.shape;
+        vol_params.bound = {
+                {0.f, 0.f, 0.f},
+                Float3(vol_params.voxel_dim) * render_base_space * volume_space_ratio
+        };
+        crt_vol_renderer->SetVolume(vol_params);
+
+        RenderParams render_params;
+        render_params.lod.updated = true;
+        render_params.lod.leve_of_dist = lod;
+        render_params.tf.updated = true;
+        render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
+        render_params.tf.tf_pts.pts[0.383f] = Float4(0.f);
+        render_params.tf.tf_pts.pts[0.446] = Float4(0.1, 0.7, 1.0, 0.65);
+        render_params.tf.tf_pts.pts[1.f] = Float4(0.1, 0.7, 1.0, 0.65);
+        render_params.other.ray_step = 0.001f;
+        render_params.other.max_ray_dist = 3.f;
+        render_params.other.inv_tex_shape = Float3(1.f / create_info.vtex_shape_x,
+                                                   1.f / create_info.vtex_shape_y,
+                                                   1.f / create_info.vtex_shape_z);
+        crt_vol_renderer->SetRenderParams(render_params);
+
+        auto vtexs = gpu_vtex_mgr_ref->GetAllTextures();
+        for(auto& [unit, handle] : vtexs){
+            crt_vol_renderer->BindVTexture(handle, unit);
+        }
 
         LOG_DEBUG("Successfully Finish Render Resource Init...");
     }
@@ -194,8 +225,8 @@ public:
             debug.host_depth.resize(framebuffer->frame_height * framebuffer->frame_width);
         }
 
-        camera.set_position({1.012f, 1.012f, 1.6f});
-        camera.set_perspective(45.f, 0.01f, 10.f);
+        camera.set_position({0.512f, 0.512f, 0.8f});
+        camera.set_perspective(FOV, 0.01f, 10.f);
         camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     }
 
@@ -223,9 +254,9 @@ public:
 
         //=========================================
         // 设置体渲染参数并进行CUDA绘制
-
+        vol_render_timer.start();
         render_volume();
-
+        vol_render_timer.stop();
         CUB_CHECK(cudaGraphicsUnmapResources(2, rescs));
 
         //=========================================
@@ -248,7 +279,11 @@ public:
 
         frame_vol();
 
+        frame_timer();
 
+        frame_debug();
+
+        ImGui::ShowDemoWindow();
     }
 
     void destroy() override{
@@ -258,7 +293,7 @@ private:
     void update_vol_camera(){
         vol_camera.width = offscreen.frame_width;
         vol_camera.height = offscreen.frame_height;
-        vol_camera.fov = 45.f;
+        vol_camera.fov = FOV;
         vol_camera.near = camera.get_near_z();
         vol_camera.far = camera.get_far_z();
         vol_camera.pos = camera.get_position();
@@ -270,12 +305,14 @@ private:
     void render_volume(){
 
         // 计算视锥体内的数据块
+
         update_vol_camera();
         auto camera_proj_view = vol_camera.GetProjViewMatrix();
         Frustum camera_view_frustum;
         ExtractFrustumFromMatrix(camera_proj_view, camera_view_frustum);
-        static std::vector<GridVolume::BlockUID> intersect_blocks;
+        auto& intersect_blocks = vol_renderer_priv_data.intersect_blocks;
         intersect_blocks.clear();
+
         ComputeIntersectedBlocksWithViewFrustum(intersect_blocks,
                                                 (float)volume_desc.block_length * volume_space_ratio * render_base_space,
                                                 volume_desc.blocked_dim,
@@ -291,21 +328,18 @@ private:
             }
             return max_lod;
         });
-        VISER_WHEN_DEBUG(
-                LOG_DEBUG("total intersect block count : {}", intersect_blocks.size());
-                for(auto& b : intersect_blocks){
-                    LOG_DEBUG("intersect lod {} block : {} {} {}", b.GetLOD(), b.x, b.y, b.z);
-                }
-                )
+
         // 加载缺失的数据块到虚拟纹理中
-        static std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
+        auto& blocks_info = vol_renderer_priv_data.blocks_info;
         blocks_info.clear();
         gpu_pt_mgr_ref->GetAndLock(intersect_blocks, blocks_info);
 
         //因为是单机同步的，不需要加任何锁
         // 暂时使用同步等待加载完数据块
-        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> host_blocks;//在循环结束会释放Handle
-        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> missed_host_blocks;
+        auto& host_blocks = vol_renderer_priv_data.host_blocks;//在循环结束会释放Handle
+        host_blocks.clear();
+        auto& missed_host_blocks = vol_renderer_priv_data.missed_host_blocks;
+        missed_host_blocks.clear();
         for(auto& block : blocks_info){
             if(!block.second.Missed()) continue;
             auto block_hd = host_block_pool_ref->GetBlock(block.first.ToUnifiedRescUID());
@@ -320,7 +354,7 @@ private:
 
         // 解压数据块
         // 这里先加载lod小的数据块，但是在同步下是没关系的，只有在异步加载的时候有意义
-        static std::map<int, std::vector<std::function<void()>>> task_mp;
+        auto& task_mp = vol_renderer_priv_data.task_mp;
         task_mp.clear();
         for(auto& missed_block : missed_host_blocks){
             int lod = missed_block.first.GetLOD();
@@ -329,14 +363,26 @@ private:
                      block_handle = std::move(missed_block.second)
                      ]()mutable{
                         volume->ReadBlock(block, *block_handle);
+                        if constexpr (false){
+                            std::vector<int> table(256, 0);
+                            auto v = block_handle->view_1d<uint8_t>(256 * 256 * 256);
+                            for(int i = 0; i < 1 << 24; i++){
+                                table[v.at(i)]++;
+                            }
+                            for(int i = 0; i < 256; i++)
+                                std::cout << "(" << i << "," << table[i] << ")  ";
+                            std::cout << std::endl;
+                        }
                         block_handle.SetUID(block.ToUnifiedRescUID());
                         host_blocks[block] = std::move(block_handle);
                         LOG_DEBUG("finish lod {} block ({}, {}, {}) loading...",
                                   block.GetLOD(), block.x, block.y, block.z);
                     });
         }
-        static std::map<int, vutil::task_group_handle_t> task_groups; task_groups.clear();
-        static std::vector<int> lods; lods.clear();
+        auto& task_groups = vol_renderer_priv_data.task_groups;
+        task_groups.clear();
+        auto& lods = vol_renderer_priv_data.lods;
+        lods.clear();
         for(auto& task : task_mp){
             int count = task.second.size();
             int lod = task.first;
@@ -360,6 +406,7 @@ private:
         //同步，等待所有解压任务完成
         thread_group.wait_idle();
 
+
         //将数据块上传到虚拟纹理
         for(auto& missed_block : blocks_info){
             if(!missed_block.second.Missed()) continue;
@@ -371,14 +418,17 @@ private:
         gpu_vtex_mgr_ref->Flush();
 
 
-//        crt_vol_renderer->BindPTBuffer(gpu_pt_mgr_ref->GetPageTable().GetHandle());
+        crt_vol_renderer->BindPTBuffer(gpu_pt_mgr_ref->GetPageTable().GetHandle());
+
 
         //更新每一帧绘制的参数
-        static PerFrameParams per_frame_params{};
+        auto& per_frame_params = vol_renderer_priv_data.per_frame_params;
         updatePerFrameParams(per_frame_params);
         crt_vol_renderer->SetPerFrameParams(per_frame_params);
 
+
         crt_vol_renderer->Render(framebuffer);
+
 
         gpu_pt_mgr_ref->Release(intersect_blocks);
     }
@@ -388,6 +438,12 @@ private:
         params.frame_width = framebuffer->frame_width;
         params.frame_height = framebuffer->frame_height;
         params.frame_w_over_h = (float)framebuffer->frame_width / (float)framebuffer->frame_height;
+        params.fov = vutil::deg2rad(FOV);
+        params.cam_pos = vol_camera.pos;
+        params.cam_dir = (vol_camera.target - vol_camera.pos).normalized();
+        params.cam_up = vol_camera.up;
+        params.cam_right = vutil::cross(params.cam_dir, params.cam_up).normalized();
+        params.debug_mode = debug.debug_mode;
     }
 private:
     //将体绘制的结果画到ImGui窗口上
@@ -400,10 +456,71 @@ private:
 
         ImGui::End();
     }
+
+    void frame_timer(){
+        ImGui::Begin("Time cost");
+
+        ImGui::Text("%s", vol_render_timer.duration_str().c_str());
+
+        ImGui::Text("Volume Bound: %f %f %f, %f %f %f", volume_box.low.x, volume_box.low.y, volume_box.low.z,
+                    volume_box.high.x, volume_box.high.y, volume_box.high.z);
+
+        ImGui::Text("Camera Pos: %f %f %f", vol_camera.pos.x, vol_camera.pos.y, vol_camera.pos.z);
+        ImGui::Text("Camera Target: %f %f %f", vol_camera.target.x, vol_camera.target.y, vol_camera.target.z);
+        ImGui::Text("Camera Dir: %f %f %f", vol_renderer_priv_data.per_frame_params.cam_dir.x,
+                    vol_renderer_priv_data.per_frame_params.cam_dir.y,
+                    vol_renderer_priv_data.per_frame_params.cam_dir.z);
+
+        if(ImGui::RadioButton("debug normal", debug.debug_mode == debug_mode_normal)){
+            debug.debug_mode = debug_mode_normal;
+        }
+        if(ImGui::RadioButton("debug entry pos", debug.debug_mode == debug_mode_entry_pos)){
+            debug.debug_mode = debug_mode_entry_pos;
+        }
+        if(ImGui::RadioButton("debug exit pos", debug.debug_mode == debug_mode_exit_pos)){
+            debug.debug_mode = debug_mode_exit_pos;
+        }
+
+
+        ImGui::End();
+    }
+
+    void frame_debug(){
+        ImGui::Begin("Debug");
+
+        ImGui::BeginTable("intersect blocks", 3);
+
+        ImGui::TableSetupColumn("BlockUID");
+        ImGui::TableSetupColumn("TexCoord");
+        ImGui::TableSetupColumn("Status");
+        ImGui::TableHeadersRow();
+
+        for(auto& b : vol_renderer_priv_data.blocks_info){
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%d %d %d, %d", b.first.x, b.first.y, b.first.z, b.first.GetLOD());
+            ImGui::TableNextColumn();
+            ImGui::Text("%d, %d %d %d", b.second.tid, b.second.sx, b.second.sy, b.second.sz);
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", b.second.Missed() ? "missed" : "existed");
+        }
+
+        ImGui::EndTable();
+
+
+
+        ImGui::End();
+    }
 private:
+    enum debug_mode_enum : int{
+        debug_mode_normal = 0,
+        debug_mode_entry_pos = 1,
+        debug_mode_exit_pos = 2
+    };
     struct{
         std::vector<uint32_t> host_color;
         std::vector<float> host_depth;
+        int debug_mode = 0;
     }debug;
 
     VolAnnotater::VolAnnotaterCreateInfo create_info;
@@ -428,12 +545,25 @@ private:
 
     Handle<FrameBuffer> framebuffer;
 
+    Timer vol_render_timer;
 
     Handle<CRTVolumeRenderer> crt_vol_renderer;
 
+    struct{
+        std::vector<GridVolume::BlockUID> intersect_blocks;
+        std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
+        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> host_blocks;//在循环结束会释放Handle
+        std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> missed_host_blocks;
+        std::map<int, std::vector<std::function<void()>>> task_mp;
+        std::map<int, vutil::task_group_handle_t> task_groups;
+        std::vector<int> lods;
+        PerFrameParams per_frame_params;
+
+    }vol_renderer_priv_data;
+
     viser::Camera vol_camera;
 
-    float render_base_space = 0.002f;
+    float render_base_space = 0.001f;
     BoundingBox3D volume_box;
     GridVolume::GridVolumeDesc volume_desc;
     int max_lod;

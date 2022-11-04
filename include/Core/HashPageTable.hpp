@@ -35,7 +35,38 @@ public:
         }
         return v;
     }
-
+    void Update(const HashTableItem& item){
+        uint32_t hash_v = GetHashValue(item.first);
+        auto pos = hash_v % HashTableSize;
+        int i = 0;
+        bool positive = false;
+        auto table = hhpt->view_1d<HashTableItem>(HashTableSize);
+        while(true){
+            int ii = i * i;
+            pos += positive ? ii : -ii;
+            pos %= HashTableSize;
+            if(table.at(pos).first == item.first){
+                table.at(pos).second = item.second;
+                break;
+            }
+            if(positive)
+                ++i;
+            positive = !positive;
+            if(i >= HashTableSize){
+                throw std::runtime_error("HashTable Get Full");
+            }
+        }
+        dirty = true;
+//        for(int i = 0; i < HashTableSize; i++){
+//            auto& item = table.at(i);
+//            std::cout << table.at(i).second.sx << " "
+//                      << table.at(i).second.sy << " "
+//                      << table.at(i).second.sz << " "
+//                      << table.at(i).second.tid << " "
+//                      << table.at(i).second.flag
+//                      << std::endl;
+//        }
+    }
     void Append(const HashTableItem& item){
         uint32_t hash_v = GetHashValue(item.first);
         auto pos = hash_v % HashTableSize;
@@ -61,6 +92,7 @@ public:
     }
 
     void Clear(){
+        LOG_DEBUG("call hash table clear");
         auto table = hhpt->view_1d<HashTableItem>(HashTableSize);
         for(int i = 0; i < HashTableSize; i++){
             table.at(i) = {INVALID_KEY, INVALID_VALUE};
@@ -86,6 +118,16 @@ private:
             .height = 1,
             .depth = 1
         };
+//        auto table = hhpt->view_1d<HashTableItem>(HashTableSize);
+//        for(int i = 0; i < HashTableSize; i++){
+//            auto& item = table.at(i);
+//            std::cout << table.at(i).second.sx << " "
+//                      << table.at(i).second.sy << " "
+//                      << table.at(i).second.sz << " "
+//                      << table.at(i).second.tid << " "
+//                      << table.at(i).second.flag
+//                      << std::endl;
+//        }
         cub::cu_memory_transfer(hhpt->view_1d<HashTableItem>(HashTableSize),
                 hash_page_table->view_1d<HashTableItem>(HashTableSize), info).launch(cub::cu_stream::null(ctx));
 

@@ -191,21 +191,21 @@ private:
 };
 
 struct cu_submitted_tasks{
-    cu_submitted_tasks& add(std::future<cu_result>&& res){
-        tasks.emplace_back(std::move(res));
+    cu_submitted_tasks& add(std::future<cu_result>&& res, size_t uid = 0){
+        tasks.emplace_back(uid, std::move(res));
         return *this;
     }
-    std::vector<cu_result> wait(){
-        std::vector<cu_result> ret;
-        for(auto& t : tasks){
+    std::vector<std::pair<size_t, cu_result>> wait(){
+        std::vector<std::pair<size_t, cu_result>> ret;
+        for(auto& [_, t] : tasks){
             t.wait();
-            ret.emplace_back(t.get());
+            ret.emplace_back(_, t.get());
         }
         tasks.clear();
         return ret;
     }
 private:
-    std::vector<std::future<cu_result>> tasks;
+    std::vector<std::pair<size_t, std::future<cu_result>>> tasks;
 };
 
 CUB_END

@@ -62,7 +62,7 @@ public:
             return (w >> 8) & 2;
         }
 
-        int GetLOD() const{
+        CUB_CPU_GPU int GetLOD() const{
             return static_cast<int>(w & 0xff);
         }
     };

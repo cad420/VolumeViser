@@ -333,13 +333,17 @@ cu_task cu_memory_transfer(const cu_array<T, N>& src, const cu_array<T, N>& dst,
 
 template<typename T, int N>
 cu_task cu_memory_transfer(const buffer_view<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info){
-    CHECK_CTX_SAME(src, dst)
+    if(src.is_device() && dst.is_device()){
+        CHECK_CTX_SAME(src, dst)
+    }
     return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
 }
 
 template<typename T, int N>
 cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& dst, const memory_transfer_info& info){
-    CHECK_CTX_SAME(src, dst)
+    if(src.is_device()){
+        CHECK_CTX_SAME(src, dst)
+    }
     return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
 }
 
@@ -348,21 +352,22 @@ inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_
     if(src.get_type() == memory_type::e_cu_device){
         CHECK_CTX_SAME(src, dst)
     }
-    return cu_task{[&](cu_stream& stream){
+    return cu_task{[info = info, src_ptr = src.get_data(), src_type = src.get_type(),
+                    dst = dst._get_array_handle()](cu_stream& stream){
         CUDA_MEMCPY3D m;
         std::memset(&m, 0, sizeof(m));
 
-        if(src.get_type() == e_cu_host)
+        if(src_type == e_cu_host)
             m.srcMemoryType = CU_MEMORYTYPE_HOST;
         else
             m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
         m.srcXInBytes = info.src_x_bytes;
         m.srcY = info.src_y;
         m.srcZ = info.src_z;
-        m.srcHost = src.get_data();
+        m.srcHost = src_ptr;
 
         m.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-        m.dstArray = (CUarray)dst._get_array_handle();
+        m.dstArray = (CUarray)dst;
         m.dstXInBytes = info.dst_x_bytes;
         m.dstY = info.dst_y;
         m.dstZ = info.dst_z;

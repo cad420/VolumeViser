@@ -36,6 +36,9 @@
 #include "parallel/parallel_for.hpp"
 #include "parallel/read_write_lock.hpp"
 
+//timne
+#include "./time/timer.hpp"
+
 // opengl
 #ifdef UTIL_ENABLE_OPENGL
 #include "opengl/attrib.hpp"
