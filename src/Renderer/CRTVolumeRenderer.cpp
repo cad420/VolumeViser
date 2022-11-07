@@ -64,12 +64,19 @@ VISER_BEGIN
             CUDABufferView2D<uint32_t> color;
             CUDABufferView2D<float> depth;
         };
-
+        //标注点查询相关信息
+        struct CUDATag{
+            int flag;
+            // pos:vec3 + depth:float + color:float4
+            // pos is offset in volume aabb
+            CUDABufferView1D<float> info;// 8
+        };
         struct CTRVolumeRenderKernelParams{
             CUDAVolume cu_volume;
             CUDARenderParams cu_render_params;
             CUDAPerFrameParams cu_per_frame_params;
             CUDAPageTable cu_page_table;
+            CUDATag cu_tag;
             cudaTextureObject_t cu_vtex[MaxCUDATextureCountPerGPU];
             cudaTextureObject_t cu_tf_tex;
             cudaTextureObject_t cu_2d_tf_tex;
@@ -141,7 +148,7 @@ VISER_BEGIN
             uint3 voxel_coord = make_uint3(sampling_coord.x, sampling_coord.y, sampling_coord.z);
             uint32_t lod_block_length = params.cu_volume.block_length << sampling_lod;
             uint3 block_uid = voxel_coord / lod_block_length;
-            float3 offset_in_block = (sampling_coord - block_uid * lod_block_length) / float(1 << sampling_lod);
+            float3 offset_in_block = ((voxel_coord - block_uid * lod_block_length) + fracf(sampling_coord)) / float(1 << sampling_lod);
             uint4 key = make_uint4(block_uid, sampling_lod);
             uint4 tex_coord = Query(key, hash_table);
             uint32_t tid = (tex_coord.w >> 16) & 0xffff;
@@ -160,14 +167,11 @@ VISER_BEGIN
 //                       ret.scalar);
 
                 ret.flag = tex_coord.w & 0xffff;
-
-
-
             }
             else{
                 if(params.cu_per_frame_params.debug_mode == 1)
-                printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
-                       tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
+                    printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
+                           tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
             }
             return ret;
         }
@@ -207,13 +211,67 @@ VISER_BEGIN
         }
         CUB_GPU float4 ScalarToRGBA(const CTRVolumeRenderKernelParams& params,
                                     float scalar, uint32_t lod){
-            auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.5f, 0.5f);
+            if(params.cu_per_frame_params.debug_mode == 3){
+                return make_float4(scalar, scalar, scalar, 1.f);
+            }
+            auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.f, 0.f);
+//            if(scalar >= 1.f){
+//                printf("scalar 0 to rgba %f %f %f %f\n", color.x, color.y, color.z, color.w);
+//            }
             return color;
         }
         CUB_GPU float4 CalcShadingColor(const CTRVolumeRenderKernelParams& params,
-                                        const float4& color, const float3 pos, uint32_t lod){
-            // todo
-            return color;
+                                        uint4 hash_table[][2],
+                                        const float4& color, const float3& pos,
+                                        const float3& ray_dir,
+                                        const float3& dt, uint32_t lod){
+            float3 N;
+            float x1, x2;
+            int missed = 0;
+            auto ret = VirtualSampling(params, hash_table, pos + dt * make_float3(1.f, 0.f, 0.f), lod);
+            x1 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(-1.f, 0.f, 0.f), lod);
+            x2 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            N.x = x1 - x2;
+
+            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 1.f, 0.f), lod);
+            x1 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, -1.f, 0.f), lod);
+            x2 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            N.y = x1 - x2;
+
+            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 0.f, 1.f), lod);
+            x1 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 0.f, -1.f), lod);
+            x2 = ret.scalar;
+            if(ret.flag == 0){
+                ++missed;
+            }
+            N.z = x1 - x2;
+            if(missed == 6){
+                N = -ray_dir;
+            }
+            else
+                N = -normalize(N);
+            float3 albedo = make_float3(color);
+            float3 ambient = 0.05f * albedo;
+            float3 diffuse = max(dot(N, -ray_dir), 0.f) * albedo;
+            return make_float4(ambient + diffuse, color.w);
         }
         CUB_GPU RayCastResult RayCastVolume(const CTRVolumeRenderKernelParams& params,
                                             uint4 hash_table[][2],
@@ -245,6 +303,7 @@ VISER_BEGIN
             float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
 //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
 //            return ret;
+            float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
             while(ray_cast_dist < ray_max_cast_dist){
                 float3 sampling_pos = ray_cast_pos + 0.5f * dt * ray.d;
 
@@ -273,7 +332,8 @@ VISER_BEGIN
 //                    printf("sampling scalar %.5f, color %f %f %f %f\n",scalar, mapping_color.x, mapping_color.y, mapping_color.z, mapping_color.w);
                     // always assert alpha = 0.f has no contribution
                     if(mapping_color.w > 0.f){
-//                        mapping_color = CalcShadingColor(params, mapping_color, sampling_pos, cur_lod);
+                        if(params.cu_per_frame_params.debug_mode != 4)
+                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, sampling_pos, ray.d, voxel * dt, cur_lod);
                         // accumulate color radiance
                         ret.color += mapping_color * make_float4(make_float3(mapping_color.w), 1.f) * (1.f - ret.color.w);
                         if(ret.color.w > 0.99f){
@@ -288,6 +348,7 @@ VISER_BEGIN
                 }
             }
             // view space depth
+            // todo return proj depth
             ret.depth = ray_cast_dist;
             return ret;
         }
@@ -299,12 +360,19 @@ VISER_BEGIN
                          | ((uint32_t)(saturate(f.w) * 255u) << 24);
             return ret;
         }
+        CUB_GPU float3 PostProcessing(const float4& color){
+            float3 ret;
+            ret.x = pow(color.x, 1.f / 2.2f);
+            ret.y = pow(color.y, 1.f / 2.2f);
+            ret.z = pow(color.z, 1.f / 2.2f);
+            return ret;
+        }
         CUB_KERNEL void CRTVolumeRenderKernel(CTRVolumeRenderKernelParams params){
             const int x = blockIdx.x * blockDim.x + threadIdx.x;
             int y = blockIdx.y * blockDim.y + threadIdx.y;
             if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
                 return;
-            y = params.cu_per_frame_params.frame_height - 1 - y;
+
 
             const unsigned int thread_count = blockDim.x * blockDim.y;
             const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
@@ -349,8 +417,9 @@ VISER_BEGIN
 
             auto [color, depth] = RayCastVolume(params, hash_table, ray);
 
+            color = make_float4(PostProcessing(color), color.w);
             // exposure gamma color-grading tone-mapping...
-
+            y = params.cu_per_frame_params.frame_height - 1 - y;
             params.framebuffer.color.at(x, y) = Float4ToUInt(color);
             params.framebuffer.depth.at(x, y) = depth;
 

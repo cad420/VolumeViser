@@ -1,5 +1,6 @@
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Core/HashPageTable.hpp>
+#include <Model/SWC.hpp>
 #include "VolAnnotater.hpp"
 #include "Common.hpp"
 #include <cuda_gl_interop.h>
@@ -147,11 +148,12 @@ class VolAnnotaterApp : public gl_app_t{
         render_params.lod.leve_of_dist = lod;
         render_params.tf.updated = true;
         render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
-        render_params.tf.tf_pts.pts[0.383f] = Float4(0.f);
-        render_params.tf.tf_pts.pts[0.446] = Float4(0.1, 0.7, 1.0, 0.65);
-        render_params.tf.tf_pts.pts[1.f] = Float4(0.1, 0.7, 1.0, 0.65);
-        render_params.other.ray_step = 0.001f;
-        render_params.other.max_ray_dist = 3.f;
+        render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 1.f, 0.5f, 0.f);
+        render_params.tf.tf_pts.pts[0.6f] = Float4(1.f, 0.5f, 0.f, 1.f);
+        render_params.tf.tf_pts.pts[0.96f] = Float4(1.f, 0.5f, 0.f, 1.f);
+        render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
+        render_params.other.ray_step = render_base_space * 0.5f;
+        render_params.other.max_ray_dist = 10.f;
         render_params.other.inv_tex_shape = Float3(1.f / create_info.vtex_shape_x,
                                                    1.f / create_info.vtex_shape_y,
                                                    1.f / create_info.vtex_shape_z);
@@ -189,7 +191,7 @@ public:
 
         initGlobalResource();
 
-        const std::string lod_vol_filename = "test_kingsnake.lod.desc.json";
+        const std::string lod_vol_filename = "test_mouse.lod.desc.json";
 
         loadLODVolumeData(lod_vol_filename);
 
@@ -224,8 +226,8 @@ public:
             debug.host_color.resize(framebuffer->frame_height * framebuffer->frame_width);
             debug.host_depth.resize(framebuffer->frame_height * framebuffer->frame_width);
         }
-
-        camera.set_position({0.512f, 0.512f, 0.8f});
+        auto default_pos = Float3(volume_desc.shape) * Float3(0.5f, 0.5f, 1.2f) * render_base_space * volume_space_ratio;
+        camera.set_position(default_pos);
         camera.set_perspective(FOV, 0.01f, 10.f);
         camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     }
@@ -457,6 +459,14 @@ private:
         ImGui::End();
     }
 
+    void frame_swc(){
+        ImGui::Begin("SWC", 0, ImGuiWindowFlags_NoResize);
+
+        ImGui::Selectable("SWC Files");
+
+        ImGui::End();
+    }
+
     void frame_timer(){
         ImGui::Begin("Time cost");
 
@@ -480,7 +490,12 @@ private:
         if(ImGui::RadioButton("debug exit pos", debug.debug_mode == debug_mode_exit_pos)){
             debug.debug_mode = debug_mode_exit_pos;
         }
-
+        if(ImGui::RadioButton("debug scalar", debug.debug_mode == debug_mode_scalar)){
+            debug.debug_mode = debug_mode_scalar;
+        }
+        if(ImGui::RadioButton("debug no light shading", debug.debug_mode == debug_mode_no_light_shading)){
+            debug.debug_mode = debug_mode_no_light_shading;
+        }
 
         ImGui::End();
     }
@@ -507,6 +522,21 @@ private:
 
         ImGui::EndTable();
 
+        ImGui::BeginTable("Level of Detail", 2);
+
+        ImGui::TableSetupColumn("LOD");
+        ImGui::TableSetupColumn("Dist");
+        ImGui::TableHeadersRow();
+
+        for(int l = 0; l <= max_lod; l++){
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("lod %d", l);
+            ImGui::TableNextColumn();
+            ImGui::Text("%.5f", lod.LOD[l]);
+        }
+
+        ImGui::EndTable();
 
 
         ImGui::End();
@@ -515,7 +545,9 @@ private:
     enum debug_mode_enum : int{
         debug_mode_normal = 0,
         debug_mode_entry_pos = 1,
-        debug_mode_exit_pos = 2
+        debug_mode_exit_pos = 2,
+        debug_mode_scalar = 3,
+        debug_mode_no_light_shading = 4,
     };
     struct{
         std::vector<uint32_t> host_color;
@@ -563,13 +595,20 @@ private:
 
     viser::Camera vol_camera;
 
-    float render_base_space = 0.001f;
+    float render_base_space = 0.00128f;
     BoundingBox3D volume_box;
     GridVolume::GridVolumeDesc volume_desc;
     int max_lod;
     viser::LevelOfDist lod;
     Float3 volume_space_ratio;
 
+    //标注相关
+    SWC swc;
+
+    struct{
+
+
+    }vol_tag_priv_data;
 
     // OpenGL资源
     // CUDA渲染器先渲染到离屏帧后，再输出到屏幕或ImGui

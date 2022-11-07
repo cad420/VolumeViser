@@ -7,7 +7,7 @@ VISER_BEGIN
 // swc描述文件 .json
 // 记录该swc的一些信息，比如由哪个体数据生成、与哪些数据块相交、光滑和化简的参数、统计信息
 // 包括节点的个数、总的大小、神经元长度、占据体积、表面积
-    struct SWCDescFile{
+    struct SWCFileDesc{
         std::string filename; // file path for SWCDescFile
         std::string data_path; // file path for SWCFile
 
@@ -21,7 +21,7 @@ VISER_BEGIN
         double swc_total_surface_area;
 
 
-        SWCDescFile(std::string_view filename);
+        SWCFileDesc(std::string_view filename);
 
 
     };

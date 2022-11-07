@@ -43,7 +43,7 @@ VISER_BEGIN
                         lod0_blocks.emplace_back(block_uid, block_box);
                     }
                     else{
-                        LOG_DEBUG("invisible block : {} {} {}",block_uid.x, block_uid.y, block_uid.z);
+//                        LOG_DEBUG("invisible block : {} {} {}",block_uid.x, block_uid.y, block_uid.z);
                     }
                 }
             }
