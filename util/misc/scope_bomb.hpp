@@ -14,7 +14,7 @@ VUTIL_BEGIN
                 :bomb(std::forward<T>(t))
         {}
         ~scope_bomb_t(){
-            if(should_call && bomb)
+            if(should_call)
                 bomb();
         }
         void dismiss(){

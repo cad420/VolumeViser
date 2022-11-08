@@ -67,6 +67,8 @@ VISER_BEGIN
         //标注点查询相关信息
         struct CUDATag{
             int flag;
+            int x;
+            int y;
             // pos:vec3 + depth:float + color:float4
             // pos is offset in volume aabb
             CUDABufferView1D<float> info;// 8
@@ -273,6 +275,91 @@ VISER_BEGIN
             float3 diffuse = max(dot(N, -ray_dir), 0.f) * albedo;
             return make_float4(ambient + diffuse, color.w);
         }
+        struct RayCastResult2{
+            float4 color;
+            float depth;
+            float3 pos;
+        };
+        CUB_GPU RayCastResult2 RayCastVolume2(const CTRVolumeRenderKernelParams& params,
+                                            uint4 hash_table[][2],
+                                            Ray ray){
+            // default color is black and depth is 1.0
+            RayCastResult2 ret{make_float4(0), 1.f, make_float3(0)};
+            auto [entry_t, exit_t] = cuda::RayIntersectAABB(params.cu_volume.bound, ray);
+            // ray has no intersection with volume
+            if(entry_t >= exit_t || exit_t <= 0.f)
+                return ret;
+
+            entry_t = max(0.f ,entry_t);
+            if(params.cu_per_frame_params.debug_mode == 1){
+                ret.color = make_float4(ray.o + ray.d * entry_t, 1.f);
+                return ret;
+            }
+            else if(params.cu_per_frame_params.debug_mode == 2){
+                ret.color = make_float4(ray.o + ray.d * exit_t, 1.f);
+                return ret;
+            }
+
+            float entry_to_exit_dist = exit_t - entry_t;
+            // 注意浮点数的有效位数只有6位
+            float3 ray_cast_pos = params.cu_per_frame_params.cam_pos + entry_t * ray.d;
+            float dt = params.cu_render_params.ray_step;
+            float ray_cast_dist = 0.f;
+
+            uint32_t prev_lod = ComputeLod(params, ray_cast_pos);
+            float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
+//            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
+//            return ret;
+            float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
+            while(ray_cast_dist < ray_max_cast_dist){
+                float3 sampling_pos = ray_cast_pos + 0.5f * dt * ray.d;
+
+                uint32_t cur_lod = ComputeLod(params, sampling_pos);
+                bool upgrade = false;
+                if(cur_lod > prev_lod){
+                    upgrade = true;
+                    prev_lod = cur_lod;
+                }
+                sampling_pos = CalcVirtualSamplingPos(params, sampling_pos);
+
+                auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
+
+                bool skip = (flag == 0) || (flag & TexCoordFlag_IsValid && flag & TexCoordFlag_IsBlack);
+//                if(skip){
+//                    ray_cast_pos = CalcSkipPos(params, ray_cast_pos, ray.d, cur_lod);
+//
+//                    continue;
+//                }
+
+                // compute and accumulate color
+                // always assert scalar = 0.f has no meanings
+                if(scalar > 0.f){
+//                    printf("sampling scalar %.5f\n", scalar);
+                    float4 mapping_color = ScalarToRGBA(params, scalar, cur_lod);
+//                    printf("sampling scalar %.5f, color %f %f %f %f\n",scalar, mapping_color.x, mapping_color.y, mapping_color.z, mapping_color.w);
+                    // always assert alpha = 0.f has no contribution
+                    if(mapping_color.w > 0.f){
+                        if(params.cu_per_frame_params.debug_mode != 4)
+                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, sampling_pos, ray.d, voxel * dt, cur_lod);
+                        // accumulate color radiance
+                        ret.color += mapping_color * make_float4(make_float3(mapping_color.w), 1.f) * (1.f - ret.color.w);
+                        if(ret.color.w > 0.99f){
+                            break;
+                        }
+                    }
+                }
+                ray_cast_pos += dt * ray.d;
+                ray_cast_dist += dt;
+                if(upgrade){
+                    dt *= 2.f;
+                }
+            }
+            // view space depth
+            // todo return proj depth
+            ret.depth = ray_cast_dist;
+            ret.pos = ray_cast_pos;
+            return ret;
+        }
         CUB_GPU RayCastResult RayCastVolume(const CTRVolumeRenderKernelParams& params,
                                             uint4 hash_table[][2],
                                             Ray ray){
@@ -367,6 +454,54 @@ VISER_BEGIN
             ret.z = pow(color.z, 1.f / 2.2f);
             return ret;
         }
+        CUB_KERNEL void CRTVolumeQueryKernel(CTRVolumeRenderKernelParams params){
+            const int x = blockIdx.x * blockDim.x + threadIdx.x;
+            int y = blockIdx.y * blockDim.y + threadIdx.y;
+            if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
+                return;
+//            y = params.cu_per_frame_params.frame_height - 1 - y;
+            if(x != params.cu_tag.x || params.cu_per_frame_params.frame_height - 1 - y != params.cu_tag.y)
+                return;
+
+            const unsigned int thread_count = blockDim.x * blockDim.y;
+            const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
+            const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;
+            const unsigned int thread_beg = thread_idx * load_count;
+            const unsigned int thread_end = min(thread_beg + load_count, HashTableSize);
+            __shared__ uint4 hash_table[HashTableSize][2];
+
+            // fill shared hash table
+
+            auto& table = params.cu_page_table.table;
+            for(int i = 0; i < HashTableSize; ++i){
+                auto& block_uid = table.at(i).first;
+                auto& tex_coord = table.at(i).second;
+                hash_table[i][0] = uint4{block_uid.x, block_uid.y, block_uid.z, block_uid.w};
+                hash_table[i][1] = uint4{tex_coord.sx, tex_coord.sy, tex_coord.sz,
+                                         ((uint32_t)tex_coord.tid << 16) | tex_coord.flag};
+            }
+
+            __syncthreads();
+
+            Ray ray;
+            ray.o = params.cu_per_frame_params.cam_pos;
+            float scale = tanf(0.5f * params.cu_per_frame_params.fov);
+            float ix = (x + 0.5f) / params.cu_per_frame_params.frame_width - 0.5f;
+            float iy = (y + 0.5f) / params.cu_per_frame_params.frame_height - 0.5f;
+            ray.d = params.cu_per_frame_params.cam_dir + params.cu_per_frame_params.cam_up * scale * iy
+                    + params.cu_per_frame_params.cam_right * scale * ix * params.cu_per_frame_params.frame_w_over_h;
+
+            auto [color, depth, pos] = RayCastVolume2(params, hash_table, ray);
+
+            params.cu_tag.info.at(0) = pos.x;
+            params.cu_tag.info.at(1) = pos.y;
+            params.cu_tag.info.at(2) = pos.z;
+            params.cu_tag.info.at(3) = depth;
+            params.cu_tag.info.at(4) = color.x;
+            params.cu_tag.info.at(5) = color.y;
+            params.cu_tag.info.at(6) = color.z;
+            params.cu_tag.info.at(7) = color.w;
+        }
         CUB_KERNEL void CRTVolumeRenderKernel(CTRVolumeRenderKernelParams params){
             const int x = blockIdx.x * blockDim.x + threadIdx.x;
             int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -441,6 +576,11 @@ VISER_BEGIN
             int tf_dim = 0;
         };
 
+        struct{
+            Handle<CUDABuffer> info;
+            CUDABufferView1D<float> view;
+        }tag;
+
         cub::cu_context ctx;
 
         UnifiedRescUID uid;
@@ -486,6 +626,9 @@ VISER_BEGIN
 
         _->uid = _->GenRescUID();
 
+        _->tag.info = NewGeneralHandle<CUDABuffer>(RescAccess::Unique, sizeof(float) * 8, cub::e_cu_device, _->ctx);
+        _->tag.view = _->tag.info->view_1d<float>(sizeof(float) * 8);
+        _->kernel_params.cu_tag.info = _->tag.view;
     }
 
     CRTVolumeRenderer::~CRTVolumeRenderer(){
@@ -576,6 +719,30 @@ VISER_BEGIN
             LOG_ERROR("CRTVolumeRenderer render frame failed : {}", err.what());
         }
     }
+    void CRTVolumeRenderer::Query(int x, int y, CUDABufferView1D<float>& info, int flag) {
+        const dim3 tile = {16u, 16u, 1u};
+        _->kernel_params.cu_tag.x = x;
+        _->kernel_params.cu_tag.y = y;
+        _->kernel_params.cu_tag.flag = flag;
+
+        cub::cu_kernel_launch_info launch_info;
+        launch_info.shared_mem_bytes = 0;//CRTVolumeRendererPrivate::shared_mem_size;
+        launch_info.block_dim = tile;
+        launch_info.grid_dim = {(_->kernel_params.cu_per_frame_params.frame_width + tile.x - 1) / tile.x,
+                                (_->kernel_params.cu_per_frame_params.frame_height + tile.y - 1) / tile.y, 1};
+        void* params[] = {&_->kernel_params};
+        auto query_task = cub::cu_kernel::pending(launch_info, &CRTVolumeQueryKernel, params);
+        try{
+            query_task.launch(_->render_stream).check_error_on_throw();
+            cub::memory_transfer_info tf_info;
+            tf_info.width_bytes = sizeof(float) * 8;
+            tf_info.height = tf_info.depth = 1;
+            cub::cu_memory_transfer(_->tag.view, info, tf_info).launch(_->render_stream).check_error_on_throw();
+        }
+        catch (const std::exception& err) {
+            LOG_ERROR("CRTVolumeRenderer query failed : {}", err.what());
+        }
+    }
 
     void CRTVolumeRenderer::BindVTexture(VTextureHandle handle, TextureUnit unit) {
         assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
@@ -597,6 +764,8 @@ VISER_BEGIN
     UnifiedRescUID CRTVolumeRenderer::GetUID() const {
         return _->uid;
     }
+
+
 
 
 VISER_END

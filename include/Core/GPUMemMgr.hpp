@@ -52,6 +52,8 @@ public:
 
     Ref<GPUVTexMgr> GetGPUVTexMgrRef(UnifiedRescUID uid);
 
+    cub::cu_context _get_cuda_context() const ;
+
 protected:
     friend class GPUVTexMgr;
     friend class CRTVolumeRenderer;
@@ -59,7 +61,7 @@ protected:
     //不再更新使用内存
     Handle<CUDATexture> _AllocTexture(RescAccess access, const TextureCreateInfo& info);
 
-    cub::cu_context _get_cuda_context() const ;
+
 
     friend class ResourceMgr;
     std::unique_ptr<GPUMemMgrPrivate> _;

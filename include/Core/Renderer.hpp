@@ -88,6 +88,8 @@ public:
 
     void Render(Handle<FrameBuffer> frame) override;
 
+    void Query(int x, int y, CUDABufferView1D<float>& info, int flag = 0);
+
     // 需要绑定纹理和页表两项资源
 
     void BindVTexture(VTextureHandle handle, TextureUnit unit);

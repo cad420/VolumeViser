@@ -19,6 +19,8 @@ public:
 
     ~SWC();
 
+    void PrintInfo() noexcept;
+
     void InsertNodeLeaf(const SWCPoint& point) noexcept;
 
     void InsertNodeInternal(const SWCPoint& point, SWCPointKey kid) noexcept;
@@ -30,6 +32,8 @@ public:
     inline bool IsRoot(const SWCPoint& point) noexcept{
         return point.pid == -1;
     }
+
+    SWCPointKey GetNodeRoot(SWCPointKey id) noexcept;
 
     bool IsRoot(SWCPointKey id) noexcept;
 
@@ -73,11 +77,16 @@ public:
 
     Iterator end();
 
+    //打包所有点
     std::vector<SWCPoint> PackAll() noexcept;
+
+    //打包所有不同的连通集
+    std::vector<std::vector<SWCPoint>> PackLines() noexcept;
+
+    std::vector<SWCPointKey> GetAllRootIDs() noexcept;
 
 protected:
     std::unique_ptr<SWCPrivate> _;
 };
 
 VISER_END
-

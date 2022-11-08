@@ -7,8 +7,10 @@ VISER_BEGIN
 
         void ReadFromTxtFile(){
             std::string str;
+            std::stringstream ss;
             fs.seekg(0, std::ios::beg);
-            fs >> str;
+            ss << fs.rdbuf();
+            str = std::move(ss.str());
             bool file_end = false;
             size_t pos = 0;
             size_t len = str.length();
@@ -18,6 +20,7 @@ VISER_BEGIN
                     line += str[pos++];
                 }
                 while(pos < len && str[pos] == '\n') pos++;
+                if(pos >= len) file_end = true;
                 return line;
             };
             const char* delim = " ";
@@ -93,19 +96,34 @@ VISER_BEGIN
             BIN
         };
         FileType file_type;
+        std::mutex mtx;
+        UnifiedRescUID uid;
     };
 
     SWCFile::SWCFile()
     :_(std::make_unique<SWCFilePrivate>())
     {
-
+        _->uid = SWCIOInterface::GenUnifiedRescUID();
     }
 
     SWCFile::~SWCFile() {
         Close();
     }
 
+    void SWCFile::Lock() {
+        _->mtx.lock();
+    }
+
+    void SWCFile::UnLock() {
+        _->mtx.unlock();
+    }
+
+    UnifiedRescUID SWCFile::GetUID() const {
+        return _->uid;
+    }
+
     void SWCFile::Open(std::string_view filename, Mode mode) {
+        Close();
         if(mode == Write){
            if(vutil::ends_with(filename, SWC_FILENAME_EXT_TXT)){
                _->file_type = SWCFilePrivate::TXT;
@@ -197,9 +215,4 @@ VISER_BEGIN
         _->points.clear();
     }
 
-
-
-
 VISER_END
-
-

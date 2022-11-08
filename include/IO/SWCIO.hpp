@@ -53,12 +53,19 @@ public:
 
     ~SWCFile();
 
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
+
     void Open(std::string_view filename, Mode mode);
 
     std::vector<SWCPoint> GetAllPoints() noexcept;
 
     void WritePoints(int count, std::function<const SWCPoint&(int)> get) noexcept;
 
+    //保存的时候一定要按dfs遍历
     void WritePoints(const std::vector<SWCPoint>& points) noexcept;
 
     void Close() noexcept;

@@ -1,5 +1,6 @@
 #include <Model/SWC.hpp>
 #include <unordered_set>
+#include <stack>
 VISER_BEGIN
 
 class SWCPrivate{
@@ -28,11 +29,24 @@ public:
 };
 
     SWC::SWC() {
-
+        _ = std::make_unique<SWCPrivate>();
     }
 
     SWC::~SWC() {
 
+    }
+
+    void SWC::PrintInfo() noexcept{
+        int line_count = 0;
+        for(auto& [_, node] : _->node_mp){
+            if(node.parent > 0){
+                line_count += 1;
+            }
+        }
+        std::cout << "[SWC Infos] : "
+                  << "\n\tTotal SWC Point Count : " << _->swc_point_mp.size()
+                  << "\n\tTotal SWC Line Count : " << line_count
+                  << std::endl;
     }
 
     bool SWC::QueryNode(SWC::SWCPointKey id) noexcept {
@@ -63,6 +77,7 @@ public:
         assert(!QueryNode(point.id));
         _->updated = true;
         _->swc_point_mp[point.id] = point;
+        if(point.pid <= 0) return;
         auto& p_node = _->node_mp[point.pid];
         p_node.children.insert(point.id);
         _->node_mp[point.id] = {point.id, point.pid};
@@ -159,6 +174,51 @@ public:
         return SWC::Iterator(_->swc_point_mp.end());
     }
 
+    std::vector<SWC::SWCPoint> SWC::PackAll() noexcept{
+        return {};
+    }
+
+    std::vector<std::vector<SWC::SWCPoint>> SWC::PackLines() noexcept{
+        auto roots = GetAllRootIDs();
+        LOG_DEBUG("SWC PackLines which has root count : {}", roots.size());
+        std::vector<std::vector<SWC::SWCPoint>> ret;
+        for(auto root : roots){
+            std::stack<SWCPointKey> st;
+            st.push(root);
+            auto& line = ret.emplace_back();
+            while(!st.empty()){
+                auto pt_key = st.top();
+                st.pop();
+                auto node = GetNode(pt_key);
+                if(node.pid != -1){
+                    line.push_back(GetNode(node.pid));
+                    line.push_back(node);
+                }
+                auto kids = GetNodeKids(pt_key);
+                for(auto it = kids.cbegin(); it != kids.cend(); it++){
+                    st.push(*it);
+                }
+            }
+            LOG_DEBUG("SWC line has segment count : {}", line.size() / 2);
+        }
+        return ret;
+    }
+
+    std::vector<SWC::SWCPointKey> SWC::GetAllRootIDs() noexcept {
+        std::vector<SWCPointKey> roots;
+
+        for(auto& [_, pt] : _->swc_point_mp){
+            if(pt.pid == -1){
+                roots.emplace_back(_);
+            }
+        }
+
+        return roots;
+    }
+
+    SWC::SWCPointKey SWC::GetNodeRoot(SWC::SWCPointKey id) noexcept {
+        return 0;
+    }
+
 
 VISER_END
-

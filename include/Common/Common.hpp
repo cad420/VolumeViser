@@ -112,13 +112,15 @@ enum class UnifiedRescType : uint8_t{
     GPUMemMgr = 3,
     FixedHostMemMgr = 4,
     VolumeIO = 5,
-    GridVolume = 6,
-    GridVolumeBlock = 7,
-    GPUPageTableMgr = 8,
-    GPUVTexMgr = 9,
-    CRTVolRenderer = 10,
-    General = 11,
-    MaxEnum = 12
+    SWCIO = 6,
+    MeshIO = 7,
+    GridVolume = 8,
+    GridVolumeBlock = 9,
+    GPUPageTableMgr = 10,
+    GPUVTexMgr = 11,
+    CRTVolRenderer = 12,
+    General = 13,
+    MaxEnum = 14
 };
 
 //最高位8位代表资源类型，低56位代表一个全局唯一该类型资源的编号

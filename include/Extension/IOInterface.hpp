@@ -57,12 +57,20 @@ public:
 
 class SWCIOInterface : public UnifiedRescBase{
 public:
-
+    static UnifiedRescUID GenUnifiedRescUID(){
+        std::atomic<size_t> g_uid = 1;
+        auto uid = g_uid.fetch_add(1);
+        return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::SWCIO);
+    }
 };
 
 class MeshIOInterface : public UnifiedRescBase{
 public:
-
+    static UnifiedRescUID GenUnifiedRescUID(){
+        std::atomic<size_t> g_uid = 1;
+        auto uid = g_uid.fetch_add(1);
+        return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::MeshIO);
+    }
 };
 
 

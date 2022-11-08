@@ -6,6 +6,11 @@
 #include <cuda_gl_interop.h>
 #include <json.hpp>
 #include <fstream>
+#include <Model/SWC.hpp>
+#include <IO/SWCIO.hpp>
+#include "SWCRenderer.hpp"
+
+
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
 #define FOV 30.f
 class VolAnnotaterApp : public gl_app_t{
@@ -38,6 +43,56 @@ class VolAnnotaterApp : public gl_app_t{
         LOG_DEBUG("Load LOD Volume({}) successfully", volume->GetDesc().volume_name);
         VISER_WHEN_DEBUG(std::cout << volume->GetDesc() << std::endl)
     }
+
+    // *.swc
+    void loadSWCFile(const std::string& filename){
+            swc_file.Open(filename, viser::SWCFile::Read);
+            auto all_swc_pts = swc_file.GetAllPoints();
+            swc_file.Close();
+
+            for(auto& pt : all_swc_pts){
+                swc.InsertNodeLeaf(pt);
+            }
+
+            swc.PrintInfo();
+
+            assert(swc_renderer);
+
+            auto lines = swc.PackLines();
+
+            vol_tag_priv_data.patch_id = 0;
+            vec3f _space = vec3f(volume_space_ratio * render_base_space);
+            vec4f space = vec4f(_space.x, _space.y, _space.z, 1.f);
+            for(auto& line : lines){
+                std::unordered_map<vec4f, uint32_t> mp;
+                uint32_t idx = 0;
+                int n = line.size();
+                assert(n % 2 == 0);
+                std::vector<vec4f> vertices;
+                std::vector<uint32_t> indices;
+                for(int i = 0; i < n / 2; i++){
+                    auto& a = line[i * 2];
+                    auto& b = line[i * 2 + 1];
+                    vec4f va = vec4f(a.x, a.y, a.z, a.radius);
+                    vec4f vb = vec4f(b.x, b.y, b.z, b.radius);
+                    va *= space;
+                    vb *= space;
+                    if(mp.count(va) == 0){
+                        vertices.push_back(va);
+                        mp[va] = idx++;
+                    }
+                    if(mp.count(vb) == 0){
+                        vertices.push_back(vb);
+                        mp[vb] = idx++;
+                    }
+
+                    indices.push_back(mp[va]);
+                    indices.push_back(mp[vb]);
+                }
+                swc_renderer->InitLine(vertices, indices, vol_tag_priv_data.patch_id++);
+            }
+    }
+
     //全局资源的初始化
     void initGlobalResource(){
         LOG_DEBUG("Start Global Resource Init...");
@@ -148,8 +203,8 @@ class VolAnnotaterApp : public gl_app_t{
         render_params.lod.leve_of_dist = lod;
         render_params.tf.updated = true;
         render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
-        render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 1.f, 0.5f, 0.f);
-        render_params.tf.tf_pts.pts[0.6f] = Float4(1.f, 0.5f, 0.f, 1.f);
+        render_params.tf.tf_pts.pts[0.32f] = Float4(0.f, 1.f, 0.5f, 0.f);
+        render_params.tf.tf_pts.pts[0.4f] = Float4(1.f, 0.5f, 0.f, 1.f);
         render_params.tf.tf_pts.pts[0.96f] = Float4(1.f, 0.5f, 0.f, 1.f);
         render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
         render_params.other.ray_step = render_base_space * 0.5f;
@@ -163,6 +218,12 @@ class VolAnnotaterApp : public gl_app_t{
         for(auto& [unit, handle] : vtexs){
             crt_vol_renderer->BindVTexture(handle, unit);
         }
+
+        vol_tag_priv_data.query_info = NewGeneralHandle<CUDAHostBuffer>(RescAccess::Unique,
+                                                          sizeof(float) * 8,
+                                                          cub::memory_type::e_cu_host,
+                                                          render_gpu_mem_mgr_ref->_get_cuda_context());
+        vol_tag_priv_data.query_info_view = vol_tag_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 
         LOG_DEBUG("Successfully Finish Render Resource Init...");
     }
@@ -180,6 +241,14 @@ class VolAnnotaterApp : public gl_app_t{
 
         }
     }
+
+    void initSWCRendererResource(){
+        SWCRenderer::SWCRendererCreateInfo info;
+        swc_renderer = std::make_unique<SWCRenderer>(info);
+
+
+    }
+
 public:
     using gl_app_t::gl_app_t;
 
@@ -192,7 +261,6 @@ public:
         initGlobalResource();
 
         const std::string lod_vol_filename = "test_mouse.lod.desc.json";
-
         loadLODVolumeData(lod_vol_filename);
 
         initVolDataResource();
@@ -203,7 +271,8 @@ public:
     }
 
     void initialize() override {
-
+        GL_EXPR(glClearColor(0.f, 0.f, 0.f, 0.f));
+        GL_EXPR(glClearDepthf(1.f));
 
         //todo resize event
         framebuffer = NewGeneralHandle<FrameBuffer>(RescAccess::Unique);
@@ -213,6 +282,9 @@ public:
         //todo
         offscreen.fbo.initialize_handle();
         offscreen.rbo.initialize_handle();
+        offscreen.rbo.set_format(GL_DEPTH32F_STENCIL8, offscreen.frame_width, offscreen.frame_height);
+        offscreen.fbo.attach(GL_DEPTH_STENCIL_ATTACHMENT, offscreen.rbo);
+        assert(offscreen.fbo.is_complete());
 
         offscreen.color.initialize_handle();
         offscreen.color.initialize_texture(1, GL_RGBA8, offscreen.frame_width, offscreen.frame_height);
@@ -230,54 +302,125 @@ public:
         camera.set_position(default_pos);
         camera.set_perspective(FOV, 0.01f, 10.f);
         camera.set_direction(vutil::deg2rad(-90.f), 0.f);
+
+
+        initSWCRendererResource();
+
+        const std::string swc_filename = "C:/Users/wyz/projects/VolumeViser/test_data/swc/N001.swc";
+        loadSWCFile(swc_filename);
+
+        quad_vao.initialize_handle();
+
+        view_to_proj_shader = program_t::build_from(
+                shader_t<GL_VERTEX_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/quad.vert"),
+                shader_t<GL_FRAGMENT_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/view_to_proj_depth.frag")
+                );
+        v2p_params.fov = vutil::deg2rad(FOV);
+        v2p_params.w_over_h = (float)offscreen.frame_width / offscreen.frame_height;
+        v2p_params_buffer.initialize_handle();
+        v2p_params_buffer.reinitialize_buffer_data(nullptr, GL_DYNAMIC_DRAW);
     }
 
     void frame() override {
         handle_events();
 
-        // map cudaGL interop资源
-        cudaGraphicsResource_t rescs[2] = {cudaGL_interop.cuda_frame_color_resc, cudaGL_interop.cuda_frame_depth_resc};
-        CUB_CHECK(cudaGraphicsMapResources(2, rescs));
-        void* color_mapping_ptr = nullptr;
-        size_t color_mapping_size = 0;
-        CUB_CHECK(cudaGraphicsResourceGetMappedPointer(&color_mapping_ptr, &color_mapping_size, cudaGL_interop.cuda_frame_color_resc));
-        assert(color_mapping_ptr && color_mapping_size == framebuffer->frame_width * framebuffer->frame_height * sizeof(uint32_t));
-        void* depth_mapping_ptr = nullptr;
-        size_t depth_mapping_size = 0;
-        CUB_CHECK(cudaGraphicsResourceGetMappedPointer(&depth_mapping_ptr, &depth_mapping_size, cudaGL_interop.cuda_frame_depth_resc));
-        assert(depth_mapping_ptr && depth_mapping_size == framebuffer->frame_width * framebuffer->frame_height * sizeof(float));
+        vol_tag_priv_data.clicked = ImGui::GetIO().MouseClicked[0];
+        auto click_pos = ImGui::GetIO().MouseClickedPos[0];
+        vol_tag_priv_data.clicked_pos = vec2i(click_pos.x - vol_renderer_priv_data.window_pos.x - 8,
+                                              click_pos.y - vol_renderer_priv_data.window_pos.y - 27);
 
-        framebuffer->color = CUDABufferView2D<uint32_t>(color_mapping_ptr, {.pitch = framebuffer->frame_width * sizeof(uint32_t),
-                                                                            .xsize = (size_t) framebuffer->frame_width,
-                                                                            .ysize = (size_t) framebuffer->frame_height});
-        framebuffer->depth = CUDABufferView2D<float>(depth_mapping_ptr, {.pitch = framebuffer->frame_width * sizeof(float),
-                                                                         .xsize = (size_t) framebuffer->frame_width,
-                                                                         .ysize = (size_t) framebuffer->frame_height});
+        update_vol_camera();
+        if(app_settings.draw_volume){
+            // map cudaGL interop资源
+            cudaGraphicsResource_t rescs[2] = {cudaGL_interop.cuda_frame_color_resc,
+                                               cudaGL_interop.cuda_frame_depth_resc};
+            CUB_CHECK(cudaGraphicsMapResources(2, rescs));
+            void *color_mapping_ptr = nullptr;
+            size_t color_mapping_size = 0;
+            CUB_CHECK(cudaGraphicsResourceGetMappedPointer(&color_mapping_ptr, &color_mapping_size,
+                                                           cudaGL_interop.cuda_frame_color_resc));
+            assert(color_mapping_ptr &&
+                   color_mapping_size == framebuffer->frame_width * framebuffer->frame_height * sizeof(uint32_t));
+            void *depth_mapping_ptr = nullptr;
+            size_t depth_mapping_size = 0;
+            CUB_CHECK(cudaGraphicsResourceGetMappedPointer(&depth_mapping_ptr, &depth_mapping_size,
+                                                           cudaGL_interop.cuda_frame_depth_resc));
+            assert(depth_mapping_ptr &&
+                   depth_mapping_size == framebuffer->frame_width * framebuffer->frame_height * sizeof(float));
 
-        //=========================================
-        // 设置体渲染参数并进行CUDA绘制
-        vol_render_timer.start();
-        render_volume();
-        vol_render_timer.stop();
-        CUB_CHECK(cudaGraphicsUnmapResources(2, rescs));
+            framebuffer->color = CUDABufferView2D<uint32_t>(color_mapping_ptr,
+                                                            {.pitch = framebuffer->frame_width * sizeof(uint32_t),
+                                                                    .xsize = (size_t) framebuffer->frame_width,
+                                                                    .ysize = (size_t) framebuffer->frame_height});
+            framebuffer->depth = CUDABufferView2D<float>(depth_mapping_ptr,
+                                                         {.pitch = framebuffer->frame_width * sizeof(float),
+                                                                 .xsize = (size_t) framebuffer->frame_width,
+                                                                 .ysize = (size_t) framebuffer->frame_height});
 
-        //=========================================
+            //=========================================
+            // 设置体渲染参数并进行CUDA绘制
+            vol_render_timer.start();
+            if(!mouse->is_cursor_visible())
+                render_volume();
+            else if(vol_tag_priv_data.clicked && app_settings.annotating){
+                query_volume();
+            }
+            vol_render_timer.stop();
+            CUB_CHECK(cudaGraphicsUnmapResources(2, rescs));
 
-        //将cudaGL interop资源拷贝到OpenGL纹理中
-        cudaGL_interop.color_pbo.bind();
-        offscreen.color.set_texture_data<color4b>(offscreen.frame_width, offscreen.frame_height, nullptr);
-        cudaGL_interop.color_pbo.unbind();
+            //=========================================
 
-        cudaGL_interop.depth_pbo.bind();
-        offscreen.depth.set_texture_data<GLfloat>(offscreen.frame_width, offscreen.frame_height, nullptr);
-        cudaGL_interop.depth_pbo.unbind();
+            //将cudaGL interop资源拷贝到OpenGL纹理中
+            cudaGL_interop.color_pbo.bind();
+            offscreen.color.set_texture_data<color4b>(offscreen.frame_width, offscreen.frame_height, nullptr);
+            cudaGL_interop.color_pbo.unbind();
 
-        GL_EXPR(glFinish());
+            cudaGL_interop.depth_pbo.bind();
+            offscreen.depth.set_texture_data<GLfloat>(offscreen.frame_width, offscreen.frame_height, nullptr);
+            cudaGL_interop.depth_pbo.unbind();
 
+            GL_EXPR(glFinish());
+
+            //将view depth转换为proj depth并写入到rbo中
+            offscreen.fbo.bind();
+//            offscreen.fbo.attach(GL_COLOR_ATTACHMENT0, offscreen.color);
+//            vutil::gl::framebuffer_t::clear_color_depth_buffer();
+            vutil::gl::framebuffer_t::clear_buffer(GL_DEPTH_BUFFER_BIT);
+
+            offscreen.depth.bind(0);
+            view_to_proj_shader.bind();
+
+            v2p_params.proj = camera.get_proj();
+            v2p_params_buffer.set_buffer_data(&v2p_params);
+            v2p_params_buffer.bind(0);
+
+            quad_vao.bind();
+//            GL_EXPR(glDisable(GL_DEPTH_TEST));
+            GL_EXPR(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+//            GL_EXPR(glEnable(GL_DEPTH_TEST));
+            quad_vao.unbind();
+            view_to_proj_shader.unbind();
+            offscreen.fbo.unbind();
+        }
+        //测试只画swc线
+        if constexpr(false){
+            offscreen.fbo.bind();
+            offscreen.fbo.attach(GL_COLOR_ATTACHMENT0, offscreen.color);
+            vutil::gl::framebuffer_t::clear_color_depth_buffer();
+
+
+            swc_renderer->Draw(camera.get_view(), camera.get_proj());
+
+
+            offscreen.fbo.unbind();
+        }
 
 
         framebuffer_t::bind_to_default();
         framebuffer_t::clear_color_depth_buffer();
+
+        frame_app_settings();
+
 
         frame_vol();
 
@@ -307,7 +450,6 @@ private:
     void render_volume(){
 
         // 计算视锥体内的数据块
-
         update_vol_camera();
         auto camera_proj_view = vol_camera.GetProjViewMatrix();
         Frustum camera_view_frustum;
@@ -434,7 +576,44 @@ private:
 
         gpu_pt_mgr_ref->Release(intersect_blocks);
     }
+    void query_volume(){
+        LOG_DEBUG("start query volume");
 
+        LOG_DEBUG("query pos: {} {}", vol_tag_priv_data.clicked_pos.x,
+                  vol_tag_priv_data.clicked_pos.y);
+
+        crt_vol_renderer->Query(vol_tag_priv_data.clicked_pos.x,
+                                vol_tag_priv_data.clicked_pos.y,
+                                vol_tag_priv_data.query_info_view, 0);
+
+
+        SWC::SWCPoint pt;
+        pt.id = ++vol_tag_priv_data.swc_id;
+        if(vol_tag_priv_data.swc_id == 1){
+            vol_tag_priv_data.swc_patch_mp[pt.id] = vol_tag_priv_data.patch_id++;
+        }
+        pt.pid = vol_tag_priv_data.prev_swc_id;
+        pt.x = vol_tag_priv_data.query_info_view.at(0);
+        pt.y = vol_tag_priv_data.query_info_view.at(1);
+        pt.z = vol_tag_priv_data.query_info_view.at(2);
+        pt.radius = vol_tag_priv_data.query_info_view.at(3);
+        swc.InsertNodeLeaf(pt);
+        vec4f cur_vtx = vec4f(pt.x, pt.y, pt.z, pt.radius);
+        auto prev_node = swc.GetNode(vol_tag_priv_data.prev_swc_id);
+        vec4f prev_vtx = vec4f(prev_node.x, prev_node.y, prev_node.z, prev_node.radius);
+        swc_renderer->AddLine(prev_vtx, cur_vtx,
+                              vol_tag_priv_data.swc_patch_mp.at(swc.GetNodeRoot(pt.id)));
+
+        LOG_DEBUG("finish query volume, pos: {} {} {}, depth: {}, color: {} {} {} {}",
+                  vol_tag_priv_data.query_info_view.at(0),
+                  vol_tag_priv_data.query_info_view.at(1),
+                  vol_tag_priv_data.query_info_view.at(2),
+                  vol_tag_priv_data.query_info_view.at(3),
+                  vol_tag_priv_data.query_info_view.at(4),
+                  vol_tag_priv_data.query_info_view.at(5),
+                  vol_tag_priv_data.query_info_view.at(6),
+                  vol_tag_priv_data.query_info_view.at(7));
+    }
 private:
     void updatePerFrameParams(PerFrameParams& params){
         params.frame_width = framebuffer->frame_width;
@@ -452,14 +631,18 @@ private:
     void frame_vol(){
         ImGui::Begin("Volume Render Frame", 0, ImGuiWindowFlags_NoResize);
 
+        auto pos = ImGui::GetWindowPos();
+        vol_renderer_priv_data.window_pos = vec2i(pos.x, pos.y);
+
         ImGui::Image((void*)(intptr_t)(offscreen.color.handle()),
                 ImVec2(offscreen.frame_width, offscreen.frame_height));
 
-
         ImGui::End();
     }
+    void frame_swc_test(){
 
-    void frame_swc(){
+    }
+    void frame_swc_settings(){
         ImGui::Begin("SWC", 0, ImGuiWindowFlags_NoResize);
 
         ImGui::Selectable("SWC Files");
@@ -480,6 +663,11 @@ private:
         ImGui::Text("Camera Dir: %f %f %f", vol_renderer_priv_data.per_frame_params.cam_dir.x,
                     vol_renderer_priv_data.per_frame_params.cam_dir.y,
                     vol_renderer_priv_data.per_frame_params.cam_dir.z);
+
+
+        auto clicked_pos = ImGui::GetIO().MouseClickedPos[0];
+        ImGui::Text("Vol Render Window Pos: %d %d", vol_renderer_priv_data.window_pos.x, vol_renderer_priv_data.window_pos.y);
+        ImGui::Text("Left Mouse Button Clicked Pos: %f %f", clicked_pos.x, clicked_pos.y);
 
         if(ImGui::RadioButton("debug normal", debug.debug_mode == debug_mode_normal)){
             debug.debug_mode = debug_mode_normal;
@@ -503,41 +691,52 @@ private:
     void frame_debug(){
         ImGui::Begin("Debug");
 
-        ImGui::BeginTable("intersect blocks", 3);
+        if(ImGui::BeginTable("intersect blocks", 3)){
+            ImGui::TableSetupColumn("BlockUID");
+            ImGui::TableSetupColumn("TexCoord");
+            ImGui::TableSetupColumn("Status");
+            ImGui::TableHeadersRow();
 
-        ImGui::TableSetupColumn("BlockUID");
-        ImGui::TableSetupColumn("TexCoord");
-        ImGui::TableSetupColumn("Status");
-        ImGui::TableHeadersRow();
+            for(auto& b : vol_renderer_priv_data.blocks_info){
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d %d %d, %d", b.first.x, b.first.y, b.first.z, b.first.GetLOD());
+                ImGui::TableNextColumn();
+                ImGui::Text("%d, %d %d %d", b.second.tid, b.second.sx, b.second.sy, b.second.sz);
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", b.second.Missed() ? "missed" : "existed");
+            }
 
-        for(auto& b : vol_renderer_priv_data.blocks_info){
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::Text("%d %d %d, %d", b.first.x, b.first.y, b.first.z, b.first.GetLOD());
-            ImGui::TableNextColumn();
-            ImGui::Text("%d, %d %d %d", b.second.tid, b.second.sx, b.second.sy, b.second.sz);
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", b.second.Missed() ? "missed" : "existed");
+            ImGui::EndTable();
+
         }
 
-        ImGui::EndTable();
 
-        ImGui::BeginTable("Level of Detail", 2);
+        if(ImGui::BeginTable("Level of Detail", 2)){
+            ImGui::TableSetupColumn("LOD");
+            ImGui::TableSetupColumn("Dist");
+            ImGui::TableHeadersRow();
 
-        ImGui::TableSetupColumn("LOD");
-        ImGui::TableSetupColumn("Dist");
-        ImGui::TableHeadersRow();
+            for(int l = 0; l <= max_lod; l++){
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("lod %d", l);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.5f", lod.LOD[l]);
+            }
 
-        for(int l = 0; l <= max_lod; l++){
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::Text("lod %d", l);
-            ImGui::TableNextColumn();
-            ImGui::Text("%.5f", lod.LOD[l]);
+            ImGui::EndTable();
         }
 
-        ImGui::EndTable();
 
+        ImGui::End();
+    }
+    void frame_app_settings(){
+        ImGui::Begin("Application Settings");
+
+        ImGui::Checkbox("Draw Volume", &app_settings.draw_volume);
+
+        ImGui::Checkbox("Annotate", &app_settings.annotating);
 
         ImGui::End();
     }
@@ -582,6 +781,7 @@ private:
     Handle<CRTVolumeRenderer> crt_vol_renderer;
 
     struct{
+        vec2i window_pos;
         std::vector<GridVolume::BlockUID> intersect_blocks;
         std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
         std::unordered_map<GridVolume::BlockUID, Handle<CUDAHostBuffer>> host_blocks;//在循环结束会释放Handle
@@ -602,10 +802,35 @@ private:
     viser::LevelOfDist lod;
     Float3 volume_space_ratio;
 
-    //标注相关
-    SWC swc;
+    vertex_array_t quad_vao;
 
+    program_t view_to_proj_shader;
+    struct alignas(16) ViewToProjParams{
+        mat4 proj;
+        float fov;
+        float w_over_h;
+    }v2p_params;
+    std140_uniform_block_buffer_t<ViewToProjParams> v2p_params_buffer;
+
+
+    //标注相关
+    SWCFile swc_file;
+    SWC swc;
+    std::unique_ptr<SWCRenderer> swc_renderer;
     struct{
+        size_t patch_id = 0;
+        //这里需要假设神经元是树型的，即只有一个根节点，但一个swc文件可以有多棵树，但不能是图
+        //记录每条神经元在渲染器中对应的patch id，一条神经元由root代表
+        std::unordered_map<SWC::SWCPointKey, size_t> swc_patch_mp;
+
+        int swc_id = 0;
+        SWC::SWCPointKey prev_swc_id = -1;
+
+
+        Handle<CUDAHostBuffer> query_info;
+        CUDABufferView1D<float> query_info_view;
+        bool clicked;
+        vec2i clicked_pos;
 
 
     }vol_tag_priv_data;
@@ -628,6 +853,12 @@ private:
         pixel_unpack_buffer color_pbo;
         pixel_unpack_buffer depth_pbo;
     }cudaGL_interop;
+
+    //系统的控制参数
+    struct{
+        bool draw_volume = true;
+        bool annotating = false;
+    }app_settings;
 };
 
 class VolAnnotaterPrivate{
