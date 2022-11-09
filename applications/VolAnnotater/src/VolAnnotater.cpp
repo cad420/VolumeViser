@@ -273,6 +273,7 @@ public:
     void initialize() override {
         GL_EXPR(glClearColor(0.f, 0.f, 0.f, 0.f));
         GL_EXPR(glClearDepthf(1.f));
+        GL_EXPR(glEnable(GL_DEPTH_TEST));
 
         //todo resize event
         framebuffer = NewGeneralHandle<FrameBuffer>(RescAccess::Unique);
@@ -302,12 +303,15 @@ public:
         camera.set_position(default_pos);
         camera.set_perspective(FOV, 0.01f, 10.f);
         camera.set_direction(vutil::deg2rad(-90.f), 0.f);
+        camera.set_move_speed(render_base_space);
+        camera.set_view_rotation_speed(0.001f);
 
+        app_settings.camera_move_speed = render_base_space;
 
         initSWCRendererResource();
 
         const std::string swc_filename = "C:/Users/wyz/projects/VolumeViser/test_data/swc/N001.swc";
-        loadSWCFile(swc_filename);
+//        loadSWCFile(swc_filename);
 
         quad_vao.initialize_handle();
 
@@ -322,6 +326,7 @@ public:
     }
 
     void frame() override {
+        camera.set_w_over_h((float)offscreen.frame_width / offscreen.frame_height);
         handle_events();
 
         vol_tag_priv_data.clicked = ImGui::GetIO().MouseClicked[0];
@@ -383,6 +388,7 @@ public:
 
             //将view depth转换为proj depth并写入到rbo中
             offscreen.fbo.bind();
+            GL_EXPR(glViewport(0, 0, offscreen.frame_width, offscreen.frame_height));
 //            offscreen.fbo.attach(GL_COLOR_ATTACHMENT0, offscreen.color);
 //            vutil::gl::framebuffer_t::clear_color_depth_buffer();
             vutil::gl::framebuffer_t::clear_buffer(GL_DEPTH_BUFFER_BIT);
@@ -401,10 +407,13 @@ public:
             quad_vao.unbind();
             view_to_proj_shader.unbind();
             offscreen.fbo.unbind();
+
+            render_swc();
         }
         //测试只画swc线
         if constexpr(false){
             offscreen.fbo.bind();
+            GL_EXPR(glViewport(0, 0, offscreen.frame_width, offscreen.frame_height));
             offscreen.fbo.attach(GL_COLOR_ATTACHMENT0, offscreen.color);
             vutil::gl::framebuffer_t::clear_color_depth_buffer();
 
@@ -446,6 +455,17 @@ private:
         static Float3 world_up = Float3(0, 1, 0);
         Float3 right = cross(camera.get_xyz_direction(), world_up);
         vol_camera.up = cross(right, camera.get_xyz_direction());
+    }
+    void render_swc(){
+        //在vol render后的depth buffer上画线
+        offscreen.fbo.bind();
+        GL_EXPR(glViewport(0, 0, offscreen.frame_width, offscreen.frame_height));
+        offscreen.fbo.attach(GL_COLOR_ATTACHMENT0, offscreen.color);
+        if(debug.clear_vol_color)
+            vutil::gl::framebuffer_t::clear_color_depth_buffer();
+        swc_renderer->Draw(camera.get_view(), camera.get_proj());
+
+        offscreen.fbo.unbind();
     }
     void render_volume(){
 
@@ -582,6 +602,11 @@ private:
         LOG_DEBUG("query pos: {} {}", vol_tag_priv_data.clicked_pos.x,
                   vol_tag_priv_data.clicked_pos.y);
 
+        if(vol_tag_priv_data.clicked_pos.x < 0 || vol_tag_priv_data.clicked_pos.x >= offscreen.frame_width
+        || vol_tag_priv_data.clicked_pos.y < 0 || vol_tag_priv_data.clicked_pos.y >= offscreen.frame_height){
+            return;
+        }
+
         crt_vol_renderer->Query(vol_tag_priv_data.clicked_pos.x,
                                 vol_tag_priv_data.clicked_pos.y,
                                 vol_tag_priv_data.query_info_view, 0);
@@ -592,18 +617,21 @@ private:
         if(vol_tag_priv_data.swc_id == 1){
             vol_tag_priv_data.swc_patch_mp[pt.id] = vol_tag_priv_data.patch_id++;
         }
-        pt.pid = vol_tag_priv_data.prev_swc_id;
+        pt.pid = vol_tag_priv_data.prev_swc_id == 0 ? -1 : vol_tag_priv_data.prev_swc_id;
         pt.x = vol_tag_priv_data.query_info_view.at(0);
         pt.y = vol_tag_priv_data.query_info_view.at(1);
         pt.z = vol_tag_priv_data.query_info_view.at(2);
         pt.radius = vol_tag_priv_data.query_info_view.at(3);
         swc.InsertNodeLeaf(pt);
-        vec4f cur_vtx = vec4f(pt.x, pt.y, pt.z, pt.radius);
-        auto prev_node = swc.GetNode(vol_tag_priv_data.prev_swc_id);
-        vec4f prev_vtx = vec4f(prev_node.x, prev_node.y, prev_node.z, prev_node.radius);
-        swc_renderer->AddLine(prev_vtx, cur_vtx,
-                              vol_tag_priv_data.swc_patch_mp.at(swc.GetNodeRoot(pt.id)));
 
+        if(pt.id > 1){
+            vec4f cur_vtx = vec4f(pt.x, pt.y, pt.z, pt.radius);
+            auto prev_node = swc.GetNode(vol_tag_priv_data.prev_swc_id);
+            vec4f prev_vtx = vec4f(prev_node.x, prev_node.y, prev_node.z, prev_node.radius);
+            swc_renderer->AddLine(prev_vtx, cur_vtx,
+                                  vol_tag_priv_data.swc_patch_mp.at(swc.GetNodeRoot(pt.id)));
+        }
+        vol_tag_priv_data.prev_swc_id = pt.id;
         LOG_DEBUG("finish query volume, pos: {} {} {}, depth: {}, color: {} {} {} {}",
                   vol_tag_priv_data.query_info_view.at(0),
                   vol_tag_priv_data.query_info_view.at(1),
@@ -685,6 +713,8 @@ private:
             debug.debug_mode = debug_mode_no_light_shading;
         }
 
+        ImGui::Checkbox("Clear Vol Color", &debug.clear_vol_color);
+
         ImGui::End();
     }
 
@@ -738,6 +768,10 @@ private:
 
         ImGui::Checkbox("Annotate", &app_settings.annotating);
 
+        if(ImGui::InputFloat("Camera Move Speed", &app_settings.camera_move_speed)){
+            camera.set_move_speed(app_settings.camera_move_speed);
+        }
+
         ImGui::End();
     }
 private:
@@ -752,6 +786,7 @@ private:
         std::vector<uint32_t> host_color;
         std::vector<float> host_depth;
         int debug_mode = 0;
+        bool clear_vol_color = false;
     }debug;
 
     VolAnnotater::VolAnnotaterCreateInfo create_info;
@@ -858,6 +893,7 @@ private:
     struct{
         bool draw_volume = true;
         bool annotating = false;
+        float camera_move_speed;
     }app_settings;
 };
 

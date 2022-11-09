@@ -13,7 +13,6 @@ layout(binding = 0, std140) uniform Params{
 //layout(location = 0) out vec4 oFragColor;
 
 void main(){
-    vec2 iScreenCoord;
     float view_depth = texture(ViewDepth, iUV).r;
     float y_scale = view_depth * tan(Fov * 0.5);
     float x_scale = y_scale * WOverH;

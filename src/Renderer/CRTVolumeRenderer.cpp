@@ -436,7 +436,7 @@ VISER_BEGIN
             }
             // view space depth
             // todo return proj depth
-            ret.depth = ray_cast_dist;
+            ret.depth = ray_cast_dist * dot(ray.d, params.cu_per_frame_params.cam_dir);
             return ret;
         }
 
@@ -460,7 +460,7 @@ VISER_BEGIN
             if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
                 return;
 //            y = params.cu_per_frame_params.frame_height - 1 - y;
-            if(x != params.cu_tag.x || params.cu_per_frame_params.frame_height - 1 - y != params.cu_tag.y)
+            if(x != params.cu_tag.x || y != params.cu_tag.y)
                 return;
 
             const unsigned int thread_count = blockDim.x * blockDim.y;
@@ -554,7 +554,7 @@ VISER_BEGIN
 
             color = make_float4(PostProcessing(color), color.w);
             // exposure gamma color-grading tone-mapping...
-            y = params.cu_per_frame_params.frame_height - 1 - y;
+//            y = params.cu_per_frame_params.frame_height - 1 - y;
             params.framebuffer.color.at(x, y) = Float4ToUInt(color);
             params.framebuffer.depth.at(x, y) = depth;
 

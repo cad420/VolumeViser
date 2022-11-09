@@ -31,6 +31,7 @@ EBVolumeFile::EBVolumeFile(std::string_view filename) {
     _->desc.block_length = eb_desc.block_length;
     _->desc.padding = eb_desc.padding;
     _->desc.blocked_dim = (_->desc.shape + _->desc.block_length - UInt3(1)) / _->desc.block_length;
+    _->desc.voxel_space = {eb_desc.space.x, eb_desc.space.y, eb_desc.space.z};
     _->desc.decoding_cpu_only = true;
 
     _->uid = VolumeIOInterface::GenUnifiedRescUID();

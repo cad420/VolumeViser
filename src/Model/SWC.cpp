@@ -217,7 +217,10 @@ public:
     }
 
     SWC::SWCPointKey SWC::GetNodeRoot(SWC::SWCPointKey id) noexcept {
-        return 0;
+        auto pid = _->swc_point_mp.at(id).pid;
+        if(pid == -1)
+            return id;
+        return GetNodeRoot(pid);
     }
 
 

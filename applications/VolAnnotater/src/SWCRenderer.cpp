@@ -31,8 +31,9 @@ void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vecto
     int vsize = vertices.size(), isize = indices.size();
     draw_patch.loaded_vertices_count = vsize;
     draw_patch.loaded_indices_count = isize;
-    int vcnt = (vsize + preserved_vertices_per_patch - 1) / preserved_vertices_per_patch;
-    int icnt = (isize + preserved_indices_per_patch - 1) / preserved_indices_per_patch;
+    // note vertices.size() == 0
+    int vcnt = std::max(1, (vsize + preserved_vertices_per_patch - 1) / preserved_vertices_per_patch);
+    int icnt = std::max(1, (isize + preserved_indices_per_patch - 1) / preserved_indices_per_patch);
     vsize = vcnt * preserved_vertices_per_patch;
     isize = icnt * preserved_indices_per_patch;
     draw_patch.vao.initialize_handle();
@@ -43,8 +44,10 @@ void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vecto
     draw_patch.vao.bind_index_buffer(draw_patch.ebo);
     draw_patch.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), draw_patch.vbo, 0);
     draw_patch.vao.enable_attrib(attrib_var_t<Vertex>(0));
-    draw_patch.vbo.set_buffer_data(vertices.data(), 0, vertices.size());
-    draw_patch.ebo.set_buffer_data(indices.data(), 0, indices.size());
+    if(vertices.size() > 0)
+        draw_patch.vbo.set_buffer_data(vertices.data(), 0, vertices.size());
+    if(indices.size() > 0)
+        draw_patch.ebo.set_buffer_data(indices.data(), 0, indices.size());
 }
 
 void SWCRenderer::AddLine(const SWCRenderer::Vertex &vertex_a, const SWCRenderer::Vertex &vertex_b, size_t patch_id) {
@@ -55,14 +58,15 @@ void SWCRenderer::AddLine(const SWCRenderer::Vertex &vertex_a, const SWCRenderer
     ExpandIfFull(patch.draw_patch);
     std::vector<Vertex> vtx;
     if(patch.vertices_mp.count(vertex_a) == 0){
-        vtx.push_back(vertex_b);
+        vtx.push_back(vertex_a);
         patch.vertices_mp[vertex_a] = patch.idx++;
     }
     if(patch.vertices_mp.count(vertex_b) == 0){
         vtx.push_back(vertex_b);
         patch.vertices_mp[vertex_b] = patch.idx++;
     }
-    patch.draw_patch.vbo.set_buffer_data(vtx.data(), patch.draw_patch.loaded_vertices_count, vtx.size());
+    if(vtx.size() > 0)
+        patch.draw_patch.vbo.set_buffer_data(vtx.data(), patch.draw_patch.loaded_vertices_count, vtx.size());
     patch.draw_patch.loaded_vertices_count += vtx.size();
 
     uint32_t idxes[2] = {patch.vertices_mp.at(vertex_a), patch.vertices_mp.at(vertex_b)};
@@ -87,7 +91,7 @@ void SWCRenderer::Draw(const mat4 &view, const mat4& proj) {
         auto& draw_patch = patch.draw_patch;
         draw_patch.vao.bind();
 
-        GL_EXPR(glDrawElements(GL_LINES, draw_patch.ebo.index_count(), GL_UNSIGNED_INT, nullptr));
+        GL_EXPR(glDrawElements(GL_LINES, draw_patch.loaded_indices_count, GL_UNSIGNED_INT, nullptr));
 
         draw_patch.vao.unbind();
     }
@@ -96,7 +100,7 @@ void SWCRenderer::Draw(const mat4 &view, const mat4& proj) {
 }
 
 void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
-    if(patch.loaded_vertices_count % preserved_vertices_per_patch == 0){
+    if(patch.loaded_vertices_count && patch.loaded_vertices_count % preserved_vertices_per_patch == 0){
         int new_vertices_count = patch.loaded_vertices_count + preserved_vertices_per_patch;
         vertex_buffer_t<Vertex> vbo;
         vbo.initialize_handle();
@@ -110,7 +114,7 @@ void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
         patch.vao.enable_attrib(attrib_var_t<Vertex>(0));
         patch.loaded_vertices_count = new_vertices_count;
     }
-    if(patch.loaded_indices_count % preserved_indices_per_patch == 0){
+    if(patch.loaded_indices_count && patch.loaded_indices_count % preserved_indices_per_patch == 0){
         int new_indices_count = patch.loaded_indices_count + preserved_indices_per_patch;
         index_buffer_t<uint32_t> ebo;
         ebo.initialize_handle();

@@ -55,7 +55,7 @@ VUTIL_GL_BEGIN
             }
             //update camera
             {
-                camera.set_w_over_h(window->get_window_w_over_h());
+//                camera.set_w_over_h(window->get_window_w_over_h());
                 if(!mouse->is_cursor_visible()){
                     camera.update(
                             {

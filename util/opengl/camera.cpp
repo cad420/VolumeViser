@@ -65,7 +65,7 @@ VUTIL_GL_BEGIN
     {
         const auto dir = get_xyz_direction();
         view = transform::look_at(pos,pos + dir,{0,1,0});
-        proj = transform::perspective(deg2rad(fov_deg),w_over_h,near_z,far_z);
+        proj = transform::perspective(deg2rad(fov_deg * 0.5f),w_over_h,near_z,far_z);
         view_proj = proj * view;
     }
     float fps_camera_t::get_near_z() const noexcept
