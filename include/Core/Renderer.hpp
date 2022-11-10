@@ -17,6 +17,9 @@ struct FrameBuffer{
 //都在标注应用部分编写代码，而不作为核心库里的功能。
 //体绘制用CUDA实现
 
+    using VTextureHandle = Handle<CUDATexture>;
+    using TextureUnit = int;
+    using PTBufferHandle = Handle<CUDABuffer>;
 
 //渲染器本身也是一种资源，它是CPU和GPU资源的结合，因此同一时刻只能有一个调用者
 class Renderer : public UnifiedRescBase{
@@ -43,9 +46,7 @@ public:
 //    using RenderResult = cub::cu_result;
 //    virtual std::future<RenderResult> RenderAsync(FrameBuffer& frame) = 0;
 
-    using VTextureHandle = Handle<CUDATexture>;
-    using TextureUnit = int;
-    using PTBufferHandle = Handle<CUDABuffer>;
+
 
 };
 

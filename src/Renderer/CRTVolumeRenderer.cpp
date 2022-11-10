@@ -227,6 +227,7 @@ VISER_BEGIN
                                         const float4& color, const float3& pos,
                                         const float3& ray_dir,
                                         const float3& dt, uint32_t lod){
+            //todo use texGrad???
             float3 N;
             float x1, x2;
             int missed = 0;

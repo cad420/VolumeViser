@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include <Common/Common.hpp>
 
 // SWC文件生成Mesh文件
 // 1.加载SWC文件到内存
@@ -18,3 +18,14 @@
 // 由于可能局部修改，那么只需要局部重构网格，如果简化可以局部的话
 
 //预先估计SWC涉及到区域的大小，或者实现把其分割为若干段
+
+VISER_BEGIN
+
+
+
+
+VISER_END
+
+
+
+

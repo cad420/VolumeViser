@@ -20,6 +20,7 @@ file(GLOB_RECURSE
 set_source_files_properties(
         ${PROJECT_SOURCE_DIR}/src/Renderer/CRTVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Renderer/RTVolumeRenderer.cpp
+        ${PROJECT_SOURCE_DIR}/src/Algorithm/MarchingCube.cpp
         PROPERTIES LANGUAGE CUDA
 )
 

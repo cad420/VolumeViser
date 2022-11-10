@@ -1,8 +1,10 @@
-//
-// Created by wyz on 2022/9/17.
-//
+#pragma once
 
-#ifndef VOLUMEVISER_NEURONTRACE_HPP
-#define VOLUMEVISER_NEURONTRACE_HPP
+#include <Common/Common.hpp>
 
-#endif //VOLUMEVISER_NEURONTRACE_HPP
+VISER_BEGIN
+
+
+
+
+VISER_END

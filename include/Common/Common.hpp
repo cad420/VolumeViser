@@ -120,7 +120,8 @@ enum class UnifiedRescType : uint8_t{
     GPUVTexMgr = 11,
     CRTVolRenderer = 12,
     General = 13,
-    MaxEnum = 14
+    MCAlgo = 14,
+    MaxEnum = 15
 };
 
 //最高位8位代表资源类型，低56位代表一个全局唯一该类型资源的编号
