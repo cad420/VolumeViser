@@ -33,5 +33,6 @@ void ComputeIntersectedBlocksWithViewSpace(std::vector<GridVolume::BlockUID>& bl
  */
 void ComputeUpBoundLOD(LevelOfDist& lod, float base_space, int width, int height, float fov);
 
+void ComputeDefaultLOD(LevelOfDist& lods, Float3 block_space);
 
 VISER_END

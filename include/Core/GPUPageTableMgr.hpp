@@ -30,9 +30,10 @@ public:
     inline static Key INVALID_KEY = GridVolume::INVALID_BLOCK_UID;
 
 // also used in gpu kernel
-#define TexCoordFlag_IsValid  0x1u
-#define TexCoordFlag_IsBlack  0x2u
-#define TexCoordFlag_IsSparse 0x4u
+#define TexCoordFlag_IsValid  0x1u //代表数据是否存在显存
+#define TexCoordFlag_IsBlack  0x2u //代表数据块本身是否全为0
+#define TexCoordFlag_IsSparse 0x4u //代表数据块本身是否为稀疏的
+#define TexCoordFlag_IsSWC    0x8u //代表数据块本身是否为SWC体素化使用
 
     struct TexCoord{
         uint32_t sx, sy, sz;//一块纹理内部的偏移坐标

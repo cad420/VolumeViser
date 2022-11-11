@@ -82,6 +82,13 @@ VISER_BEGIN
             lods.LOD[lod] = dy;
         }
     }
+    void ComputeDefaultLOD(LevelOfDist& lods, Float3 block_space){
+        auto base_lod_dist = block_space.length() * 0.5f;
+        for(int lod = 0; lod < LevelOfDist::MaxLevelCount; lod++){
+            lods.LOD[lod] = base_lod_dist * (1 << lod);
+        }
+        lods.LOD[LevelOfDist::MaxLevelCount - 1] = std::numeric_limits<float>::max();
+    }
 
     template<>
     void ComputeIntersectedBlocksWithViewSpace<Frustum>(std::vector<GridVolume::BlockUID>& blocks,

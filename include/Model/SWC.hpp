@@ -5,7 +5,45 @@
 VISER_BEGIN
 
 //每个节点都有唯一的编号，为了支持随机的删除和插入，
-//考虑使用list+map来实现
+//考虑使用unordered_map来实现
+
+// 对一个点的更改操作只能是以下三种
+// 1. 添加一个新点 2. 删除一个旧店 3.改变一个现有点的半径
+// 注意 无法更改一个现有点的位置和连接关系 如果要处理这种情况 那么直接删除再添加
+
+// SWC局部更新
+// 每次对SWC进行更改操作后 内部都会记录那些改动过的点 一直到显式调用commit
+// commit会清除所有当前记录的改动过的点
+
+
+// 全局SWC体素化
+// 根据所有的SWC点建立一个BVH树，每个BVH Node进行体素化后再进行marching cube算法，适用于无错误的整个swc文件生成mesh。
+// 这个算法不支持局部SWC更新，因此更新后的BVH树会发生变化，Node发生变化的话无法与之前生成的mesh对应
+
+// 支持局部快速更新的SWC体素化
+// 目标 每次只重新生成更新部分的mesh 没有变化部分的mesh不会被影响
+// 也就是说 每个mesh需要有固定的编号对应 而且是与SWC本身数据无关的
+// SWC数据影响的是体素化过程会写入到哪些block
+// 使用BlockUID，包括了xyz索引和lod，可以转换到UnifiedRescUID(size_t)
+// 那么需要确定每个swc point与block uid的对应关系
+// 一个swc point影响到多个block
+// 一个block对应唯一生成的mesh
+// 每次commit前，获取所有直接改动以及被间接影响的点，也就是所有体素化会有所改变的线段segment
+// 根据所有改变线段的AABB包围盒得到所有可能受影响的block
+// 对所有改变线段依次进行体素化，这一过程类似于对虚拟纹理进行写入操作，然后标记真正被改动过的block
+// 对改动过的block依次进行marching cube算法，得到block所对应的mesh，并按照key-value进行存储
+// 因此相对于的SWC渲染器，每个patch对应的是一个block所属的mesh
+// 也就是说，一个swc对应生成的mesh以block单位分别存储，如果要进行光滑操作的话，可以先全局合并重复顶点，生成索引
+// 因为光滑操作可以最后统一进行，因此选择使用CPU进行比较方便写，不需要实时光滑，因为光滑需要生成索引，因此和mesh化简应该是属于最后导出前的转换任务
+
+// 虚拟纹理的写入 在创建cuda array的时候加入读写的flag 然后生成cuda surface对象 使用surf3Dread surf3Dwrite
+
+// SWC线渲染
+// 一个SWC对应多条神经元，每条神经元只有一个根节点，其是树型的，因此可以用一个root id代表一条神经元
+// 一条神经元与一个patch id唯一对应
+// 如果在中间插入或者任意的删除，都需要重新将整个数据上传到渲染器
+// 如果是添加新的点，那么不需要重新上传
+
 class SWCPrivate;
 class SWC{
 public:
@@ -18,6 +56,12 @@ public:
     SWC();
 
     ~SWC();
+
+    std::vector<SWCPointKey> GetAllModifiedSWCPtsKey();
+
+    std::vector<SWCPointKey> GetAllModifiedAndInfluencedPtsKey();
+
+    void Commit() noexcept;
 
     void PrintInfo() noexcept;
 

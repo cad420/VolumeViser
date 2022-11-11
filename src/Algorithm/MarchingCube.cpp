@@ -10,6 +10,11 @@ VISER_BEGIN
 
     namespace{
 
+        static constexpr int HashTableSize = 1024;
+        static constexpr int ThreadsPerBlocks = 64;
+        static constexpr int MaxLodLevels = LevelOfDist::MaxLevelCount;
+        using HashTableItem = GPUPageTableMgr::PageTableItem;
+
         __constant__ unsigned char TriNumTable[43] = {
                 0, // 0
                 1, // 1
@@ -28,15 +33,44 @@ VISER_BEGIN
                 4 // 14
         };
 
+        CUB_GPU uint32_t GetHashValue(const uint4& key){
+            auto p = reinterpret_cast<const uint32_t*>(&key);
+            uint32_t v = p[0];
+            for(int i = 1; i < 4; i++){
+                v = v ^ (p[i] + 0x9e3779b9 + (v << 6) + (v >> 2));
+            }
+            return v;
+        }
 
-        static constexpr int HashTableSize = 1024;
-        static constexpr int ThreadsPerBlocks = 64;
-        using HashTableItem = GPUPageTableMgr::PageTableItem;
+#define INVALID_VALUE uint4{0, 0, 0, 0}
+
+        CUB_GPU uint4 Query(const uint4& key, uint4 hash_table[][2]){
+            uint32_t hash_v = GetHashValue(key);
+            auto pos = hash_v % HashTableSize;
+            int i = 0;
+            bool positive = false;
+            while(i < HashTableSize){
+                int ii = i * i;
+                pos += positive ? ii : -ii;
+                pos %= HashTableSize;
+                if(hash_table[pos][0] == key){
+                    return hash_table[pos][1];
+                }
+                if(positive)
+                    ++i;
+                positive = !positive;
+            }
+            return INVALID_VALUE;
+        }
+
         struct CUDAPageTable{
             CUDABufferView1D<HashTableItem> table;
         };
         struct CUDAVolumeParams{
             float3 space;
+            uint3 voxel_dim;
+            uint32_t block_length;
+            uint32_t padding;
         };
         struct CUDAMCAlgoParams{
             uint3 origin; uint32_t lod;
@@ -48,17 +82,35 @@ VISER_BEGIN
             CUDAPageTable cu_page_table;
             CUDAVolumeParams cu_vol_params;
             CUDAMCAlgoParams cu_mc_params;
+
             CUDABufferView3D<uint32_t> vol_code;
             // 43 种情况对应的edge table起始地址
-            CUDABufferView1D<const char*> tri_index_table;
-            CUDABufferView1D<float4> vertex_pos;
+            CUDABufferView1D<float3> vertex_pos;
+            //存储每一个体素之前总共产生的顶点数量
             CUDABufferView1D<uint32_t> num_verts_scanned;
+            uint32_t max_vert_num;
         };
 
         CUB_GPU float VirtualSampling(const MCKernelParams& params,
                               uint4 hash_table[][2],
                               uint3 voxel_coord, uint32_t lod){
-
+            uint32_t lod_block_length = params.cu_vol_params.block_length << lod;
+            uint3 block_uid = voxel_coord / lod_block_length;
+            uint3 offset_in_block = (voxel_coord - block_uid * lod_block_length) / (1 << lod);
+            uint4 key = make_uint4(block_uid, lod);
+            uint4 tex_coord = Query(key, hash_table);
+            uint32_t tid = (tex_coord.w >> 16) & 0xffff;
+            uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+            float ret;
+            if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
+                uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
+                auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+                ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+            }
+            else{
+                ret = 0.f;
+            }
+            return ret;
         }
 
 
@@ -248,22 +300,345 @@ VISER_BEGIN
         }
 
 
-#define MAKE_CODE0(caseIdx, subCaseIdx, triNum, configCaseIdx, subconfig13Value) (((((caseIdx << 4) | subCaseIdx) << 8) | triNum) | (configCaseIdx << 16) | (subconfig13Value << 24))
-#define MAKE_CODE(caseIdx, subCaseIdx, triNum, configCaseIdx)  (((((caseIdx << 4) | subCaseIdx) << 8) | triNum) | (configCaseIdx << 16))
-#define MAKE_HARD_CODE()
+//传入的都需要是uint32_t，这里的caseIdx是自己定义的43种case的index
+
+
+#define MAKE_HARD_CODE(caseIdx, triNum, configCaseIdx, subconfig13Value) ((triNum) | (caseIdx << 8) | (configCaseIdx << 16) | (subconfig13Value << 24))
+
 
         //(可选)0.统计每个voxel是否会生成三角形
-        //1.生成每个cube对应三角形的顶点，以及cube的case index
+        //1.得到每个cube对应的case index(43种)
         CUB_KERNEL void MCKernel0_ClassifyVoxelAndGenVertices(MCKernelParams params){
             const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
             const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
             const unsigned int z = blockIdx.z * blockDim.z + threadIdx.z;
-            const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y + threadIdx.z * blockDim.x * blockDim.y;
-             char * const p = nullptr;
 
+            if(x >= params.cu_mc_params.shape.x || y >= params.cu_mc_params.shape.y || z >= params.cu_mc_params.shape.z) return;
+
+            const unsigned int thread_count = blockDim.x * blockDim.y * blockDim.z;
+            const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y + threadIdx.z * blockDim.x * blockDim.y;
+            const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;
+            const unsigned int thread_beg = thread_idx * load_count;
+            const unsigned int thread_end = min(thread_beg + load_count, HashTableSize);
+
+            __shared__ uint4 hash_table[HashTableSize][2];
+
+            // fill shared hash table
+
+            auto& table = params.cu_page_table.table;
+            for(int i = 0; i < HashTableSize; ++i){
+                auto& block_uid = table.at(i).first;
+                auto& tex_coord = table.at(i).second;
+                hash_table[i][0] = uint4{block_uid.x, block_uid.y, block_uid.z, block_uid.w};
+                hash_table[i][1] = uint4{tex_coord.sx, tex_coord.sy, tex_coord.sz,
+                                         ((uint32_t)tex_coord.tid << 16) | tex_coord.flag};
+            }
+
+            __syncthreads();
+
+            //全局的体素坐标
+            uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
+
+            //采样得到一个cube对应的八个体素
+            float field[8];
+            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod);
+            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod);
+            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod);
+            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod);
+            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod);
+            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod);
+            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod);
+            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod);
+
+            //计算索引，分类查表，计算出case idx(43种)，以及会生成的三角形数量，所有信息pack到一个uint32_t
+            uint32_t config_index = 0;
+            config_index += uint32_t(field[0] < params.cu_mc_params.isovalue);
+            config_index += uint32_t(field[1] < params.cu_mc_params.isovalue) << 1;
+            config_index += uint32_t(field[2] < params.cu_mc_params.isovalue) << 2;
+            config_index += uint32_t(field[3] < params.cu_mc_params.isovalue) << 3;
+            config_index += uint32_t(field[4] < params.cu_mc_params.isovalue) << 4;
+            config_index += uint32_t(field[5] < params.cu_mc_params.isovalue) << 5;
+            config_index += uint32_t(field[6] < params.cu_mc_params.isovalue) << 6;
+            config_index += uint32_t(field[7] < params.cu_mc_params.isovalue) << 7;
+
+            const unsigned int case_idx = cases[config_index][0];
+            const unsigned int config_idx_in_case = cases[config_index][1];
+            unsigned int subconfig = 0, subconfig13Value = 0;
+            uint32_t m_code = 0;
+            switch (case_idx) {
+                // 0 : 生成 0 个三角形  内部 0 中情况
+                case 0: {
+                    m_code = MAKE_HARD_CODE(0, 0, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+
+                // 1 : 生成 1 个三角形  内部 1 种情况
+                case 1 : {
+                    m_code = MAKE_HARD_CODE(1, 1, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+
+                // 2 : 生成 2 个三角形  内部 1 种情况
+                case 2 : {
+                    m_code = MAKE_HARD_CODE(2, 2, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+                // 3 : 内部 2 种情况  1:2  2:4
+                case 3 : {
+                    if(TestFace(field, test3[config_idx_in_case]) < 0){
+                        m_code = MAKE_HARD_CODE(3, 2, config_idx_in_case, subconfig13Value);
+                    }
+                    else{
+                        m_code = MAKE_HARD_CODE(4, 4, config_idx_in_case, subconfig13Value);
+                    }
+                    break;
+                }
+                // 4 : 内部 2 种情况  1:2  2:6
+                case 4 : {
+                    if(TestInterior(field, case_idx, test4[config_idx_in_case], 1) < 0){
+                        m_code = MAKE_HARD_CODE(5, 2, config_idx_in_case, subconfig13Value);
+                    }
+                    else{
+                        m_code = MAKE_HARD_CODE(6, 6, config_idx_in_case, subconfig13Value);
+                    }
+                    break;
+                }
+                // 5 : 生成 3 个三角形  内部 1 种情况
+                case 5 : {
+                    m_code = MAKE_HARD_CODE(7, 3, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+                // 6 : 内部 3 种情况  1:3  2:9  3:5
+                case 6 : {
+                    if(TestFace(field, test6[config_idx_in_case][0]) < 0){
+                        if(TestInterior(field, case_idx, test6[config_idx_in_case][1], test6[config_idx_in_case][2]) < 0){
+                            m_code = MAKE_HARD_CODE(8, 3, config_idx_in_case, subconfig13Value);
+                        }
+                        else{
+                            m_code = MAKE_HARD_CODE(9, 9, config_idx_in_case, subconfig13Value);
+                        }
+                    }
+                    else{
+                        m_code = MAKE_HARD_CODE(10, 5, config_idx_in_case, subconfig13Value);
+                    }
+                    break;
+                }
+                // 7 : 内部 8 种情况  1:3  2:5  3:5  4:9  5:5  6:9  7:9  8:5  9:9
+                case 7 : {
+                    if(TestFace(field, test7[config_idx_in_case][0]) < 0){
+                        subconfig += 1;
+                    }
+                    if(TestFace(field, test7[config_idx_in_case][1]) < 0){
+                        subconfig += 2;
+                    }
+                    if(TestFace(field, test7[config_idx_in_case][2]) < 0){
+                        subconfig += 4;
+                    }
+                    switch (subconfig) {
+                        case 0 : {
+                            m_code = MAKE_HARD_CODE(11, 3, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 1 : {
+                            m_code = MAKE_HARD_CODE(12, 5, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 2 : {
+                            m_code = MAKE_HARD_CODE(13, 5, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 3 : {
+                            m_code = MAKE_HARD_CODE(14, 9, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 4 : {
+                            m_code = MAKE_HARD_CODE(15, 5, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 5 : {
+                            m_code = MAKE_HARD_CODE(16, 9, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 6 : {
+                            m_code = MAKE_HARD_CODE(17, 9, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 7 : {
+                            if(TestInterior(field, case_idx, test7[config_idx_in_case][3], test7[config_idx_in_case][4]) > 0){
+                                m_code = MAKE_HARD_CODE(18, 5, config_idx_in_case, subconfig13Value);
+                            }
+                            else{
+                                m_code = MAKE_HARD_CODE(19, 9, config_idx_in_case, subconfig13Value);
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+                // 8 : 生成 2 个三角形  内部 1 种情况
+                case 8 : {
+                    m_code = MAKE_HARD_CODE(20, 2, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+                // 9 : 生成 4 个三角形  内部 1 种情况
+                case 9 : {
+                    m_code = MAKE_HARD_CODE(21, 4, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+                // 10 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
+                case 10 : {
+                    if(TestFace(field, test10[config_idx_in_case][0]) > 0){
+                        subconfig += 1;
+                    }
+                    if(TestFace(field, test10[config_idx_in_case][1]) > 0){
+                        subconfig += 2;
+                    }
+                    switch (subconfig) {
+                        case 0 : {
+                            if(TestInterior(field, case_idx, test10[config_idx_in_case][2], 1) < 0){
+                                m_code = MAKE_HARD_CODE(22, 4, config_idx_in_case, subconfig13Value);
+                            }
+                            else{
+                                m_code = MAKE_HARD_CODE(23, 8, config_idx_in_case, subconfig13Value);
+                            }
+                            break;
+                        }
+                        case 1 : {
+                            m_code = MAKE_HARD_CODE(24, 8, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 2 : {
+                            m_code = MAKE_HARD_CODE(25, 8, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                        case 3 : {
+                            m_code = MAKE_HARD_CODE(26, 4, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                    }
+                    break;
+                }
+                // 11 :生成 4 个三角形  内部 1 种情况
+                case 11 : {
+                    m_code = MAKE_HARD_CODE(27, 4, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+                // 12 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
+                case 12 : {
+                    if(TestFace(field, test12[config_idx_in_case][0]) > 0){
+                        subconfig += 1;
+                    }
+                    if(TestFace(field, test12[config_idx_in_case][1]) > 0){
+                        subconfig += 2;
+                    }
+                    switch (subconfig) {
+                        case 0 : {
+                            if(TestInterior(field, case_idx, test12[config_idx_in_case][2], test12[config_idx_in_case][3]) < 0){
+                                m_code = MAKE_HARD_CODE(28, 4, config_idx_in_case, subconfig13Value);
+                            }
+                            else{
+                                m_code = MAKE_HARD_CODE(29, 8, config_idx_in_case, subconfig13Value);
+                            }
+                            break;
+                        }
+
+                        case 1 : {
+                            m_code = MAKE_HARD_CODE(30, 8, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+
+                        case 2 : {
+                            m_code = MAKE_HARD_CODE(31, 8, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+
+                        case 3 : {
+                            m_code = MAKE_HARD_CODE(32, 4, config_idx_in_case, subconfig13Value);
+                            break;
+                        }
+                    }
+                    break;
+                }
+                // 13 : 内部 9 种情况  1:4  2:6  3:10  4:12  5:6  6:10  7:10  8:6  9:4
+                case 13 : {
+                    if(TestFace(field, test13[config_idx_in_case][0]) > 0){
+                        subconfig += 1;
+                    }
+                    if(TestFace(field, test13[config_idx_in_case][1]) > 0){
+                        subconfig += 2;
+                    }
+                    if(TestFace(field, test13[config_idx_in_case][2]) > 0){
+                        subconfig += 4;
+                    }
+                    if(TestFace(field, test13[config_idx_in_case][3]) > 0){
+                        subconfig += 8;
+                    }
+                    if(TestFace(field, test13[config_idx_in_case][4]) > 0){
+                        subconfig += 16;
+                    }
+                    if(TestFace(field, test13[config_idx_in_case][5]) > 0){
+                        subconfig += 32;
+                    }
+                    subconfig13Value = subconfig13[subconfig];
+                    if(subconfig13Value == 0){
+                        m_code = MAKE_HARD_CODE(33, 4, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value < 7){
+                        m_code = MAKE_HARD_CODE(34, 6, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value < 19){
+                        m_code = MAKE_HARD_CODE(35, 10, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value < 23){
+                        m_code = MAKE_HARD_CODE(36, 12, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value < 27){
+                        if(TestInterior(field, case_idx, test13[config_idx_in_case][6], tiling13_5_1[config_idx_in_case][subconfig13Value - 23][0]) < 0){
+                            m_code = MAKE_HARD_CODE(37, 6, config_idx_in_case, subconfig13Value);
+                        }
+                        else{
+                            m_code = MAKE_HARD_CODE(38, 10, config_idx_in_case, subconfig13Value);
+                        }
+
+                    }
+                    else if(subconfig13Value < 39){
+                        m_code = MAKE_HARD_CODE(39, 10, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value < 45){
+                        m_code = MAKE_HARD_CODE(40, 6, config_idx_in_case, subconfig13Value);
+                    }
+                    else if(subconfig13Value == 45){
+                        m_code = MAKE_HARD_CODE(41, 4, config_idx_in_case, subconfig13Value);
+                    }
+                    break;
+                }
+                // 14 : 生成 4 个三角形  内部 1 种情况
+                case 14 : {
+                    m_code = MAKE_HARD_CODE(42, 4, config_idx_in_case, subconfig13Value);
+                    break;
+                }
+            }
+
+            params.vol_code.at(x, y, z) = m_code;
+        }
+
+        __forceinline__ CUB_GPU float3 VertexInterp(float isovalue, float3 p0, float3 p1, float f0, float f1){
+            return lerp(p0, p1, (isovalue - f0) / (f1 - f0));
+        }
+
+        CUB_KERNEL void MCKernel1_GenTriangles(MCKernelParams params){
+            const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+            const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+            const unsigned int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+            if(x >= params.cu_mc_params.shape.x
+               || y >= params.cu_mc_params.shape.y
+               || z >= params.cu_mc_params.shape.z)
+                return;
 
             __shared__ const char*const* tri_edge_table[43];
             __shared__ const char*const*const* case13_edge_table[7];
+            __shared__ int case13_offset[7];
             if(x == 0 && y == 0 && z == 0){
                 tri_edge_table[0] = nullptr; // 0
                 tri_edge_table[1] = reinterpret_cast<const char*const*>(tiling1); // 1
@@ -300,345 +675,24 @@ VISER_BEGIN
                 tri_edge_table[32] = reinterpret_cast<const char*const*>(tiling12_1_1_); // 12.1.1 or 12.5
                 tri_edge_table[33] = reinterpret_cast<const char*const*>(tiling13_1); // 13.1
                 case13_edge_table[0] = reinterpret_cast<const char*const*const*>(tiling13_2); // 13.2
+                case13_offset[0] = 1;
                 case13_edge_table[1] = reinterpret_cast<const char*const*const*>(tiling13_3); // 13.3
+                case13_offset[1] = 7;
                 case13_edge_table[2] = reinterpret_cast<const char*const*const*>(tiling13_4); // 13.4
+                case13_offset[2] = 19;
                 case13_edge_table[3] = reinterpret_cast<const char*const*const*>(tiling13_5_1); // 13.5.1 or 13.5
+                case13_offset[3] = 23;
                 case13_edge_table[4] = reinterpret_cast<const char*const*const*>(tiling13_5_2); // 13.5.2 or 13.6
+                case13_offset[4] = 23;
                 case13_edge_table[5] = reinterpret_cast<const char*const*const*>(tiling13_3_); // 13.3 or 13.7
+                case13_offset[5] = 27;
                 case13_edge_table[6] = reinterpret_cast<const char*const*const*>(tiling13_2_); // 13.2 or 13.8
+                case13_offset[6] = 39;
                 tri_edge_table[41] = reinterpret_cast<const char*const*>(tiling13_1_); // 13.1 or 13.9
                 tri_edge_table[42] = reinterpret_cast<const char*const*>(tiling14); // 14
             }
             __syncthreads();
 
-            if(x >= params.cu_mc_params.shape.x
-            || y >= params.cu_mc_params.shape.y
-            || z >= params.cu_mc_params.shape.z)
-                return;
-
-            const unsigned int thread_count = blockDim.x * blockDim.y * blockDim.z;
-
-            const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;
-            const unsigned int thread_beg = thread_idx * load_count;
-            const unsigned int thread_end = min(thread_beg + load_count, HashTableSize);
-
-            __shared__ uint4 hash_table[HashTableSize][2];
-
-            // fill shared hash table
-
-            auto& table = params.cu_page_table.table;
-            for(int i = 0; i < HashTableSize; ++i){
-                auto& block_uid = table.at(i).first;
-                auto& tex_coord = table.at(i).second;
-                hash_table[i][0] = uint4{block_uid.x, block_uid.y, block_uid.z, block_uid.w};
-                hash_table[i][1] = uint4{tex_coord.sx, tex_coord.sy, tex_coord.sz,
-                                         ((uint32_t)tex_coord.tid << 16) | tex_coord.flag};
-            }
-
-            __syncthreads();
-
-            uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
-
-            float field[8];
-            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod);
-            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod);
-            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod);
-            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod);
-            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod);
-            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod);
-            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod);
-            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod);
-
-            uint32_t config_index = 0;
-            config_index += uint32_t(field[0] < params.cu_mc_params.isovalue);
-            config_index += uint32_t(field[1] < params.cu_mc_params.isovalue) << 1;
-            config_index += uint32_t(field[2] < params.cu_mc_params.isovalue) << 2;
-            config_index += uint32_t(field[3] < params.cu_mc_params.isovalue) << 3;
-            config_index += uint32_t(field[4] < params.cu_mc_params.isovalue) << 4;
-            config_index += uint32_t(field[5] < params.cu_mc_params.isovalue) << 5;
-            config_index += uint32_t(field[6] < params.cu_mc_params.isovalue) << 6;
-            config_index += uint32_t(field[7] < params.cu_mc_params.isovalue) << 7;
-
-            const unsigned char case_idx = cases[config_index][0];
-            const unsigned int config_idx_in_case = cases[config_index][1];
-            unsigned int subconfig = 0, subconfig13Value;
-
-            switch (case_idx) {
-                // 0 : 生成 0 个三角形  内部 0 中情况
-                case 0: {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(1, 0, 0, config_idx_in_case);
-                    break;
-                }
-
-                // 1 : 生成 1 个三角形  内部 1 种情况
-                case 1 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(1, 0, 1, config_idx_in_case);
-                    break;
-                }
-
-                // 2 : 生成 2 个三角形  内部 1 种情况
-                case 2 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(2, 0, 2, config_idx_in_case);
-                    break;
-                }
-                // 3 : 内部 2 种情况  1:2  2:4
-                case 3 : {
-                    if(TestFace(field, test3[config_idx_in_case]) < 0){
-                        params.vol_code.at(x, y, z) = MAKE_CODE(3, 0, 2, config_idx_in_case);
-                    }
-                    else{
-                        params.vol_code.at(x, y, z) = MAKE_CODE(3, 1, 4, config_idx_in_case);
-                    }
-                    break;
-                }
-                // 4 : 内部 2 种情况  1:2  2:6
-                case 4 : {
-                    if(TestInterior(field, case_idx, test4[config_idx_in_case], 1) < 0){
-                        params.vol_code.at(x, y, z) = MAKE_CODE(4, 0, 2, config_idx_in_case);
-                    }
-                    else{
-                        params.vol_code.at(x, y, z) = MAKE_CODE(4, 1, 6, config_idx_in_case);
-                    }
-                    break;
-                }
-                // 5 : 生成 3 个三角形  内部 1 种情况
-                case 5 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(5, 0, 3, config_idx_in_case);
-                    break;
-                }
-                // 6 : 内部 3 种情况  1:3  2:9  3:5
-                case 6 : {
-                    if(TestFace(field, test6[config_idx_in_case][0]) < 0){
-                        if(TestInterior(field, case_idx, test6[config_idx_in_case][1], test6[config_idx_in_case][2]) < 0){
-                            params.vol_code.at(x, y, z) = MAKE_CODE(6, 0, 3, config_idx_in_case);
-                        }
-                        else{
-                            params.vol_code.at(x, y, z) = MAKE_CODE(6, 1, 9, config_idx_in_case);
-                        }
-                    }
-                    else{
-                        params.vol_code.at(x, y, z) = MAKE_CODE(6, 2, 5, config_idx_in_case);
-                    }
-                    break;
-                }
-                // 7 : 内部 8 种情况  1:3  2:5  3:5  4:9  5:5  6:9  7:9  8:5  9:9
-                case 7 : {
-                    if(TestFace(field, test7[config_idx_in_case][0]) < 0){
-                        subconfig += 1;
-                    }
-                    if(TestFace(field, test7[config_idx_in_case][1]) < 0){
-                        subconfig += 2;
-                    }
-                    if(TestFace(field, test7[config_idx_in_case][2]) < 0){
-                        subconfig += 4;
-                    }
-                    switch (subconfig) {
-                        case 0 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 0, 3, config_idx_in_case);
-                            break;
-                        }
-                        case 1 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 1, 5, config_idx_in_case);
-                            break;
-                        }
-                        case 2 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 2, 5, config_idx_in_case);
-                            break;
-                        }
-                        case 3 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 3, 9, config_idx_in_case);
-                            break;
-                        }
-                        case 4 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 4, 5, config_idx_in_case);
-                            break;
-                        }
-                        case 5 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 5, 9, config_idx_in_case);
-                            break;
-                        }
-
-                        case 6 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(7, 6, 9, config_idx_in_case);
-                            break;
-                        }
-                        case 7 : {
-                            if(TestInterior(field, case_idx, test7[config_idx_in_case][3], test7[config_idx_in_case][4]) > 0){
-                                params.vol_code.at(x, y, z) = MAKE_CODE(7, 7, 5, config_idx_in_case);
-                            }
-                            else{
-                                params.vol_code.at(x, y, z) = MAKE_CODE(7, 8, 9, config_idx_in_case);
-                            }
-                            break;
-                        }
-                    }
-                    break;
-                }
-                // 8 : 生成 2 个三角形  内部 1 种情况
-                case 8 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(8, 0, 2, config_idx_in_case);
-                    break;
-                }
-                // 9 : 生成 4 个三角形  内部 1 种情况
-                case 9 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(9, 0, 4, config_idx_in_case);
-                    break;
-                }
-                // 10 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
-                case 10 : {
-                    if(TestFace(field, test10[config_idx_in_case][0]) > 0){
-                        subconfig += 1;
-                    }
-                    if(TestFace(field, test10[config_idx_in_case][1]) > 0){
-                        subconfig += 2;
-                    }
-                    switch (subconfig) {
-                        case 0 : {
-                            if(TestInterior(field, case_idx, test10[config_idx_in_case][2], 1) < 0){
-                                params.vol_code.at(x, y, z) = MAKE_CODE(10, 0, 4, config_idx_in_case);
-                            }
-                            else{
-                                params.vol_code.at(x, y, z) = MAKE_CODE(10, 1, 8, config_idx_in_case);
-                            }
-                            break;
-                        }
-
-                        case 1 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(10, 2, 8, config_idx_in_case);
-                            break;
-                        }
-
-                        case 2 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(10, 3, 8, config_idx_in_case);
-                            break;
-                        }
-
-                        case 3 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(10, 4, 4, config_idx_in_case);
-
-                            break;
-                        }
-                    }
-                    break;
-                }
-                // 11 :生成 4 个三角形  内部 1 种情况
-                case 11 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(11, 0, 4, config_idx_in_case);
-                    break;
-                }
-                // 12 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
-                case 12 : {
-                    if(TestFace(field, test12[config_idx_in_case][0]) > 0){
-                        subconfig += 1;
-                    }
-                    if(TestFace(field, test12[config_idx_in_case][1]) > 0){
-                        subconfig += 2;
-                    }
-                    switch (subconfig) {
-                        case 0 : {
-                            if(TestInterior(field, case_idx, test12[config_idx_in_case][2], test12[config_idx_in_case][3]) < 0){
-                                params.vol_code.at(x, y, z) = MAKE_CODE(12, 0, 4, config_idx_in_case);
-                            }
-                            else{
-                                params.vol_code.at(x, y, z) = MAKE_CODE(12, 1, 8, config_idx_in_case);
-                            }
-                            break;
-                        }
-
-                        case 1 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(12, 2, 8, config_idx_in_case);
-                            break;
-                        }
-
-                        case 2 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(12, 3, 8, config_idx_in_case);
-                            break;
-                        }
-
-                        case 3 : {
-                            params.vol_code.at(x, y, z) = MAKE_CODE(12, 4, 4, config_idx_in_case);
-                            break;
-                        }
-
-                    }
-
-                    break;
-                }
-                // 13 : 内部 9 种情况  1:4  2:6  3:10  4:12  5:6  6:10  7:10  8:6  9:4
-                case 13 : {
-                    if(TestFace(field, test13[config_idx_in_case][0]) > 0){
-                        subconfig += 1;
-                    }
-                    if(TestFace(field, test13[config_idx_in_case][1]) > 0){
-                        subconfig += 2;
-                    }
-                    if(TestFace(field, test13[config_idx_in_case][2]) > 0){
-                        subconfig += 4;
-                    }
-                    if(TestFace(field, test13[config_idx_in_case][3]) > 0){
-                        subconfig += 8;
-                    }
-                    if(TestFace(field, test13[config_idx_in_case][4]) > 0){
-                        subconfig += 16;
-                    }
-                    if(TestFace(field, test13[config_idx_in_case][5]) > 0){
-                        subconfig += 32;
-                    }
-                    subconfig13Value = subconfig13[subconfig];
-                    if(subconfig13Value == 0){
-                        params.vol_code.at(x, y, z) = MAKE_CODE(13, 0, 4, config_idx_in_case);
-                    }
-                    else if(subconfig13Value < 7){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 1, 6, config_idx_in_case, subconfig13Value);
-                    }
-                    else if(subconfig13Value < 19){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 2, 10, config_idx_in_case, subconfig13Value);
-                    }
-                    else if(subconfig13Value < 23){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 3, 12, config_idx_in_case, subconfig13Value);
-                    }
-                    else if(subconfig13Value < 27){
-                        if(TestInterior(field, case_idx, test13[config_idx_in_case][6], tiling13_5_1[config_idx_in_case][subconfig13Value - 23][0]) < 0){
-                            params.vol_code.at(x, y, z) = MAKE_CODE0(13, 4, 6, config_idx_in_case, subconfig13Value);
-                        }
-                        else{
-                            params.vol_code.at(x, y, z) = MAKE_CODE0(13, 5, 10, config_idx_in_case, subconfig13Value);
-                        }
-
-                    }
-                    else if(subconfig13Value < 39){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 6, 10, config_idx_in_case, subconfig13Value);
-                    }
-                    else if(subconfig13Value < 45){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 7, 6, config_idx_in_case, subconfig13Value);
-                    }
-                    else if(subconfig13Value == 45){
-                        params.vol_code.at(x, y, z) = MAKE_CODE0(13, 8, 4, config_idx_in_case, subconfig13Value);
-                    }
-                    break;
-                }
-                // 14 : 生成 4 个三角形  内部 1 种情况
-                case 14 : {
-                    params.vol_code.at(x, y, z) = MAKE_CODE(14, 0, 4, config_idx_in_case);
-                    break;
-                }
-            }
-
-        }
-
-        __forceinline__ CUB_GPU float3 VertexInterp(float isovalue, float3 p0, float3 p1, float f0, float f1){
-            return lerp(p0, p1, (isovalue - f0) / (f1 - f0));
-        }
-
-        CUB_KERNEL void MCKernel1_GenTriangleIndices(MCKernelParams params){
-            const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
-            const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
-            const unsigned int z = blockIdx.z * blockDim.z + threadIdx.z;
-
-            if(x >= params.cu_mc_params.shape.x
-               || y >= params.cu_mc_params.shape.y
-               || z >= params.cu_mc_params.shape.z)
-                return;
 
             const unsigned int thread_count = blockDim.x * blockDim.y * blockDim.z;
             const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y + threadIdx.z * blockDim.x * blockDim.y;
@@ -665,7 +719,7 @@ VISER_BEGIN
             uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
             uint32_t voxel_index = x + y * params.cu_mc_params.shape.x + z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y;
 
-            float3 p = make_float3(voxel_coord.x, voxel_coord.y, voxel_coord.z) * params.cu_vol_params.space;
+            float3 p = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
             float3 vert[8];
             vert[0] = p;
             vert[1] = p + make_float3(params.cu_vol_params.space.x, 0.f, 0.f);
@@ -709,56 +763,33 @@ VISER_BEGIN
 
             uint32_t code = params.vol_code.at(x, y, z);
 
-            const int case_idx = code >> 12;
-            const int sub_case_dix = (code >> 8) & 0xf;
-            const int m_case_idx = (code >> 8) &0xff;
-            const int tri_num = code & 0xff;
-            const int config_idx_in_case = (code >> 16) & 0xff;
-            const int subconfig13_val = (code >> 24) & 0xff;
-            const unsigned char* edge_table;
-            switch(case_idx){
-                case 0 : {
-                    edge_table = nullptr;
-                    break;
-                }
 
-                case 1 : {
-                    edge_table = reinterpret_cast<const unsigned char *>(tiling1[config_idx_in_case]);
-                    break;
-                }
-
-                case 2 : {
-                    edge_table = reinterpret_cast<const unsigned char *>(tiling2[config_idx_in_case]);
-                    break;
-                }
-
-                case 3 : {
-                    switch (sub_case_dix) {
-                        case 0 : {
-                            edge_table = reinterpret_cast<const unsigned char *>(tiling3_1[config_idx_in_case]);
-                            break;
-                        }
-                        case 1 : {
-                            edge_table = reinterpret_cast<const unsigned char *>(tiling3_2[config_idx_in_case]);
-                            break;
-                        }
-                    }
-                }
-
+            const unsigned int m_case_idx = (code >> 8) & 0xff;
+            const unsigned int tri_num = code & 0xff;
+            const unsigned int config_idx_in_case = (code >> 16) & 0xff;
+            const unsigned int subconfig13_val = (code >> 24) & 0xff;
+            const char* edge_table;
+            if(m_case_idx < 34 || m_case_idx > 40){
+                edge_table = tri_edge_table[m_case_idx][config_idx_in_case];
+            }
+            else{
+                edge_table = case13_edge_table[m_case_idx - 34][config_idx_in_case][subconfig13_val - case13_offset[m_case_idx - 34]];
             }
 
-            for(int i = 0; i < tri_num; i++){
+            for(int i = 0; i < tri_num / 3; i++){
                 int a = edge_table[i * 3];
                 int b = edge_table[i * 3 + 1];
                 int c = edge_table[i * 3 + 2];
 
+                //index表示这个体素之前已经有index个顶点生成
                 uint32_t index = params.num_verts_scanned.at(voxel_index) + i;
 
-                //check index ?
-
-                params.vertex_pos.at(index) = make_float4(vert_list[a], 1.f);
-                params.vertex_pos.at(index + 1) = make_float4(vert_list[b], 1.f);
-                params.vertex_pos.at(index + 2) = make_float4(vert_list[c], 1.f);
+                //check index
+                if(index + 3 < params.max_vert_num){
+                    params.vertex_pos.at(index) = vert_list[a];
+                    params.vertex_pos.at(index + 1) = vert_list[b];
+                    params.vertex_pos.at(index + 2) = vert_list[c];
+                }
             }
 
         }
@@ -780,8 +811,15 @@ VISER_BEGIN
 
         MCKernelParams params;
 
-        Handle<CUDABuffer> vol_mc_code;
-        Handle<CUDABuffer> vol_mc_scanned;
+
+        Handle<CUDABuffer> vol_mc_code;// max_voxel_num * sizeof(uint32_t)
+        Handle<CUDABuffer> vol_mc_scanned;// max_voxel_num * sizeof(uint32_t)
+        //一般体数据生成的三角形数量相对于体素数量是很少的
+        Handle<CUDABuffer> vol_vert_pos;// max_voxel_num / 8 * sizeof(float3)
+
+
+        size_t max_voxel_num;
+        size_t max_vert_num;
 
         UnifiedRescUID uid;
 
@@ -807,10 +845,17 @@ VISER_BEGIN
     MarchingCubeAlgo::MarchingCubeAlgo(const MarchingCubeAlgoCreateInfo& info) {
         _ = std::make_unique<MarchingCubeAlgoPrivate>();
 
-        // init gpu edge table
-        {
+        //使用null流，如果和渲染同一个ctx，那么两者不能并行，即进行mc的时候不能渲染
+        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
 
-        }
+        _->max_voxel_num = info.max_voxel_num;
+        _->max_vert_num = info.max_voxel_num / 8;
+
+        _->vol_mc_code = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_mc_scanned = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_vert_pos = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num / 8 * sizeof(Float3));
+
+        _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
 
         _->uid = GenMCAlgoUID();
     }
@@ -822,35 +867,68 @@ VISER_BEGIN
 
     struct BOP{
         CUB_GPU uint32_t operator()(uint32_t a, uint32_t b) const {
-            return a + (b & 0xff);
+            //最低三位表示三角形个数，转换到顶点个数
+            b = b & 0xff;
+            return a + b + (b << 1);
         }
     };
-    void MarchingCubeAlgo::Run(const MarchingCubeAlgoParams &params) {
+
+    void MarchingCubeAlgo::Run(MarchingCubeAlgoParams &mc_params) {
         //一个线程复杂一个cube，一个block共用page table
+        //一个block的线程数不要太多，因为之后可能要创建的shared memory大小和线程数有关，或者每个线程的寄存器文件太多
+        //具体的线程数，之后可以再调整看看，找到一个tradeoff
         const dim3 tile = {4u, 4u, 4u};
         const dim3 grid_dim = {
-                (params.shape.x + tile.x - 1) / tile.x,
-                (params.shape.y + tile.y - 1) / tile.y,
-                (params.shape.z + tile.z - 1) / tile.z
+                (mc_params.shape.x + tile.x - 1) / tile.x,
+                (mc_params.shape.y + tile.y - 1) / tile.y,
+                (mc_params.shape.z + tile.z - 1) / tile.z
         };
         cub::cu_kernel_launch_info info{grid_dim, tile};
 
-        size_t num_voxels;
+        size_t num_voxels = (size_t)mc_params.shape.x * mc_params.shape.y * mc_params.shape.z;
+
+        _->params.cu_mc_params.isovalue = mc_params.isovalue;
+        _->params.cu_mc_params.lod = mc_params.lod;
+        _->params.cu_mc_params.origin = {
+                mc_params.origin.x, mc_params.origin.y, mc_params.origin.z
+        };
+        _->params.cu_mc_params.shape = {
+                mc_params.shape.x, mc_params.shape.y, mc_params.shape.z
+        };
+
+        _->params.vol_code = _->vol_mc_code->view_3d<uint32_t>(cub::pitched_buffer_info{mc_params.shape.x * sizeof(uint32_t)},
+                                                               cub::cu_extent{mc_params.shape.x, mc_params.shape.y, mc_params.shape.z});
+        _->params.num_verts_scanned = _->vol_mc_scanned->view_1d<uint32_t>(num_voxels);
+
+        assert(num_voxels > 0);
+        if(num_voxels > _->max_voxel_num){
+            throw std::runtime_error("Too many voxels for cuda marching cube algo!!!");
+        }
 
         try{
             void* params[] = {&_->params};
             cub::cu_kernel::pending(info, &MCKernel0_ClassifyVoxelAndGenVertices, params)
             .launch(_->compute_stream).check_error_on_throw();
 
+            // view as 1d to scan
             auto vol_mc_code_view = _->vol_mc_code->view_1d<uint32_t>(num_voxels);
-
             auto vol_mc_scanned_view = _->vol_mc_scanned->view_1d<uint32_t>(num_voxels);
 
+            //exclusive 结果第一个元素为 0
             thrust::exclusive_scan(thrust::device_ptr<uint32_t>(vol_mc_code_view.data()), thrust::device_ptr<uint32_t>(vol_mc_code_view.data() + num_voxels),
                     thrust::device_ptr<uint32_t>(vol_mc_scanned_view.data()), 0, BOP{});
 
-            cub::cu_kernel::pending(info, &MCKernel1_GenTriangleIndices, params)
+            //计算生成的三角形数
+            uint32_t last_ele, last_scan_ele;
+            CUB_CHECK(cudaMemcpy(&last_ele, &vol_mc_code_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            CUB_CHECK(cudaMemcpy(&last_scan_ele, &vol_mc_scanned_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            uint32_t total_tri_num = last_ele + last_scan_ele;
+
+            cub::cu_kernel::pending(info, &MCKernel1_GenTriangles, params)
             .launch(_->compute_stream).check_error_on_throw();
+
+            //将结果写入params中
+            mc_params.gen_dev_vertices_ret = _->vol_vert_pos->view_1d<Float3>(total_tri_num);
         }
         catch (const std::exception& err) {
             LOG_ERROR("{}", err.what());
@@ -858,11 +936,33 @@ VISER_BEGIN
     }
 
     void MarchingCubeAlgo::BindVTexture(VTextureHandle handle, TextureUnit unit) {
+        assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
+        if(_->params.cu_vtex[unit] != 0){
+            cudaDestroyTextureObject(_->params.cu_vtex[unit]);
+        }
+        _->params.cu_vtex[unit] = handle->view_as({
+            cub::e_clamp, cub::e_nearest, cub::e_normalized_float, false
+        });
 
     }
 
     void MarchingCubeAlgo::BindPTBuffer(PTBufferHandle handle) {
+        _->params.cu_page_table.table = handle->view_1d<HashTableItem>(HashTableSize * sizeof(HashTableItem));
+    }
 
+    void MarchingCubeAlgo::SetVolume(const VolumeParams &volume_params) {
+            _->params.cu_vol_params.space = {
+                    volume_params.space.x,
+                    volume_params.space.y,
+                    volume_params.space.z
+            };
+            _->params.cu_vol_params.block_length = volume_params.block_length;
+            _->params.cu_vol_params.padding = volume_params.padding;
+            _->params.cu_vol_params.voxel_dim = {
+                    volume_params.voxel_dim.x,
+                    volume_params.voxel_dim.y,
+                    volume_params.voxel_dim.z
+            };
     }
 
 

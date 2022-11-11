@@ -9,7 +9,7 @@
 #include <Model/SWC.hpp>
 #include <IO/SWCIO.hpp>
 #include "SWCRenderer.hpp"
-
+#include <Model/Mesh.hpp>
 
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
 #define FOV 30.f
@@ -184,8 +184,9 @@ class VolAnnotaterApp : public gl_app_t{
         crt_vol_renderer = NewHandle<CRTVolumeRenderer>(RescAccess::Unique, renderer_info);
 
 
-        ComputeUpBoundLOD(lod, render_base_space, offscreen.frame_width, offscreen.frame_height,
-                          vutil::deg2rad(FOV));
+//        ComputeUpBoundLOD(lod, render_base_space, offscreen.frame_width, offscreen.frame_height,
+//                          vutil::deg2rad(FOV));
+        ComputeDefaultLOD(lod, (float)volume_desc.block_length * volume_space_ratio * render_base_space);
         lod.LOD[max_lod] = std::numeric_limits<float>::max();
 
         VolumeParams vol_params;
@@ -456,6 +457,7 @@ private:
         Float3 right = cross(camera.get_xyz_direction(), world_up);
         vol_camera.up = cross(right, camera.get_xyz_direction());
     }
+    //画swc线，可以选择和volume render的结果进行混合绘制
     void render_swc(){
         //在vol render后的depth buffer上画线
         offscreen.fbo.bind();
@@ -467,6 +469,7 @@ private:
 
         offscreen.fbo.unbind();
     }
+    //进行大规模体绘制
     void render_volume(){
 
         // 计算视锥体内的数据块
@@ -596,6 +599,7 @@ private:
 
         gpu_pt_mgr_ref->Release(intersect_blocks);
     }
+    //查询点对应在体数据中的位置和体素值
     void query_volume(){
         LOG_DEBUG("start query volume");
 
@@ -641,6 +645,11 @@ private:
                   vol_tag_priv_data.query_info_view.at(5),
                   vol_tag_priv_data.query_info_view.at(6),
                   vol_tag_priv_data.query_info_view.at(7));
+    }
+
+    //
+    void run_mc_algo(){
+
     }
 private:
     void updatePerFrameParams(PerFrameParams& params){
@@ -802,6 +811,8 @@ private:
     Ref<FixedHostMemMgr> host_block_pool_ref;
 
     //只有一个渲染器，直接保存加锁Ref
+    //mc和render公用一个gpu和vtex，因此在跑mc的时候不能进行渲染
+    //由于跑mc可能替换了数据块，因此渲染的时候需要重新导入，而且两者同一数据块的数据是完全不同的
     Ref<GPUVTexMgr> gpu_vtex_mgr_ref;
     Ref<GPUPageTableMgr> gpu_pt_mgr_ref;
 
@@ -847,6 +858,15 @@ private:
     }v2p_params;
     std140_uniform_block_buffer_t<ViewToProjParams> v2p_params_buffer;
 
+
+    struct{
+        std::unordered_map<GridVolume::BlockUID, Handle<Mesh>> block_mesh_mp;
+        //网格的patch和swc的patch是不一样的
+        //swc的patch是指一条完整的神经元
+        //网格的patch是指一个block对应的mesh
+        std::unordered_map<GridVolume::BlockUID, size_t> block_patch_mp;
+
+    }swc2mesh_priv_data;
 
     //标注相关
     SWCFile swc_file;

@@ -31,7 +31,7 @@ struct texture_resc_info{
     tex_format format = e_uint8;
     uint32_t channels = 1;
     cu_extent extent;
-
+    bool read_write = false;
     size_t alloc_bytes() const{
         size_t bytes = 0;
         switch (format) {
@@ -84,7 +84,8 @@ public:
         else{
             desc.f = cudaChannelFormatKindUnsigned;
         }
-        CUB_CHECK(cudaMalloc3DArray(&array, &desc, {resc_info.extent.width, resc_info.extent.height, resc_info.extent.depth}));
+        CUB_CHECK(cudaMalloc3DArray(&array, &desc, {resc_info.extent.width, resc_info.extent.height, resc_info.extent.depth},
+                                    resc_info.read_write ? cudaArraySurfaceLoadStore : 0));
 
         cudaResourceDesc resc_desc;
         resc_desc.resType = cudaResourceTypeArray;
@@ -109,6 +110,7 @@ public:
         }
         tex_desc.normalizedCoords = view_info.normalized_coords;
         CUB_CHECK(cudaCreateTextureObject(&tex, &resc_desc, &tex_desc, nullptr));
+
     }
 
     cu_context get_context() const {
@@ -122,7 +124,50 @@ public:
     auto _get_array_handle() const{
         return array;
     }
+    cudaTextureObject_t view_as(const texture_view_info& view_info) const{
+        cudaTextureObject_t ret;
+        cudaResourceDesc resc_desc;
+        resc_desc.resType = cudaResourceTypeArray;
+        resc_desc.res.array.array = array;
 
+        cudaTextureDesc tex_desc;
+        std::memset(&tex_desc, 0, sizeof(tex_desc));
+        switch (view_info.address) {
+            case e_wrap : tex_desc.addressMode[0] = cudaAddressModeWrap; break;
+            case e_clamp : tex_desc.addressMode[0] = cudaAddressModeClamp; break;
+            case e_mirror : tex_desc.addressMode[0] = cudaAddressModeMirror; break;
+            case e_border : tex_desc.addressMode[0] = cudaAddressModeBorder; break;
+        }
+        tex_desc.addressMode[1] = tex_desc.addressMode[2] = tex_desc.addressMode[0];
+        switch (view_info.filter) {
+            case e_nearest : tex_desc.filterMode = cudaFilterModePoint; break;
+            case e_linear : tex_desc.filterMode = cudaFilterModeLinear; break;
+        }
+        switch(view_info.read){
+            case e_raw : tex_desc.readMode = cudaReadModeElementType; break;
+            case e_normalized_float : tex_desc.readMode = cudaReadModeNormalizedFloat; break;
+        }
+        tex_desc.normalizedCoords = view_info.normalized_coords;
+        CUB_CHECK(cudaCreateTextureObject(&ret, &resc_desc, &tex_desc, nullptr));
+        return ret;
+    }
+    cudaSurfaceObject_t as_surface() const{
+        unsigned int flags = 0;
+        CUB_CHECK(cudaArrayGetInfo(nullptr, nullptr, &flags, array));
+        if((flags & cudaArraySurfaceLoadStore) == 0){
+            std::cerr << "cuda texture as surface but create without load/store flag" << std::endl;
+            assert(false);
+            return 0;
+        }
+        cudaSurfaceObject_t surf;
+        cudaResourceDesc resc_desc;
+        resc_desc.resType = cudaResourceTypeArray;
+        resc_desc.res.array.array = array;
+        CUB_CHECK(cudaCreateSurfaceObject(&surf, &resc_desc));
+        return surf;
+    }
+private:
+    cu_texture_wrap() = default;
 protected:
     cudaArray_t array;
     cudaTextureObject_t tex;

@@ -20,6 +20,7 @@ class GridVolume : public UnifiedRescBase{
 public:
     struct BlockUID{
         //不超过65535
+        //w‘ low 16bits 代表lod, high 16bits 代表flag
         uint32_t x = 0xffff, y = 0xffff, z = 0xffff, w = 0xff;
 
         CUB_CPU_GPU BlockUID() = default;
@@ -55,11 +56,14 @@ public:
         bool IsValid() const;
 
         bool IsBlack() const{
-            return (w >> 8) & 1;
+            return (w >> 8) & 2;
         }
 
         bool IsSparse() const{
-            return (w >> 8) & 2;
+            return (w >> 8) & 4;
+        }
+        bool IsSWC() const{
+            return (w >> 8) & 8;
         }
 
         CUB_CPU_GPU int GetLOD() const{

@@ -163,7 +163,9 @@ VISER_BEGIN
                 float3 sampling_pos = (coord * params.cu_volume.block_size + offset_in_block + params.cu_volume.padding) * params.cu_render_params.inv_tex_shape;
 
                 ret.scalar = tex3D<float>(params.cu_vtex[tid], sampling_pos.x, sampling_pos.y, sampling_pos.z);
-
+//                cudaSurfaceObject_t sur;
+//                int data;
+//                surf2Dread(&data, sur, 1, 1);
 //                printf("sampling pos %f %f %f, value %f",
 //                       sampling_pos.x, sampling_pos.y, sampling_pos.z,
 //                       ret.scalar);

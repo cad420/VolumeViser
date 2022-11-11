@@ -62,6 +62,7 @@ struct VolumeParams{
     uint32_t block_length;
     uint32_t padding;
     UInt3 voxel_dim;
+    Float3 space;
 };
 struct RenderParams{
     struct {
