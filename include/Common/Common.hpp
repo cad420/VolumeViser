@@ -121,7 +121,10 @@ enum class UnifiedRescType : uint8_t{
     CRTVolRenderer = 12,
     General = 13,
     MCAlgo = 14,
-    MaxEnum = 15
+    SWCVoxelizeAlgo = 15,
+    SWC = 16,
+    Mesh = 17,
+    MaxEnum = 18
 };
 
 //最高位8位代表资源类型，低56位代表一个全局唯一该类型资源的编号

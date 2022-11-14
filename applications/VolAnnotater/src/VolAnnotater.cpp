@@ -1,15 +1,8 @@
-#include <Algorithm/LevelOfDetailPolicy.hpp>
-#include <Core/HashPageTable.hpp>
-#include <Model/SWC.hpp>
-#include "VolAnnotater.hpp"
 #include "Common.hpp"
-#include <cuda_gl_interop.h>
-#include <json.hpp>
-#include <fstream>
-#include <Model/SWC.hpp>
-#include <IO/SWCIO.hpp>
+#include "VolAnnotater.hpp"
 #include "SWCRenderer.hpp"
-#include <Model/Mesh.hpp>
+#include "NeuronRenderer.hpp"
+#include "VolAnnotaterGUI.hpp"
 
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
 #define FOV 40.f
@@ -254,7 +247,7 @@ class VolAnnotaterApp : public gl_app_t{
 public:
     using gl_app_t::gl_app_t;
 
-    void initialize(const VolAnnotater::VolAnnotaterCreateInfo& info){
+    void initialize(const VolAnnotaterCreateInfo& info){
         //tmp assert
         assert(info.render_compute_same_gpu);
 
@@ -330,6 +323,7 @@ public:
 
     void frame() override {
         camera.set_w_over_h((float)offscreen.frame_width / offscreen.frame_height);
+        //todo override handle_events
         handle_events();
 
         vol_tag_priv_data.clicked = ImGui::GetIO().MouseClicked[0];
@@ -775,7 +769,10 @@ private:
 
         ImGui::End();
     }
+
     void frame_app_settings(){
+
+
         ImGui::Begin("Application Settings");
 
         ImGui::Checkbox("Draw Volume", &app_settings.draw_volume);
@@ -805,7 +802,7 @@ private:
         bool clear_vol_color = false;
     }debug;
 
-    VolAnnotater::VolAnnotaterCreateInfo create_info;
+    VolAnnotaterCreateInfo create_info;
 
     //标注系统不考虑并行，直接保存加了锁的Ref就好
     Ref<HostMemMgr> host_mem_mgr_ref;
@@ -866,24 +863,15 @@ private:
     std140_uniform_block_buffer_t<ViewToProjParams> v2p_params_buffer;
 
 
-    struct{
-        std::unordered_map<GridVolume::BlockUID, Handle<Mesh>> block_mesh_mp;
-        //网格的patch和swc的patch是不一样的
-        //swc的patch是指一条完整的神经元
-        //网格的patch是指一个block对应的mesh
-        std::unordered_map<GridVolume::BlockUID, size_t> block_patch_mp;
-
-    }swc2mesh_priv_data;
-
     //标注相关
     SWCFile swc_file;
     SWC swc;
     std::unique_ptr<SWCRenderer> swc_renderer;
     struct{
-        size_t patch_id = 0;
+        PatchID patch_id = 0;
         //这里需要假设神经元是树型的，即只有一个根节点，但一个swc文件可以有多棵树，但不能是图
         //记录每条神经元在渲染器中对应的patch id，一条神经元由root代表
-        std::unordered_map<SWC::SWCPointKey, size_t> swc_patch_mp;
+        std::unordered_map<SWC::SWCPointKey, PatchID> swc_patch_mp;
 
         int swc_id = 0;
         SWC::SWCPointKey prev_swc_id = -1;
@@ -894,8 +882,20 @@ private:
         bool clicked;
         vec2i clicked_pos;
 
-
     }vol_tag_priv_data;
+
+    // swc转化为mesh相关
+    struct{
+        //这里的block大小可以是不同的 但是一样的话更方便更好用
+        std::unordered_map<GridVolume::BlockUID, Handle<Mesh>> block_mesh_mp;
+        //网格的patch和swc的patch是不一样的
+        //swc的patch是指一条完整的神经元，用于神经元的线渲染
+        //网格的patch是指一个block对应的mesh，用于神经元的网格渲染
+        std::unordered_map<GridVolume::BlockUID, PatchID> block_patch_mp;
+
+        std::unique_ptr<NeuronRenderer> neuron_renderer;
+
+    }swc2mesh_priv_data;
 
     // OpenGL资源
     // CUDA渲染器先渲染到离屏帧后，再输出到屏幕或ImGui
@@ -925,15 +925,48 @@ private:
     }app_settings;
 };
 
+
+
 class VolAnnotaterPrivate{
 public:
 
-    VolAnnotater::VolAnnotaterCreateInfo create_info;
+    VolAnnotaterCreateInfo create_info;
+
+    std::unique_ptr<VolAnnotaterGUI> gui;
+
 };
 
 VolAnnotater::VolAnnotater(const VolAnnotaterCreateInfo &info) {
     _ = std::make_unique<VolAnnotaterPrivate>();
     _->create_info = info;
+
+    if(info.log_level == LOG_LEVEL_DEBUG){
+        SET_LOG_LEVEL_DEBUG
+    }
+    else if(info.log_level == LOG_LEVEL_INFO){
+        SET_LOG_LEVEL_INFO
+    }
+    else if(info.log_level == LOG_LEVEL_ERROR){
+        SET_LOG_LEVEL_ERROR
+    }
+    else{
+        SET_LOG_LEVEL_CRITICAL
+    }
+
+    try{
+        AppSettings::Initialize(info);
+
+        _->gui = std::make_unique<VolAnnotaterGUI>(window_desc_t{
+                .size = {info.window_width, info.window_height},
+                .title = "VolAnnotater"
+        });
+
+        _->gui->Initialize();
+    }
+    catch (const std::exception& err) {
+        LOG_ERROR("VolAnnotater create failed : {}", err.what());
+        throw std::runtime_error(std::string("Create VolAnnotater failed : ") + err.what());
+    }
 }
 
 VolAnnotater::~VolAnnotater() {

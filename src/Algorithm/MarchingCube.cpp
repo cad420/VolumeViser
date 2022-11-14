@@ -796,11 +796,7 @@ VISER_BEGIN
 
     }
 
-    static UnifiedRescUID GenMCAlgoUID(){
-        static std::atomic<size_t> g_uid = 1;
-        auto uid = g_uid.fetch_add(1);
-        return GenUnifiedRescUID(uid, UnifiedRescType::MCAlgo);
-    }
+
 
 
     class MarchingCubeAlgoPrivate{
@@ -822,6 +818,12 @@ VISER_BEGIN
         size_t max_vert_num;
 
         UnifiedRescUID uid;
+
+        static UnifiedRescUID GenMCAlgoUID(){
+            static std::atomic<size_t> g_uid = 1;
+            auto uid = g_uid.fetch_add(1);
+            return GenUnifiedRescUID(uid, UnifiedRescType::MCAlgo);
+        }
 
         std::mutex mtx;
     };
@@ -845,6 +847,7 @@ VISER_BEGIN
     MarchingCubeAlgo::MarchingCubeAlgo(const MarchingCubeAlgoCreateInfo& info) {
         _ = std::make_unique<MarchingCubeAlgoPrivate>();
 
+        _->ctx = info.gpu_mem_mgr->_get_cuda_context();
         //使用null流，如果和渲染同一个ctx，那么两者不能并行，即进行mc的时候不能渲染
         _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
 
@@ -857,7 +860,7 @@ VISER_BEGIN
 
         _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
 
-        _->uid = GenMCAlgoUID();
+        _->uid = _->GenMCAlgoUID();
     }
 
 

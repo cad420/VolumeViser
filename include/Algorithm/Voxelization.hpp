@@ -93,13 +93,15 @@ void CPUVoxelizeSWC(CUDABufferView3D<uint8_t>& volume, const std::vector<Float4>
 }
 
 //因为swc体素化后的值都是一样的，因此默认使用uint8类型，体素值为255
-inline static constexpr uint8_t SWCVoxel = 255;
+inline static constexpr uint8_t SWCVoxelVal = 255;
+using SWCSegment = std::pair<Float4, Float4>;
 class SWCVoxelizerPrivate;
 class SWCVoxelizer : public UnifiedRescBase{
 public:
     struct VoxelizerCreateInfo{
         mutable Ref<GPUMemMgr> gpu_mem_mgr;
         mutable Ref<HostMemMgr> host_mem_mgr;
+        size_t max_segment_count = 1ull << 20;
     };
     SWCVoxelizer(const VoxelizerCreateInfo& info);
 
@@ -111,21 +113,17 @@ public:
 
     UnifiedRescUID GetUID() const override;
 
+    void SetVolume(const VolumeParams& volume_params);
+
     void BindVTexture(VTextureHandle handle, TextureUnit unit);
 
     void BindPTBuffer(PTBufferHandle handle);
 
     struct SWCVoxelizeAlgoParams{
-        //体素化后的维度
-        UInt3 shape;
-        Float3 space;
-        // float3 : offset 相对于 bound(shape * space) 的偏移，范围为[0,1]
-        // float : 半径，以体素为单位
-        std::vector<Float4> ptrs;
 
-
-        //存放体素化后的数据，gpu上内存
-        CUDABufferView3D<uint8_t> gen_dev_voxels;
+//        std::vector<SWCSegment> ptrs;
+        CUDABufferView1D<SWCSegment> ptrs;
+        uint32_t lod = 0;
     };
     void Run(const SWCVoxelizeAlgoParams& params);
 

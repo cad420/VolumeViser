@@ -16,8 +16,8 @@ struct memory_transfer_info{
     uint32_t dst_y = 0;
     uint32_t dst_z = 0;
     uint32_t width_bytes = 0;
-    uint32_t height = 0;
-    uint32_t depth = 0;
+    uint32_t height = 1;
+    uint32_t depth = 1;
 };
 
 namespace detail {

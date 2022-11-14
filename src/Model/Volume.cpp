@@ -156,7 +156,3 @@ bool GridVolume::BlockUID::IsValid() const {
 
 
 VISER_END
-
-
-
-

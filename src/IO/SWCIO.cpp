@@ -1,5 +1,6 @@
 #include <IO/SWCIO.hpp>
 #include <fstream>
+
 VISER_BEGIN
 
     class SWCFilePrivate{

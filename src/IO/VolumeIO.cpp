@@ -76,7 +76,4 @@ void EBVolumeFile::WriteVolumeRegion(const Int3 &beg_pos, const Int3 &end_pos, c
     NOT_IMPL
 }
 
-
-
 VISER_END
-

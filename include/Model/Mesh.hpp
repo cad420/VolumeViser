@@ -13,7 +13,6 @@ public:
 
     ~Mesh();
 
-
     static Mesh Merge(const std::vector<Mesh>& meshes, bool remove_dup, bool gen_indices);
 
     void Smooth();
@@ -25,6 +24,22 @@ public:
     void UnLock() override;
 
     UnifiedRescUID GetUID() const override;
+
+    int GetMeshShapeCount() const;
+
+    /**
+     * @brief 获取单个shape的网格数据
+     */
+    MeshData0 GetShapeData0(int index) const;
+
+    MeshData1 GetShapeData1(int index) const;
+
+    /**
+     * @brief 将所有的shape进行合并后返回
+     */
+    MeshData0 GetPackedMeshData0() const;
+
+    MeshData1 GetPackedMeshData1() const;
 
 protected:
     std::unique_ptr<MeshPrivate> _;

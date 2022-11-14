@@ -21,10 +21,10 @@ public:
     void InitLine(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, size_t patch_id, const mat4& model = mat4::identity());
 
     //标注时不断添加新的点
-    void AddLine(const Vertex& vertex_a, const Vertex& vertex_b, size_t patch_id);
+    void AddLine(const Vertex& vertex_a, const Vertex& vertex_b, PatchID patch_id);
 
     //对于标注线，如果中间的点删了，则需要直接删除整条线的数据然后重新添加该条线的所有数据
-    void DeleteLine(size_t patch_id);
+    void DeleteLine(PatchID patch_id);
 
     void Draw(const mat4& view, const mat4& proj);
 

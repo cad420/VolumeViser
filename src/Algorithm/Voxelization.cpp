@@ -2,6 +2,7 @@
 
 #include <Algorithm/Voxelization.hpp>
 #include "../Common/helper_math.h"
+#include "../Renderer/Common.hpp"
 VISER_BEGIN
 
     namespace{
@@ -40,21 +41,143 @@ VISER_BEGIN
             return INVALID_VALUE;
         }
 
-
+        struct CUDAVolumeParams{
+            cuda::AABB bound;
+            float3 space;
+            uint3 voxel_dim;
+            uint32_t block_length;
+            uint32_t padding;
+        };
 
         struct CUDAPageTable{
             CUDABufferView1D<HashTableItem> table;
         };
-        struct SWCVoxelizeParams{
+        struct CUDASWCVoxelizeParams{
+            uint32_t lod;
+            uint32_t segment_count;
+        };
+        struct SWCVoxelizeKernelParams{
             cudaSurfaceObject_t cu_vsurf[MaxCUDATextureCountPerGPU];
             CUDAPageTable cu_page_table;
+            CUDAVolumeParams cu_vol_params;
+            CUDASWCVoxelizeParams cu_swc_v_params;
+            CUDABufferView1D<std::pair<Float4,Float4>> cu_segments;
         };
-        CUB_GPU void VirtualStore(const SWCVoxelizeParams& params,
+        CUB_GPU void VirtualStore(const SWCVoxelizeKernelParams& params,
+                                  uint4 hash_table[][2],
+                                  uint8_t val,
                                   uint3 voxel_coord,
                                   uint32_t lod){
-
+            uint32_t lod_block_length = params.cu_vol_params.block_length << lod;
+            uint3 block_uid = voxel_coord / lod_block_length;
+            uint3 offset_in_block = (voxel_coord - block_uid * lod_block_length) / (1 << lod);
+            uint4 key = make_uint4(block_uid, lod);
+            uint4 tex_coord = Query(key, hash_table);
+            uint32_t tid = (tex_coord.w >> 16) & 0xffff;
+            uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+            if((tex_coord.w & 0xffff & TexCoordFlag_IsValid)
+            && (tex_coord.w & 0xffff & TexCoordFlag_IsSWC)){
+                uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
+                auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+                surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
+            }
         }
-        CUB_KERNEL void SWCVoxelizeKernel(SWCVoxelizeParams params){
+        CUB_GPU cuda::AABB_UI ComputeSegmentAABB(const SWCVoxelizeKernelParams& params,
+                                              float3 pt_a_pos, float pt_a_r,
+                                              float3 pt_b_pos, float pt_b_r
+                                              ){
+            cuda::AABB_UI ret;
+            float3 low = fminf(pt_a_pos, pt_b_pos);
+            float3 high = fmaxf(pt_a_pos, pt_b_pos);
+            low -= pt_a_r;
+            high += pt_b_r;
+            low = (low - params.cu_vol_params.bound.low) * (params.cu_vol_params.bound.high - params.cu_vol_params.bound.low);
+            high = (high - params.cu_vol_params.bound.low) * (params.cu_vol_params.bound.high - params.cu_vol_params.bound.low);
+            low *= params.cu_vol_params.voxel_dim - make_uint3(1);
+            high *= params.cu_vol_params.voxel_dim - make_uint3(1);
+            ret.low.x = max(0, int(low.x + 0.5f));
+            ret.low.y = max(0, int(low.x + 0.5f));
+            ret.low.z = max(0, int(low.x + 0.5f));
+            ret.high.x = min(params.cu_vol_params.voxel_dim.x - 1, int(high.x + 0.5f));
+            ret.high.y = min(params.cu_vol_params.voxel_dim.y - 1, int(high.y + 0.5f));
+            ret.high.z = min(params.cu_vol_params.voxel_dim.z - 1, int(high.z + 0.5f));
+            return ret;
+        }
+        //一个block负责一条线，即两个点之间的体素化，因此需要控制输入的神经元每一段的长度适中，使得其包围盒的大小在一定范围
+        CUB_KERNEL void SWCVoxelizeKernel(SWCVoxelizeKernelParams params){
+            const unsigned int block_idx = gridDim.x * gridDim.y * blockIdx.z + gridDim.x * blockIdx.y + blockIdx.x;
+            if(block_idx >= params.cu_swc_v_params.segment_count) return;
+
+            const unsigned int thread_count = blockDim.x * blockDim.y * blockDim.z;
+            const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y + threadIdx.z * blockDim.x * blockDim.y;
+            const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;
+            const unsigned int thread_beg = thread_idx * load_count;
+            const unsigned int thread_end = min(thread_beg + load_count, HashTableSize);
+            __shared__ uint4 hash_table[HashTableSize][2];
+
+            // fill shared hash table
+
+            auto& table = params.cu_page_table.table;
+            for(int i = 0; i < HashTableSize; ++i){
+                auto& block_uid = table.at(i).first;
+                auto& tex_coord = table.at(i).second;
+                hash_table[i][0] = uint4{block_uid.x, block_uid.y, block_uid.z, block_uid.w};
+                hash_table[i][1] = uint4{tex_coord.sx, tex_coord.sy, tex_coord.sz,
+                                         ((uint32_t)tex_coord.tid << 16) | tex_coord.flag};
+            }
+
+            __syncthreads();
+
+            // 一个block里的所有thread都是为特定一条的segment体素化服务的
+
+            auto& pt = params.cu_segments.at(block_idx);
+            float3 pt_a_pos = make_float3(pt.first.x, pt.first.y, pt.first.z);
+            float pt_a_r = pt.first.w;
+            float3 pt_b_pos = make_float3(pt.second.x, pt.second.y, pt.second.z);
+            float pt_b_r = pt.second.w;
+            float3 a_to_b = pt_b_pos - pt_a_pos;
+            float3 ab = normalize(a_to_b);
+            float ab_dist = dot(ab, a_to_b);
+
+            auto inside_segment = [&](uint3 voxel_coord)->bool{
+                float3 pt_c_pos = (voxel_coord + make_float3(0.5f)) * params.cu_vol_params.space;
+                float proj_a_to_c = dot(pt_c_pos - pt_a_pos, ab);
+                bool between = proj_a_to_c > 0 && proj_a_to_c < ab_dist;
+                float R;
+                float c_to_ab_dist;
+                if(between){
+                    float u = proj_a_to_c / ab_dist;
+                    R = (1.f - u) * pt_a_r + u * pt_b_r;
+                    // 点到直线的距离公式 利用叉乘得到
+                    c_to_ab_dist = length(cross(pt_c_pos - pt_a_pos, ab));
+                }
+                else{
+                    R = proj_a_to_c <= 0 ? pt_a_r : pt_b_r;
+                    // 点到线段端点的距离
+                    c_to_ab_dist = proj_a_to_c <= 0 ? length(pt_c_pos - pt_a_pos) : length(pt_c_pos - pt_b_pos);
+                }
+                return c_to_ab_dist <= R;
+            };
+
+            // 计算这条线占据的voxel范围，返回的必定在有效范围内
+            auto [low, high] = ComputeSegmentAABB(params, pt_a_pos, pt_a_r, pt_b_pos, pt_b_r);
+
+            uint3 box_dim = high - low + 1;
+            uint32_t box_voxel_count = box_dim.x * box_dim.y * box_dim.z;
+            uint32_t thread_voxel_num = (box_voxel_count + thread_count - 1) / thread_count;
+
+            for(uint32_t i = 0; i < thread_voxel_num; i++){
+                uint32_t box_voxel_idx = thread_idx * thread_voxel_num + i;
+                if(box_voxel_idx >= box_voxel_count) break;
+                // 计算得到当前处理的体素坐标
+                uint32_t box_voxel_z = box_voxel_idx / (box_dim.x * box_dim.y);
+                uint32_t box_voxel_y = (box_voxel_idx - box_voxel_z * box_dim.x * box_dim.y) / box_dim.x;
+                uint32_t box_voxel_x = box_voxel_idx - box_voxel_z * box_dim.x * box_dim.y - box_voxel_y * box_dim.x;
+                uint3 voxel_coord = make_uint3(box_voxel_x, box_voxel_y, box_voxel_z);
+                if(inside_segment(voxel_coord)){
+                    VirtualStore(params, hash_table, SWCVoxelVal, voxel_coord, params.cu_swc_v_params.lod);
+                }
+            }
 
         }
     }
@@ -62,8 +185,14 @@ VISER_BEGIN
 
     class SWCVoxelizerPrivate{
     public:
+        cub::cu_context ctx;
 
+        cub::cu_stream compute_stream;
 
+        SWCVoxelizeKernelParams kernel_params;
+
+        Handle<CUDABuffer> cu_ptrs;
+        CUDABufferView1D<SWCSegment> cu_ptrs_view;
 
         std::mutex mtx;
 
@@ -72,7 +201,7 @@ VISER_BEGIN
         static UnifiedRescUID GenRescUID(){
             std::atomic<size_t> g_uid = 1;
             auto uid = g_uid.fetch_add(1);
-            return uid;
+            return GenUnifiedRescUID(uid, UnifiedRescType::SWCVoxelizeAlgo);
         }
     };
 
@@ -80,6 +209,14 @@ VISER_BEGIN
         _ = std::make_unique<SWCVoxelizerPrivate>();
 
         _->uid = _->GenRescUID();
+
+        _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+
+        //暂时使用null流
+        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
+
+        _->cu_ptrs = NewGeneralHandle<CUDABuffer>(RescAccess::Unique, info.max_segment_count * sizeof(SWCSegment), cub::e_cu_device, _->ctx);
+        _->cu_ptrs_view = _->cu_ptrs->view_1d<SWCSegment>(info.max_segment_count);
     }
 
     SWCVoxelizer::~SWCVoxelizer() {
@@ -99,17 +236,72 @@ VISER_BEGIN
     }
 
     void SWCVoxelizer::Run(const SWCVoxelizeAlgoParams &params) {
+        size_t segment_count = params.ptrs.size();
+        dim3 grid(segment_count, 1, 1);
+        dim3 threads(8, 8, 8);
+        if(grid.x > 65535){
+            grid.y = grid.x / 32768;
+            grid.x = 32768;
+        }
+        if(grid.y > 65535){
+            throw std::runtime_error("Too many segments for SWCVoxelizer to Run");
+        }
 
+        _->kernel_params.cu_swc_v_params.lod = params.lod;
+        _->kernel_params.cu_swc_v_params.segment_count = segment_count;
+
+
+        try{
+            cub::memory_transfer_info m_info;
+            m_info.width_bytes = segment_count * sizeof(SWCSegment);
+
+            cub::cu_memory_transfer(params.ptrs, _->cu_ptrs_view, m_info)
+            .launch(_->compute_stream).check_error_on_throw();
+
+            cub::cu_kernel_launch_info info{grid, threads};
+            void* launch_params[] = {&_->kernel_params};
+            cub::cu_kernel::pending(info, &SWCVoxelizeKernel, launch_params)
+            .launch(_->compute_stream).check_error_on_throw();
+        }
+        catch (const std::exception& err) {
+            LOG_ERROR("SWCVoxolizer run failed : {}", err.what());
+        }
     }
 
     void SWCVoxelizer::BindVTexture(VTextureHandle handle, TextureUnit unit) {
-        handle->as_surface();
+        assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
+        if(_->kernel_params.cu_vsurf[unit] != 0){
+            cudaDestroySurfaceObject(_->kernel_params.cu_vsurf[unit]);
+        }
+        else{
+            _->kernel_params.cu_vsurf[unit] = handle->as_surface();
+        }
     }
 
     void SWCVoxelizer::BindPTBuffer(PTBufferHandle handle) {
-
+        _->kernel_params.cu_page_table.table = handle->view_1d<HashTableItem>(HashTableSize * sizeof(HashTableItem));
     }
 
+    void SWCVoxelizer::SetVolume(const VolumeParams &volume_params) {
+        _->kernel_params.cu_vol_params.space = {
+                volume_params.space.x,
+                volume_params.space.y,
+                volume_params.space.z
+        };
+        _->kernel_params.cu_vol_params.block_length = volume_params.block_length;
+        _->kernel_params.cu_vol_params.padding = volume_params.padding;
+        _->kernel_params.cu_vol_params.voxel_dim = {
+                volume_params.voxel_dim.x,
+                volume_params.voxel_dim.y,
+                volume_params.voxel_dim.z
+        };
+        _->kernel_params.cu_vol_params.bound = {{volume_params.bound.low.x,
+                                                    volume_params.bound.low.y,
+                                                    volume_params.bound.low.z,},
+                                            {volume_params.bound.high.x,
+                                                    volume_params.bound.high.y,
+                                                    volume_params.bound.high.z}};
+    }
 
 VISER_END
 
