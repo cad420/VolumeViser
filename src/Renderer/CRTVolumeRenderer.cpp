@@ -29,6 +29,7 @@ VISER_BEGIN
         struct CUDAVolume{
             AABB bound;
             float3 voxel_dim;
+            float3 voxel_space;
             uint32_t block_length;
             uint32_t padding;
             uint32_t block_size;
@@ -218,7 +219,7 @@ VISER_BEGIN
             if(params.cu_per_frame_params.debug_mode == 3){
                 return make_float4(scalar, scalar, scalar, 1.f);
             }
-            auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.f, 0.f);
+            auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.5f, 0.5f);
 //            if(scalar >= 1.f){
 //                printf("scalar 0 to rgba %f %f %f %f\n", color.x, color.y, color.z, color.w);
 //            }
@@ -233,36 +234,37 @@ VISER_BEGIN
             float3 N;
             float x1, x2;
             int missed = 0;
-            auto ret = VirtualSampling(params, hash_table, pos + dt * make_float3(1.f, 0.f, 0.f), lod);
+            float lod_t = 1 << lod;
+            auto ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(lod_t, 0.f, 0.f)), lod);
             x1 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
             }
-            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(-1.f, 0.f, 0.f), lod);
+            ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(-lod_t, 0.f, 0.f)), lod);
             x2 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
             }
             N.x = x1 - x2;
 
-            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 1.f, 0.f), lod);
+            ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, lod_t, 0.f)), lod);
             x1 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
             }
-            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, -1.f, 0.f), lod);
+            ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, -lod_t, 0.f)), lod);
             x2 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
             }
             N.y = x1 - x2;
 
-            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 0.f, 1.f), lod);
+            ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, 0.f, lod_t)), lod);
             x1 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
             }
-            ret = VirtualSampling(params, hash_table, pos + dt * make_float3(0.f, 0.f, -1.f), lod);
+            ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, 0.f, -lod_t)), lod);
             x2 = ret.scalar;
             if(ret.flag == 0){
                 ++missed;
@@ -310,18 +312,23 @@ VISER_BEGIN
             float ray_cast_dist = 0.f;
 
             uint32_t prev_lod = ComputeLod(params, ray_cast_pos);
+            uint32_t pre_lod_sampling_steps = 0;
+            float3 prev_lod_samping_pos = ray_cast_pos;
+            uint32_t steps = 0;
             float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
 //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
 //            return ret;
             float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
             while(ray_cast_dist < ray_max_cast_dist){
-                float3 sampling_pos = ray_cast_pos + 0.5f * dt * ray.d;
+                float3 sampling_pos = ray_cast_pos;// + 0.5f * dt * ray.d;
 
                 uint32_t cur_lod = ComputeLod(params, sampling_pos);
                 bool upgrade = false;
                 if(cur_lod > prev_lod){
                     upgrade = true;
                     prev_lod = cur_lod;
+                    pre_lod_sampling_steps = steps;
+                    prev_lod_samping_pos = sampling_pos;
                 }
                 sampling_pos = CalcVirtualSamplingPos(params, sampling_pos);
 
@@ -351,8 +358,10 @@ VISER_BEGIN
                         }
                     }
                 }
-                ray_cast_pos += dt * ray.d;
+//                ray_cast_pos += dt * ray.d;
+                ray_cast_pos = prev_lod_samping_pos + (++steps - pre_lod_sampling_steps) * ray.d * dt;
                 ray_cast_dist += dt;
+
                 if(upgrade){
                     dt *= 2.f;
                 }
@@ -390,20 +399,25 @@ VISER_BEGIN
             float ray_cast_dist = 0.f;
 
             uint32_t prev_lod = ComputeLod(params, ray_cast_pos);
+            uint32_t pre_lod_sampling_steps = 0;
+            float3 prev_lod_samping_pos = ray_cast_pos;
+            uint32_t steps = 0;
             float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
 //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
 //            return ret;
-            float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
-            while(ray_cast_dist < ray_max_cast_dist){
-                float3 sampling_pos = ray_cast_pos + 0.5f * dt * ray.d;
 
-                uint32_t cur_lod = ComputeLod(params, sampling_pos);
+            while(ray_cast_dist < ray_max_cast_dist){
+                float3 cur_ray_pos = ray_cast_pos + 0.5f * dt * ray.d;
+
+                uint32_t cur_lod = ComputeLod(params, cur_ray_pos);
                 bool upgrade = false;
                 if(cur_lod > prev_lod){
                     upgrade = true;
                     prev_lod = cur_lod;
+                    prev_lod_samping_pos = cur_ray_pos;
+                    pre_lod_sampling_steps = steps;
                 }
-                sampling_pos = CalcVirtualSamplingPos(params, sampling_pos);
+                float3 sampling_pos = CalcVirtualSamplingPos(params, cur_ray_pos);
 
                 auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
 
@@ -423,7 +437,8 @@ VISER_BEGIN
                     // always assert alpha = 0.f has no contribution
                     if(mapping_color.w > 0.f){
                         if(params.cu_per_frame_params.debug_mode != 4)
-                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, sampling_pos, ray.d, voxel * dt, cur_lod);
+                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, cur_ray_pos, ray.d,
+                                                             params.cu_volume.voxel_space, cur_lod);
                         // accumulate color radiance
                         ret.color += mapping_color * make_float4(make_float3(mapping_color.w), 1.f) * (1.f - ret.color.w);
                         if(ret.color.w > 0.99f){
@@ -431,7 +446,8 @@ VISER_BEGIN
                         }
                     }
                 }
-                ray_cast_pos += dt * ray.d;
+//                ray_cast_pos += dt * ray.d;
+                ray_cast_pos = prev_lod_samping_pos + (++steps - pre_lod_sampling_steps) * ray.d * dt;
                 ray_cast_dist += dt;
                 if(upgrade){
                     dt *= 2.f;
@@ -650,6 +666,11 @@ VISER_BEGIN
         _->kernel_params.cu_volume.voxel_dim = {(float)volume_params.voxel_dim.x,
                                                 (float)volume_params.voxel_dim.y,
                                                 (float)volume_params.voxel_dim.z};
+        _->kernel_params.cu_volume.voxel_space = {
+                volume_params.space.x,
+                volume_params.space.y,
+                volume_params.space.z
+        };
         _->kernel_params.cu_volume.block_size = volume_params.block_length + volume_params.padding * 2;
     }
 

@@ -46,7 +46,7 @@ struct texture_resc_info{
 };
 
 struct texture_view_info{
-    address_mode address = e_wrap;
+    address_mode address = e_border;
     filter_mode filter = e_linear;
     read_mode read = e_normalized_float;
     bool normalized_coords = true;

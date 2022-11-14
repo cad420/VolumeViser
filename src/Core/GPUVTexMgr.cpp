@@ -83,7 +83,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
                            (uint32_t)info.vtex_shape.z},
          },
          .view_info = {
-                .address = cub::e_clamp,
+                .address = cub::e_border,
                 .filter = cub::e_linear,
                 .read = cub::e_normalized_float,
                 .normalized_coords = true

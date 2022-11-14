@@ -12,7 +12,7 @@
 #include <Model/Mesh.hpp>
 
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
-#define FOV 30.f
+#define FOV 40.f
 class VolAnnotaterApp : public gl_app_t{
     // *.lod.desc.json
     void loadLODVolumeData(const std::string& lod_filename){
@@ -197,6 +197,7 @@ class VolAnnotaterApp : public gl_app_t{
                 {0.f, 0.f, 0.f},
                 Float3(vol_params.voxel_dim) * render_base_space * volume_space_ratio
         };
+        vol_params.space = render_base_space * volume_space_ratio;
         crt_vol_renderer->SetVolume(vol_params);
 
         RenderParams render_params;
@@ -204,11 +205,11 @@ class VolAnnotaterApp : public gl_app_t{
         render_params.lod.leve_of_dist = lod;
         render_params.tf.updated = true;
         render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
-        render_params.tf.tf_pts.pts[0.32f] = Float4(0.f, 1.f, 0.5f, 0.f);
-        render_params.tf.tf_pts.pts[0.4f] = Float4(1.f, 0.5f, 0.f, 1.f);
+        render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 1.f, 0.5f, 0.f);
+        render_params.tf.tf_pts.pts[0.6f] = Float4(1.f, 0.5f, 0.f, 1.f);
         render_params.tf.tf_pts.pts[0.96f] = Float4(1.f, 0.5f, 0.f, 1.f);
         render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
-        render_params.other.ray_step = render_base_space * 0.5f;
+        render_params.other.ray_step = render_base_space * 0.5;
         render_params.other.max_ray_dist = 10.f;
         render_params.other.inv_tex_shape = Float3(1.f / create_info.vtex_shape_x,
                                                    1.f / create_info.vtex_shape_y,
@@ -300,7 +301,8 @@ public:
             debug.host_color.resize(framebuffer->frame_height * framebuffer->frame_width);
             debug.host_depth.resize(framebuffer->frame_height * framebuffer->frame_width);
         }
-        auto default_pos = Float3(volume_desc.shape) * Float3(0.5f, 0.5f, 1.2f) * render_base_space * volume_space_ratio;
+//        auto default_pos = Float3(volume_desc.shape) * Float3(0.5f, 0.5f, 1.2f) * render_base_space * volume_space_ratio;
+        Float3 default_pos = {4.1, 6.21, 7.f};
         camera.set_position(default_pos);
         camera.set_perspective(FOV, 0.01f, 10.f);
         camera.set_direction(vutil::deg2rad(-90.f), 0.f);
@@ -666,13 +668,16 @@ private:
 private:
     //将体绘制的结果画到ImGui窗口上
     void frame_vol(){
-        ImGui::Begin("Volume Render Frame", 0, ImGuiWindowFlags_NoResize);
+        ImGui::Begin("Volume Render Frame", 0);
 
         auto pos = ImGui::GetWindowPos();
         vol_renderer_priv_data.window_pos = vec2i(pos.x, pos.y);
 
         ImGui::Image((void*)(intptr_t)(offscreen.color.handle()),
-                ImVec2(offscreen.frame_width, offscreen.frame_height));
+                ImVec2(offscreen.frame_width * app_settings.vol_draw_image_scale,
+                       offscreen.frame_height * app_settings.vol_draw_image_scale)
+//                       ,ImVec2(0, 1), ImVec2(1, 0)
+                       );
 
         ImGui::End();
     }
@@ -781,6 +786,8 @@ private:
             camera.set_move_speed(app_settings.camera_move_speed);
         }
 
+        ImGui::InputFloat("Vol Draw Image Scale", &app_settings.vol_draw_image_scale);
+
         ImGui::End();
     }
 private:
@@ -841,7 +848,7 @@ private:
 
     viser::Camera vol_camera;
 
-    float render_base_space = 0.00128f;
+    float render_base_space = 0.00032;
     BoundingBox3D volume_box;
     GridVolume::GridVolumeDesc volume_desc;
     int max_lod;
@@ -893,8 +900,8 @@ private:
     // OpenGL资源
     // CUDA渲染器先渲染到离屏帧后，再输出到屏幕或ImGui
     struct{
-        int frame_width = 900;
-        int frame_height = 600;
+        int frame_width = 960;
+        int frame_height = 480;
         framebuffer_t fbo;
         renderbuffer_t rbo;
         texture2d_t color;
@@ -914,6 +921,7 @@ private:
         bool draw_volume = true;
         bool annotating = false;
         float camera_move_speed;
+        float vol_draw_image_scale = 1;
     }app_settings;
 };
 
