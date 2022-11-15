@@ -21,7 +21,7 @@ VISER_BEGIN
                 auto v = ptr[last], vv = ptr[cur];
                 ptr[i] = ptr[last] * static_cast<Key>(cur - i) / static_cast<Key>(d)
                         + ptr[cur] * static_cast<Key>(i - last) / static_cast<Key>(d);
-                std::cout << "i: " << i << ", " << ptr[i] << std::endl;
+//                std::cout << "i: " << i << ", " << ptr[i] << std::endl;
             }
             last = cur;
         }

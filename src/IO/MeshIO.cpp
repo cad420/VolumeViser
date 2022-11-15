@@ -8,7 +8,7 @@ public:
 
 };
 
-MeshFile::MeshFile(std::string_view filename) {
+MeshFile::MeshFile() {
 
 }
 

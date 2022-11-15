@@ -1,4 +1,6 @@
 #include <Model/Volume.hpp>
+#include <Core/GPUMemMgr.hpp>
+#include <Core/HostMemMgr.hpp>
 
 VISER_BEGIN
 
@@ -6,6 +8,9 @@ class GridVolumePrivate{
 public:
     UnifiedRescUID host_mem_mgr_uid;
     UnifiedRescUID gpu_mem_mgr_uid;
+
+    Ref<GPUMemMgr> gpu_mem_mgr;
+    Ref<HostMemMgr> host_mem_mgr;
 
     std::unordered_map<uint32_t, Handle<VolumeIOInterface>> lod_vol_file_io;
 
@@ -52,6 +57,8 @@ GridVolume::GridVolume(const GridVolume::GridVolumeCreateInfo &info) {
     _->lod_vol_file_io = info.lod_vol_file_io;
     _->host_mem_mgr_uid = info.host_mem_mgr_uid;
     _->gpu_mem_mgr_uid = info.gpu_mem_mgr_uid;
+    _->gpu_mem_mgr = std::move(info.gpu_mem_mgr);
+    _->host_mem_mgr = std::move(info.host_mem_mgr);
 
     _->uid = _->GenRescUID();
 

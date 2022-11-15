@@ -270,12 +270,12 @@ VISER_BEGIN
 
     void SWCVoxelizer::BindVTexture(VTextureHandle handle, TextureUnit unit) {
         assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
-        if(_->kernel_params.cu_vsurf[unit] != 0){
-            cudaDestroySurfaceObject(_->kernel_params.cu_vsurf[unit]);
-        }
-        else{
+//        if(_->kernel_params.cu_vsurf[unit] != 0){
+//            cudaDestroySurfaceObject(_->kernel_params.cu_vsurf[unit]);
+//        }
+//        else{
             _->kernel_params.cu_vsurf[unit] = handle->as_surface();
-        }
+//        }
     }
 
     void SWCVoxelizer::BindPTBuffer(PTBufferHandle handle) {

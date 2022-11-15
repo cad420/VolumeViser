@@ -104,5 +104,9 @@ VUTIL_GL_BEGIN
         return view_proj;
     }
 
+    float fps_camera_t::get_fov_deg() const noexcept {
+        return fov_deg;
+    }
+
 
 VUTIL_GL_END

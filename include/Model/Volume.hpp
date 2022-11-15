@@ -77,6 +77,8 @@ public:
     struct GridVolumeCreateInfo{
         UnifiedRescUID host_mem_mgr_uid;//用于动态申请内存资源
         UnifiedRescUID gpu_mem_mgr_uid;
+        mutable Ref<HostMemMgr> host_mem_mgr;
+        mutable Ref<GPUMemMgr> gpu_mem_mgr;
         uint32_t levels = 0;
         std::unordered_map<uint32_t, Handle<VolumeIOInterface>> lod_vol_file_io;
     };

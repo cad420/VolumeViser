@@ -62,6 +62,8 @@ VUTIL_GL_BEGIN
 
         const mat4 &get_view_proj() const noexcept;
 
+        float get_fov_deg() const noexcept;
+
     private:
 
 

@@ -940,9 +940,9 @@ VISER_BEGIN
 
     void MarchingCubeAlgo::BindVTexture(VTextureHandle handle, TextureUnit unit) {
         assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
-        if(_->params.cu_vtex[unit] != 0){
-            cudaDestroyTextureObject(_->params.cu_vtex[unit]);
-        }
+//        if(_->params.cu_vtex[unit] != 0){
+//            cudaDestroyTextureObject(_->params.cu_vtex[unit]);
+//        }
         _->params.cu_vtex[unit] = handle->view_as({
             cub::e_clamp, cub::e_nearest, cub::e_normalized_float, false
         });

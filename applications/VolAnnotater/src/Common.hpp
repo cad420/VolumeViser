@@ -64,15 +64,17 @@ public:
 
         Float3 volume_space_ratio = {1.f, 1.f, 1.f};
 
-        BoundingBox3D volume_box;
-
     }vol_priv_data;
 
 public:
     void Initialize();
 
     void LoadVolume(const std::string& filename);
-
+private:
+    /**
+     * @brief 初始化一些与体数据相关的资源，在体数据加载后调用
+     */
+    void InitializeVolumeResc();
 };
 
 /**
@@ -83,13 +85,17 @@ public:
 
     Handle<CRTVolumeRenderer> crt_vol_renderer;
 
-    viser::Camera vol_camera;
-
-    float render_base_space;
+    float render_base_space = 0.f;
 
     Handle<FrameBuffer> framebuffer;
 
     viser::LevelOfDist lod;
+
+    struct{
+        Float3 lod0_block_length_space;
+        BoundingBox3D volume_bound;
+        UInt3 lod0_block_dim;
+    }render_vol;
 
     struct {
         std::vector<GridVolume::BlockUID> intersect_blocks;
@@ -104,15 +110,16 @@ public:
     }vol_render_priv_data;
 
     struct {
-        vec2i query_pos;
-        bool clicked;
+        vec2i query_pos = {-1, -1};
+        bool clicked = false;
         Handle<CUDAHostBuffer> query_info;
         CUDABufferView1D<float> query_info_view;
     }vol_query_priv_data;
 
 public:
-    void Initialize();
+    void Initialize(ViserRescPack& _);
 
+    void OnVolumeLoaded(ViserRescPack& _);
 
 };
 
@@ -147,6 +154,7 @@ public:
         SWCPointKey last_picked_swc_pt_id = -1;
 
     }swc_priv_data;
+
 
     Handle<SWCRenderer> swc_renderer;
 public:

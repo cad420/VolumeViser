@@ -27,7 +27,7 @@ MeshData0 ConvertFrom(const MeshData1&) noexcept;
 class MeshFilePrivate;
 class MeshFile : public MeshIOInterface{
 public:
-    explicit MeshFile(std::string_view filename);
+    explicit MeshFile();
 
     ~MeshFile();
 

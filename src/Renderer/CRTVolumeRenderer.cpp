@@ -690,9 +690,9 @@ VISER_BEGIN
             info.width_bytes = sizeof(TransferFunc::Value) * render_params.tf.dim;
             info.height = info.depth = 1;
             auto v = _->tf1d->view_1d<float4>(256);
-            for(int i = 0; i < 256; i++){
-                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w << std::endl;
-            }
+//            for(int i = 0; i < 256; i++){
+//                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w << std::endl;
+//            }
             cub::cu_memory_transfer(*_->tf1d, *_->cu_tf_tex, info).launch(_->render_stream);
             info.height = render_params.tf.dim;
             cub::cu_memory_transfer(*_->tf2d, *_->cu_2d_tf_tex, info).launch(_->render_stream);

@@ -3,6 +3,10 @@
 #include "SWCRenderer.hpp"
 #include "NeuronRenderer.hpp"
 #include "VolAnnotaterGUI.hpp"
+#undef max
+#undef min
+#undef far
+#undef near
 
 //标注系统的窗口绘制任务交给OpenGL，如果有多个显卡，其余的显卡可以用于网格重建任务
 #define FOV 40.f
@@ -952,6 +956,8 @@ VolAnnotater::VolAnnotater(const VolAnnotaterCreateInfo &info) {
     else{
         SET_LOG_LEVEL_CRITICAL
     }
+
+    SET_LOG_LEVEL_TRACE
 
     try{
         AppSettings::Initialize(info);
