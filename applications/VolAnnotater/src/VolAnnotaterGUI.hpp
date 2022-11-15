@@ -13,9 +13,22 @@ private:
     void frame() override;
 
     void destroy() override;
-private:
-    void show_editor_menu();
 
+    void handle_events() override;
+private:
+    void show_editor_ui();
+
+    void show_editor_menu(bool* p_open);
+
+    void show_editor_vol_info_window(bool* p_open);
+
+    void show_editor_vol_render_window(bool* p_open);
+
+    void show_editor_swc_window(bool* p_open);
+
+    void show_editor_swc_tree_window(bool* p_open);
+
+    void show_editor_neuron_mesh(bool *p_open);
 
 private:
     std::unique_ptr<ViserRescPack> viser_resc;
@@ -38,4 +51,13 @@ private:
     }v2p_priv_data;
 
     Timer timer;
+
+    struct{
+        bool editor_menu_window_open = true;
+        bool vol_info_window_open = true;
+        bool vol_render_window_open = true;
+        bool swc_info_window_open = true;
+        bool swc_tree_window_open = true;
+        bool neuron_mesh_window_open = true;
+    };
 };

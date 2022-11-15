@@ -974,22 +974,34 @@ VolAnnotater::~VolAnnotater() {
 }
 
 void VolAnnotater::run() {
-    SET_LOG_LEVEL_DEBUG
-    auto app = std::make_unique<VolAnnotaterApp>(window_desc_t{
-        .size = {1920, 1080}, .title = "VolAnnotater"
-    });
-    try {
-        app->initialize(_->create_info);
+    if constexpr(true){
+        try{
+            _->gui->run();
+        }
+        catch(const std::exception& err){
+            LOG_ERROR("VolAnnotater run error : {}", err.what());
+            throw std::runtime_error(std::string("Run VolAnnotater failed : ") + err.what());
+        }
     }
-    catch (const std::exception& err) {
-        std::cerr << "Program exit with exception : " << err.what() << std::endl;
-        return;
-    }
-    LOG_DEBUG("start render loop");
-    try {
-        app->run();
-    }
-    catch (const std::exception& err) {
-        std::cerr << "Program exit with exception : " << err.what() << std::endl;
+
+    if constexpr(false){
+        SET_LOG_LEVEL_DEBUG
+        auto app = std::make_unique<VolAnnotaterApp>(window_desc_t{
+                .size = {1920, 1080}, .title = "VolAnnotater"
+        });
+        try {
+            app->initialize(_->create_info);
+        }
+        catch (const std::exception &err) {
+            std::cerr << "Program exit with exception : " << err.what() << std::endl;
+            return;
+        }
+        LOG_DEBUG("start render loop");
+        try {
+            app->run();
+        }
+        catch (const std::exception &err) {
+            std::cerr << "Program exit with exception : " << err.what() << std::endl;
+        }
     }
 }

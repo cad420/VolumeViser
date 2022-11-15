@@ -148,7 +148,7 @@ public:
 
     }swc_priv_data;
 
-    std::unique_ptr<SWCRenderer> swc_renderer;
+    Handle<SWCRenderer> swc_renderer;
 public:
     void Initialize();
     /**
@@ -193,7 +193,7 @@ public:
 
     }s2m_priv_data;
 
-    std::unique_ptr<NeuronRenderer> neuron_renderer;
+    Handle<NeuronRenderer> neuron_renderer;
 
 public:
     void Initialize();
