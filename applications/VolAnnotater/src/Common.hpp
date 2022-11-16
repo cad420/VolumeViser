@@ -90,6 +90,7 @@ public:
     Handle<FrameBuffer> framebuffer;
 
     viser::LevelOfDist lod;
+    float lod_ratio = 1.f;
 
     struct{
         Float3 lod0_block_length_space;
@@ -121,52 +122,107 @@ public:
 
     void OnVolumeLoaded(ViserRescPack& _);
 
+    void UpdateUpBoundLOD(ViserRescPack& _, float fov_rad, float ratio = 1.f);
+
+    void UpdateDefaultLOD(ViserRescPack& _, float ratio = 1.f);
 };
 
 using SWCUID = viser::UnifiedRescUID;
 using SWCNeuronID = size_t;
 using SWCPointKey = SWC::SWCPointKey;
 
+constexpr size_t SWC_MAX_NEURON_NUM = 1024ull;
+constexpr size_t SWC_MAX_POINT_NUM = 1ull << 16;
 /**
  * @brief SWC标注和渲染相关资源
  */
 struct SWCRescPack{
 public:
-    SWCFile swc_file;
+    Handle<SWCFile> swc_file;
     struct SWCInfo{
         Handle<SWC> swc;
         std::string name;//swc名称
         std::string filename;//文件名
     };
     std::unordered_map<SWCUID, SWCInfo> loaded_swc;//所有加载、创建的swc对象
-    SWCUID selected_swc_uid;//当前被选中编辑的swc uid
+    SWCUID selected_swc_uid = INVALID_RESC_ID;//当前被选中编辑的swc uid
 
     // 一个swc可能含有多条神经 每条神经是一颗树 只有一个根节点 并且每条神经之间是不连通的
     struct{
+
         // 没被使用的neuron id集合
         std::set<SWCNeuronID> available_neuron_ids;
 
         // 一个swc里的不同neuron共用一个可用的swc点集合
         std::set<SWCPointKey> available_swc_pt_ids;
 
+        //每条神经元根节点到神经元id的mapping
         std::unordered_map<SWCPointKey, SWCNeuronID> pt_to_neuron_mp;
 
-        SWCPointKey last_picked_swc_pt_id = -1;
+        SWCPointKey last_picked_swc_pt_id = SWC::INVALID_SWC_KEY;
 
+        void Reset(){
+            available_neuron_ids.clear();
+            for(size_t i = 1; i <= SWC_MAX_NEURON_NUM; i++){
+                available_neuron_ids.insert(i);
+            }
+
+            available_swc_pt_ids.clear();
+            for(size_t i = 1; i <= SWC_MAX_POINT_NUM; i++){
+                available_swc_pt_ids.insert(i);
+            }
+            pt_to_neuron_mp.clear();
+
+            last_picked_swc_pt_id = SWC::INVALID_SWC_KEY;
+        }
     }swc_priv_data;
 
+    std::unique_ptr<SWCRenderer> swc_renderer;
 
-    Handle<SWCRenderer> swc_renderer;
 public:
+    bool Selected() const { return CheckUnifiedRescUID(selected_swc_uid); }
+
+    SWCInfo& GetSelected() { return loaded_swc.at(selected_swc_uid); }
+
     void Initialize();
     /**
      * @brief 从swc文件中加载swc数据到内存模型中
+     * @note 完成后不会被切换到选中状态
      */
     void LoadSWCFile(const std::string& filename);
 
-    void CreateSWC();
+    /**
+     * @brief 创建一个新的swc文件
+     * @note 成功后会调用SelectSWC
+     */
+    void CreateSWC(const std::string& filename = "");
 
+    /**
+     * @brief 在内存中删除当前选中的swc文件
+     */
+    void DeleteSelSWC();
+
+    /**
+     * @brief 切换当前选择的swc文件 会改变swc_priv_data内部成员变量
+     */
     void SelectSWC(SWCUID swc_id);
+
+    /**
+     * @brief 插入一个点到当前选中的swc
+     * @note 传入的点不需要id和pid 内部会生成这两个
+     */
+    void InsertSWCPoint(SWC::SWCPoint pt);
+
+    /**
+     * @brief 将从文件中加载的swc写会文件 如果当前选择的swc不是从文件中加载得到的 那么不会写入
+     */
+    void SaveSWCToFile();
+
+    /**
+     * @brief 将当前选定的swc保存到文件中 文件名包含了swc文件的格式时txt还是bin
+     */
+    void ExportSWCToFile(const std::string& filename);
+
 private:
 
 };

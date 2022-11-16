@@ -45,17 +45,25 @@ VISER_BEGIN
 // 如果是添加新的点，那么不需要重新上传
 
 class SWCPrivate;
-class SWC{
+class SWC : public UnifiedRescBase{
 public:
 
     using SWCPoint = SWCFile::SWCPoint;
     using SWCPointKey = int;
+
+    static constexpr SWCPointKey INVALID_SWC_KEY = 0;
 
     // 减少点的密度，针对算法自动生成的点
 
     SWC();
 
     ~SWC();
+
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
 
     std::vector<SWCPointKey> GetAllModifiedSWCPtsKey();
 
@@ -78,6 +86,8 @@ public:
     }
 
     SWCPointKey GetNodeRoot(SWCPointKey id) noexcept;
+
+    std::vector<SWCPointKey> GetAllRootIDs() noexcept;
 
     bool IsRoot(SWCPointKey id) noexcept;
 
@@ -115,6 +125,15 @@ public:
             ++it;
             return res;
         }
+        bool operator!=(const Iterator& other) const {
+            return it != other.it;
+        }
+        iter_t& operator->(){
+            return it;
+        }
+        const iter_t& operator->() const {
+            return it;
+        }
     };
 
     Iterator begin();
@@ -126,8 +145,6 @@ public:
 
     //打包所有不同的连通集
     std::vector<std::vector<SWCPoint>> PackLines() noexcept;
-
-    std::vector<SWCPointKey> GetAllRootIDs() noexcept;
 
 protected:
     std::unique_ptr<SWCPrivate> _;

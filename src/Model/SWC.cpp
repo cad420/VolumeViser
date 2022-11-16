@@ -26,14 +26,36 @@ public:
         }
         return 0;
     }
+
+    UnifiedRescUID uid;
+    static UnifiedRescUID GenRescUID(){
+        static std::atomic<size_t> g_uid = 1;
+        auto uid = g_uid.fetch_add(1);
+        return GenUnifiedRescUID(uid, UnifiedRescType::SWC);
+    }
+    std::mutex mtx;
 };
 
     SWC::SWC() {
         _ = std::make_unique<SWCPrivate>();
+
+        _->uid = _->GenRescUID();
     }
 
     SWC::~SWC() {
 
+    }
+
+    void SWC::Lock() {
+        _->mtx.lock();
+    }
+
+    void SWC::UnLock() {
+        _->mtx.unlock();
+    }
+
+    UnifiedRescUID SWC::GetUID() const {
+        return _->uid;
     }
 
     void SWC::PrintInfo() noexcept{
@@ -175,7 +197,12 @@ public:
     }
 
     std::vector<SWC::SWCPoint> SWC::PackAll() noexcept{
-        return {};
+        std::vector<SWC::SWCPoint> ret;
+        ret.reserve(_->swc_point_mp.size());
+        for(auto& [_, pt] : _->swc_point_mp){
+            ret.emplace_back(pt);
+        }
+        return ret;
     }
 
     std::vector<std::vector<SWC::SWCPoint>> SWC::PackLines() noexcept{
@@ -222,6 +249,7 @@ public:
             return id;
         return GetNodeRoot(pid);
     }
+
 
 
 VISER_END

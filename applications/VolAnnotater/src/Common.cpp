@@ -1,5 +1,6 @@
 #include "Common.hpp"
 #include "VolAnnotater.hpp"
+#include "SWCRenderer.hpp"
 
 //============================================================================================
 void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
@@ -185,9 +186,10 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
                    volume_desc.shape.z * render_base_space * _.vol_priv_data.volume_space_ratio.z)
     };
 
-    ComputeDefaultLOD(lod, (float)volume_desc.block_length * _.vol_priv_data.volume_space_ratio * render_base_space);
-    lod.LOD[_.vol_priv_data.max_lod] = std::numeric_limits<float>::max();
-
+//    ComputeUpBoundLOD(lod, render_base_space, 960, 540, vutil::deg2rad(40.f));
+//    ComputeDefaultLOD(lod, (float)volume_desc.block_length * _.vol_priv_data.volume_space_ratio * render_base_space);
+//    lod.LOD[_.vol_priv_data.max_lod] = std::numeric_limits<float>::max();
+    UpdateDefaultLOD(_, lod_ratio);
 
     VolumeParams vol_params;
     vol_params.block_length = volume_desc.block_length;
@@ -223,10 +225,210 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
 
 }
 
+void VolRenderRescPack::UpdateUpBoundLOD(ViserRescPack& _, float fov_rad, float ratio) {
+    if(ratio < 1.f){
+        LOG_WARN("UpBoundLOD ratio should greater/equal than 1.f");
+    }
+    auto volume_desc = _.vol_priv_data.volume->GetDesc();
+    ComputeUpBoundLOD(lod, render_base_space, framebuffer->frame_width, framebuffer->frame_height, fov_rad);
+    lod.LOD[_.vol_priv_data.max_lod] = std::numeric_limits<float>::max();
+    for(int i = 0; i < _.vol_priv_data.max_lod; i++){
+        lod.LOD[i] *= ratio;
+    }
+}
+
+void VolRenderRescPack::UpdateDefaultLOD(ViserRescPack& _, float ratio) {
+    auto volume_desc = _.vol_priv_data.volume->GetDesc();
+    ComputeDefaultLOD(lod, (float)volume_desc.block_length * _.vol_priv_data.volume_space_ratio * render_base_space);
+    lod.LOD[_.vol_priv_data.max_lod] = std::numeric_limits<float>::max();
+    for(int i = 0; i < _.vol_priv_data.max_lod; i++){
+        lod.LOD[i] *= ratio;
+    }
+}
+
 //============================================================================================
 
 void SWCRescPack::Initialize() {
+    swc_file = NewHandle<SWCFile>(viser::RescAccess::Unique);
 
+    swc_renderer = std::make_unique<SWCRenderer>(SWCRenderer::SWCRendererCreateInfo{});
+}
+
+void SWCRescPack::LoadSWCFile(const std::string &filename) {
+    if(filename.empty()) return;
+    try {
+        swc_file->Open(filename, SWCFile::Read);
+
+        auto swc_pts = swc_file->GetAllPoints();
+
+        swc_file->Close();
+
+        CreateSWC(filename);
+
+        for(auto& pt : swc_pts){
+            InsertSWCPoint(pt);
+        }
+    }
+    catch (const ViserFileOpenError& err) {
+        LOG_ERROR("LoadSWCFile error : {}", err.what());
+    }
+}
+
+void SWCRescPack::CreateSWC(const std::string& filename) {
+    static int swc_count = 0;
+    auto swc = NewHandle<SWC>(viser::RescAccess::Shared);
+    auto swc_uid = swc->GetUID();
+    assert(CheckUnifiedRescUID(swc_uid));
+    auto& swc_info = loaded_swc[swc_uid];
+    swc_info.swc = std::move(swc);
+    swc_info.name = "SWC_" + std::to_string(++swc_count);
+    swc_info.filename = filename;
+
+    SelectSWC(swc_uid);
+}
+
+void SWCRescPack::DeleteSelSWC() {
+
+}
+
+void SWCRescPack::SelectSWC(SWCUID swc_id) {
+    if(!CheckUnifiedRescUID(swc_id)){
+        LOG_ERROR("Select SWC with invalid swc id");
+        return;
+    }
+
+    selected_swc_uid = swc_id;
+
+    swc_priv_data.Reset();
+
+    swc_renderer->Reset();
+
+    auto& swc = loaded_swc.at(swc_id).swc;
+
+    auto roots = swc->GetAllRootIDs();
+    for(auto root : roots){
+        if(swc_priv_data.available_neuron_ids.empty()){
+            throw std::runtime_error("ERROR: Available Neuron IDS Not Enough!!!");
+        }
+        swc_priv_data.pt_to_neuron_mp[root] = *swc_priv_data.available_neuron_ids.begin();
+        swc_priv_data.available_neuron_ids.erase(swc_priv_data.available_neuron_ids.begin());
+    }
+
+    auto pts = swc->PackAll();
+    for(auto& pt : pts){
+        if(swc_priv_data.available_swc_pt_ids.empty()){
+            throw std::runtime_error("ERROR: Available SWC Point IDS Not Enough!!!");
+        }
+        swc_priv_data.available_swc_pt_ids.erase(pt.id);
+    }
+
+    auto lines = swc->PackLines();
+    for(auto& line : lines){
+        int n = line.size();
+        int root = swc->GetNodeRoot(line[0].id);
+        auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
+        for(int i = 1; i < n; i++){
+            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, line[i - 1].radius);
+            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, line[i].radius);
+            swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
+        }
+    }
+
+}
+
+void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
+    assert(CheckUnifiedRescUID(selected_swc_uid));
+
+    auto& swc = loaded_swc.at(selected_swc_uid).swc;
+
+    if(swc_priv_data.last_picked_swc_pt_id == SWC::INVALID_SWC_KEY){
+        pt.pid = -1;
+    }
+    else{
+        pt.pid = swc_priv_data.last_picked_swc_pt_id;
+    }
+    if(swc_priv_data.available_swc_pt_ids.empty()){
+        throw std::runtime_error("ERROR: Available SWC Point IDS Not Enough!!!");
+    }
+    auto id = *swc_priv_data.available_swc_pt_ids.begin();
+    swc_priv_data.available_swc_pt_ids.erase(swc_priv_data.available_swc_pt_ids.begin());
+    pt.id = id;
+
+    swc->InsertNodeLeaf(pt);
+
+    if(pt.pid == -1){
+        //作为一条新的神经元的根节点
+        if(swc_priv_data.available_neuron_ids.empty()){
+            throw std::runtime_error("ERROR: Available Neuron IDS Not Enough!!!");
+        }
+        auto neuron_id = *swc_priv_data.available_neuron_ids.begin();
+        swc_priv_data.available_neuron_ids.erase(swc_priv_data.available_neuron_ids.begin());
+        swc_priv_data.pt_to_neuron_mp[pt.id] = neuron_id;
+        swc_renderer->InitLine({vec4f(pt.x, pt.y, pt.z, pt.radius)}, {}, neuron_id);
+    }
+    else{
+        //与上一次选中的点形成一条线
+        auto neuron_id = swc_priv_data.pt_to_neuron_mp.at(swc->GetNodeRoot(pt.pid));
+        vec4f cur_vert = vec4f(pt.x, pt.y, pt.z, pt.radius);
+        auto prev_node = swc->GetNode(pt.pid);
+        auto prev_vert = vec4f(prev_node.x, prev_node.y, prev_node.z, prev_node.radius);
+        swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
+    }
+    //更新最新一次选中的点
+    //默认当成功插入一个点后 该点成为最新一次选中的点
+    swc_priv_data.last_picked_swc_pt_id = pt.id;
+
+}
+
+void SWCRescPack::SaveSWCToFile(){
+    try{
+        if(!CheckUnifiedRescUID(selected_swc_uid)){
+            LOG_ERROR("Current Selected SWC Invalid");
+            return;
+        }
+
+        auto& swc_info = loaded_swc.at(selected_swc_uid);
+
+        if(swc_info.filename.empty()){
+            LOG_ERROR("Save SWC File with empty filename");
+            return;
+        }
+
+        ExportSWCToFile(swc_info.filename);
+    }
+    catch (const ViserFileOpenError& err) {
+        LOG_ERROR("SaveSWCToFile error : {}", err.what());
+    }
+}
+
+void SWCRescPack::ExportSWCToFile(const std::string &filename) {
+    try{
+        if(!CheckUnifiedRescUID(selected_swc_uid)){
+            LOG_ERROR("Current Selected SWC Invalid");
+            return;
+        }
+
+        auto& swc_info = loaded_swc.at(selected_swc_uid);
+
+        swc_file->Open(filename, SWCFile::Write);
+
+        auto pts = swc_info.swc->PackAll();
+        sort(pts.begin(), pts.end(), [](const auto& a ,const auto& b){
+            return a.id < b.id;
+        });
+
+        swc_file->WritePoints(pts);
+
+        swc_file->Close();
+
+        swc_info.filename = filename;
+
+        LOG_INFO("Successfully save swc file : {}", swc_info.filename);
+
+    }
+    catch (const ViserFileOpenError& err) {
+        LOG_ERROR("ExportSWCToFile error : {}", err.what());
+    }
 }
 
 //============================================================================================

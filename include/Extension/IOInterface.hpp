@@ -49,7 +49,7 @@ public:
     virtual void WriteVolumeRegion(const Int3& beg_pos, const Int3& end_pos, const void* ptr) = 0;
 
     static UnifiedRescUID GenUnifiedRescUID(){
-        std::atomic<size_t> g_uid = 1;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::VolumeIO);
     }
@@ -58,7 +58,7 @@ public:
 class SWCIOInterface : public UnifiedRescBase{
 public:
     static UnifiedRescUID GenUnifiedRescUID(){
-        std::atomic<size_t> g_uid = 1;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::SWCIO);
     }
@@ -67,7 +67,7 @@ public:
 class MeshIOInterface : public UnifiedRescBase{
 public:
     static UnifiedRescUID GenUnifiedRescUID(){
-        std::atomic<size_t> g_uid = 1;
+        static std::atomic<size_t> g_uid = 1;
         auto uid = g_uid.fetch_add(1);
         return ::viser::GenUnifiedRescUID(uid, UnifiedRescType::MeshIO);
     }

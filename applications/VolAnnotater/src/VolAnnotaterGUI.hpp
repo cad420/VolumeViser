@@ -17,6 +17,9 @@ private:
 
     void handle_events() override;
 private:
+    //渲染开始前的各种准备 包括各种状态的重置
+    void pre_render();
+
     void update_per_frame();
 
     void show_editor_ui();
@@ -74,7 +77,19 @@ private:
     void update_vol_render_per_frame_params(PerFrameParams& params);
 
     // 点查询 与体绘制(render_volume)串行
-    void query_volume();
+    bool query_volume();
+
+    void render_swc();
+
+    bool can_start_annotating();
+
+    bool is_annotating();
+
+    void check_and_add_swc_pt();
+
+    bool check_and_start_annotating();
+
+    bool stop_and_save_annotating();
 
     void frame_mesh_render();
 
@@ -92,16 +107,32 @@ private:
     // 使得整个程序的fps保持稳定的60帧 其它的绘制任务以异步形式执行 即如果没有在规定时间内完成 保持上一帧结果
     vutil::thread_group_t render_group;
 
-    ImGui::FileBrowser file_dialog;
+    ImGui::FileBrowser vol_file_dialog;
+    ImGui::FileBrowser swc_file_dialog;
 
     struct{
         vec2i vol_render_window_size = {0, 0};
+        vec2i vol_render_window_pos = {0, 0};
         bool vol_render_resize = false;
         vec2i mesh_render_window_size = {0, 0};
+        vec2i mesh_render_window_pos = {0, 0};
         bool mesh_render_resize = false;
         vec2i swc_view_window_size = {0, 0};
+        vec2i swc_view_window_pos = {0, 0};
         bool swc_view_resize = false;
     }window_priv_data;
+
+    enum Status : size_t{
+        VOL_DATA_LOADED = 1ull,
+        VOL_CAMERA_CHANGED = 1ull << 1,
+        VOL_ANNOTATING = 1ull << 2,
+        VOL_DRAW_VOLUME = 1ull << 3,
+        VOL_DRAW_SWC = 1ull << 4,
+        VOL_SWC_VOLUME_BLEND_WITH_DEPTH = 1ull << 5
+    };
+
+    size_t status_flags = 0;
+
 
     //体绘制 用于opengl cuda资源交互相关
     struct{
@@ -129,8 +160,17 @@ private:
         texture2d_t color;
     }mesh_render_framebuffer;
 
-    struct{
+    vertex_array_t quad_vao;
 
+    // view to proj depth
+    struct{
+        program_t v2p_shader;
+        struct alignas(16) V2PParams{
+            mat4 proj;
+            float fov; // rad
+            float w_over_h;
+        }v2p_params;
+        std140_uniform_block_buffer_t<V2PParams> v2p_params_buffer;
     }v2p_priv_data;
 
     struct{

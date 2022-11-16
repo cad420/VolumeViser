@@ -282,7 +282,7 @@ VISER_BEGIN
         }
         struct RayCastResult2{
             float4 color;
-            float depth;
+            float radius;
             float3 pos;
         };
         CUB_GPU RayCastResult2 RayCastVolume2(const CTRVolumeRenderKernelParams& params,
@@ -366,9 +366,11 @@ VISER_BEGIN
                     dt *= 2.f;
                 }
             }
-            // view space depth
-            // todo return proj depth
-            ret.depth = ray_cast_dist;
+            // compute radius
+
+
+
+
             ret.pos = ray_cast_pos;
             return ret;
         }

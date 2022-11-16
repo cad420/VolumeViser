@@ -17,6 +17,7 @@ SWCRenderer::~SWCRenderer() {
 }
 
 void SWCRenderer::Reset() {
+    patches.clear();
 
 }
 
@@ -28,6 +29,9 @@ void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vecto
     auto& patch = patches[patch_id];
     auto& draw_patch = patch.draw_patch;
     draw_patch.model = model;
+    for(auto& vert : vertices){
+        patch.vertices_mp[vert] = patch.idx++;
+    }
     int vsize = vertices.size(), isize = indices.size();
     draw_patch.loaded_vertices_count = vsize;
     draw_patch.loaded_indices_count = isize;

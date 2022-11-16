@@ -199,7 +199,7 @@ VISER_BEGIN
         UnifiedRescUID uid;
 
         static UnifiedRescUID GenRescUID(){
-            std::atomic<size_t> g_uid = 1;
+            static std::atomic<size_t> g_uid = 1;
             auto uid = g_uid.fetch_add(1);
             return GenUnifiedRescUID(uid, UnifiedRescType::SWCVoxelizeAlgo);
         }

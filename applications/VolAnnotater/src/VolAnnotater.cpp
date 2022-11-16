@@ -733,7 +733,8 @@ private:
     void frame_debug(){
         ImGui::Begin("Debug");
 
-        if(ImGui::BeginTable("intersect blocks", 3)){
+        ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Borders | ImGuiTableFlags_ContextMenuInBody;
+        if(ImGui::BeginTable("intersect blocks", 3, flags)){
             ImGui::TableSetupColumn("BlockUID");
             ImGui::TableSetupColumn("TexCoord");
             ImGui::TableSetupColumn("Status");
@@ -746,7 +747,8 @@ private:
                 ImGui::TableNextColumn();
                 ImGui::Text("%d, %d %d %d", b.second.tid, b.second.sx, b.second.sy, b.second.sz);
                 ImGui::TableNextColumn();
-                ImGui::Text("%s", b.second.Missed() ? "missed" : "existed");
+//                ImGui::Text("%s", b.second.Missed() ? "missed" : "existed");
+                ImGui::Selectable("1 1 1 1", false);
             }
 
             ImGui::EndTable();
@@ -754,7 +756,7 @@ private:
         }
 
 
-        if(ImGui::BeginTable("Level of Detail", 2)){
+        if(ImGui::BeginTable("Level of Detail", 2, flags)){
             ImGui::TableSetupColumn("LOD");
             ImGui::TableSetupColumn("Dist");
             ImGui::TableHeadersRow();
