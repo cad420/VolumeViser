@@ -1,6 +1,7 @@
 #include "Common.hpp"
 #include "VolAnnotater.hpp"
 #include "SWCRenderer.hpp"
+#include "NeuronRenderer.hpp"
 
 //============================================================================================
 void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
@@ -246,6 +247,10 @@ void VolRenderRescPack::UpdateDefaultLOD(ViserRescPack& _, float ratio) {
     }
 }
 
+std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vector<SWC::SWCPoint> &pts) {
+    return std::vector<BlockUID>();
+}
+
 //============================================================================================
 
 void SWCRescPack::Initialize() {
@@ -434,7 +439,177 @@ void SWCRescPack::ExportSWCToFile(const std::string &filename) {
 //============================================================================================
 
 void SWC2MeshRescPack::Initialize() {
+    mesh_file = NewHandle<MeshFile>(RescAccess::Unique);
 
+    neuron_renderer = std::make_unique<NeuronRenderer>(NeuronRenderer::NeuronRendererCreateInfo{});
+}
+
+void SWC2MeshRescPack::CreateBlockMesh(const BlockUID &uid) {
+    s2m_priv_data.patch_mesh_mp[uid].status = Empty;
+    s2m_priv_data.patch_mesh_mp[uid].mesh = NewHandle<Mesh>(RescAccess::Shared);
+}
+
+void SWC2MeshRescPack::UpdateBlockMesh(const BlockUID &uid, Handle<Mesh> mesh) {
+    if(!QueryBlockMesh(uid)){
+        CreateBlockMesh(uid);
+    }
+    s2m_priv_data.patch_mesh_mp.at(uid).mesh = std::move(mesh);
+    s2m_priv_data.patch_mesh_mp.at(uid).status = Updated;
+}
+
+void SWC2MeshRescPack::SetBlockMeshStatus(const BlockUID &uid, SWC2MeshRescPack::BlockMeshStatus status) {
+    if(!QueryBlockMesh(uid)){
+        CreateBlockMesh(uid);
+    }
+    s2m_priv_data.patch_mesh_mp.at(uid).status = status;
+}
+
+void SWC2MeshRescPack::MergeAllBlockMesh() {
+    if(!Selected()){
+        LOG_ERROR("MergeAllBlockMesh but not select valid mesh");
+        return;
+    }
+    auto& merged_mesh = loaded_mesh.at(selected_mesh_uid);
+    std::vector<Handle<Mesh>> res;
+    for(auto& [uid, block_mesh] : s2m_priv_data.patch_mesh_mp){
+        if(block_mesh.status != Updated){
+            LOG_ERROR("merge block mesh with status is not Updated but is : {}",
+                      block_mesh.status == Empty ? "Empty" : "Modified");
+        }
+        res.push_back(block_mesh.mesh);
+    }
+    merged_mesh.mesh = Mesh::Merge(res);
+}
+
+void SWC2MeshRescPack::SetMeshStatus(MeshStatus status) {
+    mesh_status = status;
+}
+
+void SWC2MeshRescPack::MeshUpdated() {
+    neuron_renderer->Reset();
+    if(mesh_status == None) return;
+    else if(mesh_status == Merged){
+        auto& mesh_info = loaded_mesh.at(selected_mesh_uid);
+        neuron_renderer->AddNeuronMesh(mesh_info.mesh->GetPackedMeshData(),
+                                       mesh_info.mesh->GetUID());
+    }
+    else if(mesh_status == Blocked){
+        for(auto& [uid, block_mesh] : s2m_priv_data.patch_mesh_mp){
+            if(block_mesh.status != Updated){
+                LOG_ERROR("Update render block mesh but status is not Updated but is {}",
+                          block_mesh.status == Empty ? "Empty" : "Modified");
+            }
+            neuron_renderer->AddNeuronMesh(block_mesh.mesh->GetPackedMeshData(), uid.ToUnifiedRescUID());
+        }
+    }
+    else{
+        assert(false);
+    }
+}
+
+void SWC2MeshRescPack::LoadMeshFile(const std::string &filename) {
+    if(filename.empty()) return;
+    try{
+
+        mesh_file->Open(filename, MeshFile::Read);
+
+        auto mesh_data = mesh_file->GetMesh();
+
+        mesh_file->Close();
+
+        CreateMesh(filename);
+
+        auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+
+        int idx = 0;
+        for(auto& shape : mesh_data){
+            mesh->Insert(shape, idx++);
+        }
+        mesh->MergeShape();
+
+        UpdateMesh(selected_mesh_uid, std::move(mesh));
+    }
+    catch (const ViserFileOpenError& err) {
+        LOG_ERROR("LoadMeshFile error : {}", err.what());
+    }
+}
+
+void SWC2MeshRescPack::CreateMesh(const std::string &filename) {
+    static int mesh_count = 0;
+    auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+    auto mesh_uid = mesh->GetUID();
+    auto& mesh_info = loaded_mesh[mesh_uid];
+    mesh_info.mesh = std::move(mesh);
+    mesh_info.filename = filename;
+    mesh_info.name = "Neuron_Mesh_" + std::to_string(++mesh_count);
+
+    Select(mesh_uid);
+}
+
+void SWC2MeshRescPack::Select(MeshUID mesh_id) {
+    if(loaded_mesh.count(mesh_id) == 0){
+        LOG_ERROR("Select mesh with invalid uid");
+        return;
+    }
+    selected_mesh_uid = mesh_id;
+    mesh_status = Merged;
+
+    //清除block mesh
+    ResetBlockedMesh();
+
+    //重新上传渲染数据
+    MeshUpdated();
+}
+
+void SWC2MeshRescPack::ResetBlockedMesh() {
+    s2m_priv_data.patch_mesh_mp.clear();
+
+}
+
+void SWC2MeshRescPack::SaveMeshToFile() {
+    if(!Selected()){
+        LOG_ERROR("SaveMeshToFile with invalid selected mesh uid");
+        return;
+    }
+
+    if(loaded_mesh.at(selected_mesh_uid).filename.empty()){
+        LOG_ERROR("Save Mesh File with empty filename");
+        return;
+    }
+
+    ExportMeshToFile(loaded_mesh.at(selected_mesh_uid).filename);
+}
+
+void SWC2MeshRescPack::ExportMeshToFile(const std::string &filename) {
+    if(!Selected()){
+        LOG_ERROR("ExportMeshToFile with invalid selected mesh uid");
+        return;
+    }
+    try{
+        auto& mesh_info = loaded_mesh.at(selected_mesh_uid);
+
+        mesh_file->Open(filename, MeshFile::Write);
+
+        mesh_file->WriteMeshData(mesh_info.mesh->GetPackedMeshData());
+
+        mesh_file->Close();
+
+        mesh_info.filename = filename;
+    }
+    catch (const ViserFileOpenError& err) {
+        LOG_ERROR("ExportMeshFile error : {}", err.what());
+    }
+}
+
+void SWC2MeshRescPack::UpdateMesh(MeshUID uid, Handle<Mesh> mesh) {
+    if(loaded_mesh.count(uid) == 0){
+        LOG_ERROR("UpdateMesh with invalid uid");
+        return;
+    }
+    loaded_mesh.at(uid).mesh = std::move(mesh);
+
+    if(uid == selected_mesh_uid)
+        MeshUpdated();
 }
 
 //============================================================================================

@@ -125,6 +125,8 @@ public:
     void UpdateUpBoundLOD(ViserRescPack& _, float fov_rad, float ratio = 1.f);
 
     void UpdateDefaultLOD(ViserRescPack& _, float ratio = 1.f);
+
+    std::vector<BlockUID> ComputeIntersectBlocks(const std::vector<SWC::SWCPoint>& pts);
 };
 
 using SWCUID = viser::UnifiedRescUID;
@@ -214,7 +216,7 @@ public:
     void InsertSWCPoint(SWC::SWCPoint pt);
 
     /**
-     * @brief 将从文件中加载的swc写会文件 如果当前选择的swc不是从文件中加载得到的 那么不会写入
+     * @brief 将从文件中加载的swc写会文件 如果当前选择的swc没有设置过filename 那么直接返回
      */
     void SaveSWCToFile();
 
@@ -233,7 +235,7 @@ using MeshUID = viser::UnifiedRescUID;
  */
 struct SWC2MeshRescPack{
 public:
-    MeshFile mesh_file;
+    Handle<MeshFile> mesh_file;
     //一个完整的网格文件 由一个swc生成 可能包含多个不连通的神经元
     struct MeshInfo{
         Handle<Mesh> mesh;
@@ -242,29 +244,101 @@ public:
     };
     //所有加载的mesh文件
     std::unordered_map<MeshUID, MeshInfo> loaded_mesh;
-
+    MeshUID selected_mesh_uid;
     // 一个block对应的mesh 这里的PatchID同时也被渲染器使用
-    enum BlockMeshStatus{
-        Merged,
-        Blocked
+    //不同的状态只会影响mesh渲染的对象
+    //如果是none 那么什么都不渲染
+    //如果是merged 那么渲染器会渲染loaded_mesh里面保存的一个mesh
+    //如果是blocked 那么渲染器会渲染patch_mesh_mp里保存的多个mesh
+    enum MeshStatus{
+        None = 0,
+        Merged = 1,
+        Blocked = 2,
     };
+
+    MeshStatus mesh_status = None;
+
+    enum BlockMeshStatus{
+        Empty, // mesh没有生成
+        Modified, // block涉及到swc的改动
+        Updated // 重新生成了mesh
+    };
+
+    struct BlockMesh{
+        Handle<Mesh> mesh;
+        BlockMeshStatus status = Empty;
+    };
+
+    //这里应该存储所有swc涉及范围数据块对应的mesh
     struct{
-        std::set<MeshUID> available_mesh_ids;
+        //这里的mesh不是完整的 是一个数据块对应的mesh
+        //注意这些数据一旦被切换了就会丢失
+        std::unordered_map<BlockUID, BlockMesh> patch_mesh_mp;
 
-        std::unordered_map<PatchID, Handle<Mesh>> patch_mesh_mp;
-
-        BlockMeshStatus status;
 
     }s2m_priv_data;
 
-    Handle<NeuronRenderer> neuron_renderer;
+    std::unique_ptr<NeuronRenderer> neuron_renderer;
 
 public:
     void Initialize();
 
+    bool LocalUpdating() const { return mesh_status == Blocked; }
+
+    bool QueryBlockMesh(const BlockUID& uid) const { return s2m_priv_data.patch_mesh_mp.count(uid) != 0;}
+
+    /**
+     * @brief 创建一个block mesh，并且设置状态为Empty，如果原来存在会被清除
+     */
+    void CreateBlockMesh(const BlockUID& uid);
+
+    /**
+     * @brief 更新一个block mesh，并且设置状态为Updated，如果原来不存在，会先调用CreateBlockMesh创建
+     */
+    void UpdateBlockMesh(const BlockUID& uid, Handle<Mesh> mesh);
+
+    void UpdateMesh(MeshUID uid, Handle<Mesh> mesh);
+
+    void UpdateMesh(Handle<Mesh> mesh) { if(Selected()) UpdateMesh(std::move(mesh)); }
+
+    /**
+     * @brief 将uid指定的block状态改为 status 如果这个block不存在 那么会调用CreateBlockMesh先创建
+     */
+    void SetBlockMeshStatus(const BlockUID& uid, BlockMeshStatus status);
+
+    /**
+     *@brief 将所有patch_mesh_mp里保存的mesh进行合并并保存到loaded_mesh里 会将MeshStatus设置为Merged
+     */
+    void MergeAllBlockMesh();
+
+    void SetMeshStatus(MeshStatus status);
+
+    /**
+     * @brief 通知mesh渲染器 数据需要更新 根据当前的MeshStatus重新加载数据到渲染器
+     */
+    void MeshUpdated();
+
+    /**
+     * @brief 从文件中加载mesh到内存中，mesh对应uid 设置MeshStatus为Merged，即调用Select
+     * @params uid 必须是有效的 即与BlockUID对应
+     */
     void LoadMeshFile(const std::string& filename);
 
+    void CreateMesh(const std::string& filename = "");
+
+    bool Selected() const { return CheckUnifiedRescUID(selected_mesh_uid) && loaded_mesh.count(selected_mesh_uid); }
+
+    /**
+     * @brief 切换当前选中的mesh 会将MeshStatus设置为Merged，并且会丢失patch_mesh_mp里的数据
+     */
     void Select(MeshUID mesh_id);
 
+    /**
+     * @brief 清除patch_mesh_mp里的数据
+     */
     void ResetBlockedMesh();
+
+    void SaveMeshToFile();
+
+    void ExportMeshToFile(const std::string& filename);
 };

@@ -5,3 +5,4 @@
 #include "misc/hash.hpp"
 #include "misc/intrusive.hpp"
 #include "misc/lru.hpp"
+#include "misc/model.hpp"

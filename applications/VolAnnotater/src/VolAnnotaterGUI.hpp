@@ -87,6 +87,8 @@ private:
 
     void check_and_add_swc_pt();
 
+    void update_swc_influenced_blocks();
+
     bool check_and_start_annotating();
 
     bool stop_and_save_annotating();

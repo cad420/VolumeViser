@@ -27,6 +27,8 @@ public:
         return 0;
     }
 
+    std::unordered_map<SWC::Ops, std::vector<SWCPoint>> direct_influenced_pts;
+
     UnifiedRescUID uid;
     static UnifiedRescUID GenRescUID(){
         static std::atomic<size_t> g_uid = 1;
@@ -72,6 +74,7 @@ public:
     }
 
     bool SWC::QueryNode(SWC::SWCPointKey id) noexcept {
+        if(id == -1) return false;
         return _->swc_point_mp.count(id);
     }
 
@@ -250,6 +253,62 @@ public:
         return GetNodeRoot(pid);
     }
 
+    std::vector<std::pair<SWC::SWCPoint, SWC::Ops>> SWC::GetAllModifiedSWCPts() noexcept {
+        std::vector<std::pair<SWCPoint,Ops>> ret;
+        for(auto& [op, pts] : _->direct_influenced_pts){
+            for(auto& pt : pts){
+                ret.emplace_back(pt, op);
+            }
+        }
+        return ret;
+    }
+
+    std::vector<SWC::SWCPoint> SWC::GetAllModifiedAndInfluencedPts() noexcept {
+        std::unordered_set<SWCPoint> st;
+        for(auto& [op, pts] : _->direct_influenced_pts){
+            if(op == Old_ConnectSeg){
+                //两个点相连必定有一个是根节点，所以记录的必须是根节点
+                for(auto& pt : pts){
+                    assert(pt.pid == -1);
+                    st.insert(pt);
+                    if(QueryNode(pt.id) && QueryNode(pt.pid)){
+                        st.insert(GetNode(pt.pid));
+                    }
+                }
+            }
+            else if(op == Old_UpdateR){
+                for(auto& pt : pts){
+                    //更新半径前后的点都会影响最后的范围
+                    st.insert(pt);
+                    if(QueryNode(pt.id)){
+                        st.insert(GetNode(pt.id));
+                    }
+                }
+            }
+            else{
+                for(auto& pt : pts){
+                    st.insert(pt);
+                    if(QueryNode(pt.id)){
+                        if(QueryNode(pt.pid))
+                            st.insert(GetNode(pt.pid));
+                        for(auto kid : GetNodeKids(pt.id)){
+                            st.insert(GetNode(kid));
+                        }
+                    }
+                }
+            }
+        }
+        std::vector<SWCPoint> ret;
+        ret.reserve(st.size());
+        for(auto& pt : st){
+            ret.emplace_back(pt);
+        }
+        return ret;
+    }
+
+    void SWC::Commit() noexcept {
+        _->direct_influenced_pts.clear();
+    }
 
 
 VISER_END

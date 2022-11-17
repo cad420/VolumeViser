@@ -16,6 +16,9 @@ public:
 
     void AddNeuronMesh(const MeshData0& mesh, PatchID patch_id);
 
+    /**
+     * @brief 如果patch_id以及存在 那么会删除原来的数据
+     */
     void AddNeuronMesh(const MeshData1& mesh, PatchID patch_id);
 
     void DeleteNeuronMesh(PatchID patch_id);
@@ -25,6 +28,12 @@ public:
 private:
     program_t shader;
 
-
+    struct DrawPatch{
+        mat4 model = mat4::identity();
+        vertex_array_t vao;
+        vertex_buffer_t<Vertex> vbo;
+        index_buffer_t<uint32_t> ebo;
+    };
+    std::unordered_map<PatchID, DrawPatch> patches;
 
 };

@@ -41,6 +41,10 @@ public:
         float radius;
         int pid;
         int pad = 0;
+
+        bool operator==(const SWCPoint& pt) const{
+            return id == pt.id && tag == pt.tag && x == pt.x && y == pt.y && z == pt.z && radius == pt.radius && pid == pt.pid;
+        }
     };
     static_assert(sizeof(SWCPoint) == 32, "SWCPoint's size should be power of two or cache line size");
 
@@ -74,6 +78,13 @@ protected:
     std::unique_ptr<SWCFilePrivate> _;
 };
 
-
-
 VISER_END
+
+namespace std{
+    template<>
+    struct hash<viser::SWCFile::SWCPoint>{
+        size_t operator()(const viser::SWCFile::SWCPoint& pt) const{
+            return vutil::hash(pt.x, pt.y, pt.z, pt.radius);
+        }
+    };
+}

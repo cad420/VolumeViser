@@ -1,10 +1,6 @@
 #pragma once
 
-#include "math/color2.hpp"
-#include "math/color3.hpp"
-#include "math/color4.hpp"
-#include "math/tensor.hpp"
-#include "math/common.hpp"
+#include "../math.hpp"
 
 VUTIL_BEGIN
 

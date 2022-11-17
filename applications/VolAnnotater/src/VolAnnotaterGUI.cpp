@@ -1,7 +1,7 @@
 #include <imgui_internal.h>
 #include "VolAnnotaterGUI.hpp"
 #include "SWCRenderer.hpp"
-
+#include "NeuronRenderer.hpp"
 #define FOV 40.f
 
 void VolAnnotaterGUI::Initialize() {
@@ -15,7 +15,7 @@ void VolAnnotaterGUI::Initialize() {
 
 
     swc2mesh_resc = std::make_unique<SWC2MeshRescPack>();
-    swc2mesh_resc->Initialize();
+
 
     vol_file_dialog.SetTitle("Volume Lod Desc Json File");
     vol_file_dialog.SetTypeFilters({".json"});
@@ -52,6 +52,7 @@ void VolAnnotaterGUI::initialize() {
 
     //需要创建OpenGL上下文后才能初始化
     swc_resc->Initialize();
+    swc2mesh_resc->Initialize();
 }
 
 void VolAnnotaterGUI::frame() {
@@ -463,6 +464,16 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
 
     if(ImGui::Begin("Neuron Mesh Info", p_open, window_flags)){
 
+
+        if(ImGui::BeginTable("Neuron Meshes", 3, ImGuiTableFlags_Resizable)){
+            ImGui::TableSetupColumn("Visible");
+            ImGui::TableSetupColumn("BlockUID");
+            ImGui::TableSetupColumn("Status");
+            ImGui::TableHeadersRow();
+
+
+            ImGui::EndTable();
+        }
     }
 
     ImGui::End();
@@ -884,7 +895,8 @@ void VolAnnotaterGUI::check_and_add_swc_pt() {
 
     swc_resc->InsertSWCPoint(swc_pt);
 
-
+    //更新受影响的block
+    update_swc_influenced_blocks();
 }
 
 bool VolAnnotaterGUI::is_annotating() {
@@ -934,6 +946,19 @@ bool VolAnnotaterGUI::can_start_annotating() {
     if(swc_resc->loaded_swc.empty() || swc_resc->selected_swc_uid == INVALID_RESC_ID) return false;
 
     return true;
+}
+
+void VolAnnotaterGUI::update_swc_influenced_blocks() {
+    if(!swc2mesh_resc->LocalUpdating()){
+        LOG_DEBUG("update_swc_influenced_blocks but MeshStatus is not Blocked");
+        return;
+    }
+
+    auto blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->GetAllModifiedAndInfluencedPts());
+
+
+
+
 }
 
 

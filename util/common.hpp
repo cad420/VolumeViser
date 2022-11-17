@@ -39,5 +39,11 @@ VUTIL_BEGIN
     template <typename T>
     using remove_rcv_t = std::remove_cv_t<std::remove_reference_t<T>>;
 
+    template<typename C, typename M>
+    ptrdiff_t byte_offset(M(C::*memPtr)) noexcept
+    {
+        return reinterpret_cast<char*>(&(reinterpret_cast<C*>(0)->*memPtr))
+               - reinterpret_cast<char*>(reinterpret_cast<C*>(0));
+    }
 
 VUTIL_END

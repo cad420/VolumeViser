@@ -29,8 +29,11 @@ VISER_BEGIN
 // 一个swc point影响到多个block
 // 一个block对应唯一生成的mesh
 // 每次commit前，获取所有直接改动以及被间接影响的点，也就是所有体素化会有所改变的线段segment
-// 根据所有改变线段的AABB包围盒得到所有可能受影响的block
-// 对所有改变线段依次进行体素化，这一过程类似于对虚拟纹理进行写入操作，然后标记真正被改动过的block
+// 根据所有改变线段的AABB包围盒得到所有可能受影响的block，并进行标记
+// 对所有改变线段依次进行体素化，这样子不行，比如一个点的半径改变导致一个block受影响，
+// 这个block的其它线段也应该重新进行体素化
+// 因此，在标记那些受影响的block之后，再遍历所有的线段，判断每一条线段影响的blocks是否被标记，如果是那么重新体素化生成mesh
+// 这一过程类似于对虚拟纹理进行写入操作，然后标记真正被改动过的block
 // 对改动过的block依次进行marching cube算法，得到block所对应的mesh，并按照key-value进行存储
 // 因此相对于的SWC渲染器，每个patch对应的是一个block所属的mesh
 // 也就是说，一个swc对应生成的mesh以block单位分别存储，如果要进行光滑操作的话，可以先全局合并重复顶点，生成索引
@@ -43,6 +46,11 @@ VISER_BEGIN
 // 一条神经元与一个patch id唯一对应
 // 如果在中间插入或者任意的删除，都需要重新将整个数据上传到渲染器
 // 如果是添加新的点，那么不需要重新上传
+
+// SWC生成的Mesh
+// 一个SWC最后会生成一个网格文件，保存到文件中的网格是经过合并、光滑、简化的
+// 如果再次从文件中加载回Mesh，这时候的Mesh因为Merged而不是Blocked，是无法局部更新的
+// 因此如果要编辑的话，会首先生成全部swc涉及到的Blocked Mesh然后再进行更改
 
 class SWCPrivate;
 class SWC : public UnifiedRescBase{
@@ -65,10 +73,24 @@ public:
 
     UnifiedRescUID GetUID() const override;
 
-    std::vector<SWCPointKey> GetAllModifiedSWCPtsKey();
+    enum Ops : int{
+        New_Add = 1,
+        Old_Del = 2,
+        Old_UpdateR = 3,
+        Old_ConnectSeg = 4
+    };
 
-    std::vector<SWCPointKey> GetAllModifiedAndInfluencedPtsKey();
 
+    //获取所有直接被改动的点集合
+    std::vector<std::pair<SWCPoint, Ops>> GetAllModifiedSWCPts() noexcept;
+
+    //获取所有直接改动加间接影响的点集合
+    std::vector<SWCPoint> GetAllModifiedAndInfluencedPts() noexcept;
+
+    /**
+     * @brief 将所有从上一次Commit之后记录下来的被更改的点清除
+     * @note 被更改只包括三种操作 1.添加新的点 2.删除一个点 3.更改一个点的半径
+     */
     void Commit() noexcept;
 
     void PrintInfo() noexcept;

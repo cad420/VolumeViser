@@ -5,75 +5,111 @@
 
 VISER_BEGIN
 
-    class MeshPrivate{
-    public:
+class MeshPrivate{
+public:
+    std::unordered_map<int, Mesh::MeshData> shapes;
 
+    std::mutex mtx;
 
-        std::mutex mtx;
-
-        UnifiedRescUID uid;
-        static UnifiedRescUID GenRescUID(){
-            static std::atomic<size_t> g_uid = 1;
-            auto uid = g_uid.fetch_add(1);
-            return GenUnifiedRescUID(uid, UnifiedRescType::Mesh);
-        }
-    };
-
-    Mesh::Mesh() {
-        _ = std::make_unique<MeshPrivate>();
-
-        _->uid = _->GenRescUID();
-
+    UnifiedRescUID uid;
+    static UnifiedRescUID GenRescUID(){
+        static std::atomic<size_t> g_uid = 1;
+        auto uid = g_uid.fetch_add(1);
+        return GenUnifiedRescUID(uid, UnifiedRescType::Mesh);
     }
+};
 
-    Mesh::~Mesh() {
+Mesh::Mesh() {
+    _ = std::make_unique<MeshPrivate>();
 
+    _->uid = _->GenRescUID();
+
+}
+
+Mesh::~Mesh() {
+
+}
+
+void Mesh::Smooth() {
+
+}
+
+void Mesh::Simplify() {
+
+}
+
+void Mesh::Lock() {
+    _->mtx.lock();
+}
+
+void Mesh::UnLock() {
+    _->mtx.unlock();
+}
+
+UnifiedRescUID Mesh::GetUID() const {
+    return _->uid;
+}
+
+Mesh::MeshData Mesh::GetPackedMeshData() const {
+    std::vector<MeshData0> ret;
+    for(auto& [id, mesh_data] : _->shapes){
+        ret.emplace_back(mesh_data);
     }
+    return ::viser::Merge(ret);
+}
 
-    Mesh Mesh::Merge(const std::vector<Mesh> &meshes, bool remove_dup, bool gen_indices) {
-        return Mesh();
+
+int Mesh::GetMeshShapeCount() const {
+    return _->shapes.size();
+}
+
+Mesh::MeshData Mesh::GetShapeData(int index) const {
+    if(_->shapes.count(index == 0)){
+        LOG_ERROR("GetShapeData with invalid index");
+        return {};
     }
+    return _->shapes.at(index);
+}
 
-    void Mesh::Smooth() {
 
+void Mesh::Insert(MeshData0 data, int shape_index) {
+    if(_->shapes.count(shape_index) != 0){
+        LOG_WARN("Mesh Insert with existed index");
     }
+    _->shapes[shape_index] = std::move(data);
+}
 
-    void Mesh::Simplify() {
 
+void Mesh::MergeShape() {
+    std::vector<MeshData0> res;
+    for(auto& [id, mesh_data] : _->shapes){
+        res.emplace_back(std::move(mesh_data));
     }
+    auto ret = ::viser::Merge(res);
+    _->shapes.clear();
+    _->shapes[0] = std::move(ret);
+}
 
-    void Mesh::Lock() {
+void Mesh::Merge(const Mesh &mesh) {
+    MergeShape();
+    auto ret = ::viser::Merge(_->shapes.at(0), mesh.GetPackedMeshData());
+    _->shapes.at(0) = std::move(ret);
+}
 
+void Mesh::Clear() {
+    _->shapes.clear();
+}
+
+Handle<Mesh> Mesh::Merge(const std::vector<Handle<Mesh>> &meshes) {
+    auto ret = NewHandle<Mesh>(RescAccess::Shared);
+    std::vector<MeshData0> datas;
+    for(auto mesh : meshes){
+        datas.emplace_back(mesh->GetPackedMeshData());
     }
+    ret->Insert(::viser::Merge(datas), 0);
 
-    void Mesh::UnLock() {
-
-    }
-
-    UnifiedRescUID Mesh::GetUID() const {
-        return 0;
-    }
-
-    MeshData0 Mesh::GetPackedMeshData0() const {
-        return MeshData0();
-    }
-
-    MeshData1 Mesh::GetPackedMeshData1() const {
-        return MeshData1();
-    }
-
-    int Mesh::GetMeshShapeCount() const {
-        return 0;
-    }
-
-    MeshData0 Mesh::GetShapeData0(int index) const {
-        return MeshData0();
-    }
-
-    MeshData1 Mesh::GetShapeData1(int index) const {
-        return MeshData1();
-    }
-
+    return ret;
+}
 
 VISER_END
 

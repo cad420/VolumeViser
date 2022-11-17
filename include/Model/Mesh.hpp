@@ -6,14 +6,25 @@ VISER_BEGIN
 
 // Mesh相关的算法暂时使用CPU进行处理，有多线程的加速
 
+
+
 class MeshPrivate;
 class Mesh : public UnifiedRescBase{
 public:
+    using MeshData = MeshData0;
+
     Mesh();
 
     ~Mesh();
 
-    static Mesh Merge(const std::vector<Mesh>& meshes, bool remove_dup, bool gen_indices);
+    static Handle<Mesh> Merge(const std::vector<Handle<Mesh>>& meshes);
+
+
+    void Merge(const Mesh& mesh);
+
+    void Clear();
+
+    void Insert(MeshData data, int shape_index);
 
     void Smooth();
 
@@ -30,16 +41,17 @@ public:
     /**
      * @brief 获取单个shape的网格数据
      */
-    MeshData0 GetShapeData0(int index) const;
+    MeshData GetShapeData(int index) const;
 
-    MeshData1 GetShapeData1(int index) const;
+
+    //将一个mesh里的所有shape合并为一个
+    void MergeShape();
 
     /**
      * @brief 将所有的shape进行合并后返回
      */
-    MeshData0 GetPackedMeshData0() const;
+    MeshData GetPackedMeshData() const;
 
-    MeshData1 GetPackedMeshData1() const;
 
 protected:
     std::unique_ptr<MeshPrivate> _;
