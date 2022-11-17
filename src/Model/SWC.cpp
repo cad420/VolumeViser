@@ -106,6 +106,8 @@ public:
         auto& p_node = _->node_mp[point.pid];
         p_node.children.insert(point.id);
         _->node_mp[point.id] = {point.id, point.pid};
+
+        _->direct_influenced_pts[New_Add].emplace_back(point);
     }
 
     void SWC::InsertNodeInternal(const SWCPoint& point, SWCPointKey kid) noexcept {
@@ -119,6 +121,8 @@ public:
         _->node_mp[kid].parent = id;
         _->swc_point_mp[kid].pid = id;
         _->node_mp[id] = {id, pid, {kid}};
+
+        _->direct_influenced_pts[New_Add].emplace_back(point);
     }
 
     bool SWC::CheckConnection(SWC::SWCPointKey id0, SWC::SWCPointKey id1) noexcept {
@@ -143,10 +147,13 @@ public:
         // id1 should be root
         _->node_mp[id1].parent = id0;
         _->node_mp[id0].children.insert(id1);
+
+        _->direct_influenced_pts[Old_ConnectSeg].emplace_back(_->swc_point_mp.at(id1));
     }
 
     void SWC::DeleteNode(SWCPointKey id, bool connect) noexcept {
         if(!QueryNode(id)) return;
+        _->direct_influenced_pts[Old_Del].emplace_back(_->swc_point_mp.at(id));
         _->updated = true;
         _->swc_point_mp.erase(id);
         auto d_node = _->node_mp[id];
@@ -169,6 +176,7 @@ public:
                 }
             }
         }
+
     }
 
     std::vector<SWC::SWCPoint> SWC::QueryNode(const BoundingBox3D &box) noexcept {

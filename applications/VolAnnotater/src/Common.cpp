@@ -1,7 +1,9 @@
+#include <Algorithm/Voxelization.hpp>
 #include "Common.hpp"
 #include "VolAnnotater.hpp"
 #include "SWCRenderer.hpp"
 #include "NeuronRenderer.hpp"
+#include <unordered_set>
 
 //============================================================================================
 void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
@@ -101,6 +103,7 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
                                     volume_desc.voxel_space.y / volume_base_space,
                                     volume_desc.voxel_space.z / volume_base_space);
 
+    vol_priv_data.block_length = volume_desc.block_length;
 
     InitializeVolumeResc();
 }
@@ -248,7 +251,45 @@ void VolRenderRescPack::UpdateDefaultLOD(ViserRescPack& _, float ratio) {
 }
 
 std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vector<SWC::SWCPoint> &pts) {
-    return std::vector<BlockUID>();
+    std::vector<BlockUID> ret;
+//#define MINIMUM_INTERSECT_BLOCKS
+#ifndef MINIMUM_INTERSECT_BLOCKS
+    BoundingBox3D box;
+    for(auto& pt : pts){
+        box |= vec3f(pt.x - pt.radius, pt.y - pt.radius, pt.z - pt.radius);
+        box |= vec3f(pt.x + pt.radius, pt.y + pt.radius, pt.z + pt.radius);
+    }
+
+    ComputeIntersectedBlocksWithBoundingBox(ret,
+                                            render_vol.lod0_block_length_space,
+                                            render_vol.lod0_block_dim,
+                                            render_vol.volume_bound,
+                                            box);
+#else
+    std::unordered_set<BlockUID> st;
+    std::unordered_map<SWC::SWCPointKey, SWC::SWCPoint> mp;
+    std::vector<BlockUID> tmp;
+    for(auto& pt : pts) mp[pt.id] = pt;
+    for(auto& pt : pts){
+        BoundingBox3D box;
+        if(mp.count(pt.pid)){
+            auto& pt_a = mp.at(pt.pid);
+            box |= vec3f(pt_a.x - pt_a.radius, pt_a.y - pt_a.radius, pt_a.z - pt_a.radius);
+            box |= vec3f(pt_a.x + pt_a.radius, pt_a.y + pt_a.radius, pt_a.z + pt_a.radius);
+        }
+        box |= vec3f(pt.x - pt.radius, pt.y - pt.radius, pt.z - pt.radius);
+        box |= vec3f(pt.x + pt.radius, pt.y + pt.radius, pt.z + pt.radius);
+        ComputeIntersectedBlocksWithBoundingBox(tmp,
+                                                render_vol.lod0_block_length_space,
+                                                render_vol.lod0_block_dim,
+                                                render_vol.volume_bound,
+                                                box);
+        for(auto& b : tmp) st.insert(b);
+    }
+    for(auto& b : st)
+        ret.push_back(b);
+#endif
+    return ret;
 }
 
 //============================================================================================
@@ -438,8 +479,12 @@ void SWCRescPack::ExportSWCToFile(const std::string &filename) {
 
 //============================================================================================
 
-void SWC2MeshRescPack::Initialize() {
+void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
     mesh_file = NewHandle<MeshFile>(RescAccess::Unique);
+
+    s2m_priv_data.segment_buffer = _.host_mem_mgr_ref->AllocPinnedHostMem(RescAccess::Shared,
+                                                                          MaxSegmentCount * sizeof(SWCSegment),
+                                                                          false);
 
     neuron_renderer = std::make_unique<NeuronRenderer>(NeuronRenderer::NeuronRendererCreateInfo{});
 }
@@ -483,9 +528,11 @@ void SWC2MeshRescPack::MergeAllBlockMesh() {
 
 void SWC2MeshRescPack::SetMeshStatus(MeshStatus status) {
     mesh_status = status;
+    MeshUpdated();
 }
 
 void SWC2MeshRescPack::MeshUpdated() {
+    if(!Selected()) return;
     neuron_renderer->Reset();
     if(mesh_status == None) return;
     else if(mesh_status == Merged){
@@ -517,7 +564,7 @@ void SWC2MeshRescPack::LoadMeshFile(const std::string &filename) {
 
         mesh_file->Close();
 
-        CreateMesh(filename);
+        CreateMesh("", filename);
 
         auto mesh = NewHandle<Mesh>(RescAccess::Shared);
 
@@ -534,16 +581,20 @@ void SWC2MeshRescPack::LoadMeshFile(const std::string &filename) {
     }
 }
 
-void SWC2MeshRescPack::CreateMesh(const std::string &filename) {
+void SWC2MeshRescPack::CreateMesh(const std::string& name, const std::string &filename) {
     static int mesh_count = 0;
+    mesh_count += 1;
     auto mesh = NewHandle<Mesh>(RescAccess::Shared);
     auto mesh_uid = mesh->GetUID();
     auto& mesh_info = loaded_mesh[mesh_uid];
     mesh_info.mesh = std::move(mesh);
     mesh_info.filename = filename;
-    mesh_info.name = "Neuron_Mesh_" + std::to_string(++mesh_count);
+    mesh_info.name = name.empty() ? "Neuron_Mesh_" + std::to_string(mesh_count) : name;
 
     Select(mesh_uid);
+
+    //新建的mesh初始状态应该是Blocked
+    SetMeshStatus(Blocked);
 }
 
 void SWC2MeshRescPack::Select(MeshUID mesh_id) {

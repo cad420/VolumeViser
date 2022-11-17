@@ -876,7 +876,7 @@ VISER_BEGIN
         }
     };
 
-    void MarchingCubeAlgo::Run(MarchingCubeAlgoParams &mc_params) {
+    int MarchingCubeAlgo::Run(MarchingCubeAlgoParams &mc_params) {
         //一个线程复杂一个cube，一个block共用page table
         //一个block的线程数不要太多，因为之后可能要创建的shared memory大小和线程数有关，或者每个线程的寄存器文件太多
         //具体的线程数，之后可以再调整看看，找到一个tradeoff
@@ -932,9 +932,12 @@ VISER_BEGIN
 
             //将结果写入params中
             mc_params.gen_dev_vertices_ret = _->vol_vert_pos->view_1d<Float3>(total_tri_num);
+
+            return total_tri_num;
         }
         catch (const std::exception& err) {
             LOG_ERROR("{}", err.what());
+            return 0;
         }
     }
 

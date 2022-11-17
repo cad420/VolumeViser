@@ -11,7 +11,7 @@ VISER_BEGIN
  * radius以体素为单位
  */
  //todo change to template Voxel
-void CPUVoxelizeSWC(CUDABufferView3D<uint8_t>& volume, const std::vector<Float4>& ptrs){
+inline void CPUVoxelizeSWC(CUDABufferView3D<uint8_t>& volume, const std::vector<Float4>& ptrs){
     uint32_t vol_x = volume.width(), vol_y = volume.height(), vol_z = volume.depth();
     assert(ptrs.size() > 1);
 
@@ -48,8 +48,8 @@ void CPUVoxelizeSWC(CUDABufferView3D<uint8_t>& volume, const std::vector<Float4>
         BoundingBox3D box;
         box |= A;
         box |= B;
-        box.low -= std::max(radius_a, radius_b);
-        box.high += std::max(radius_a, radius_b);
+        box.low -= (std::max)(radius_a, radius_b);
+        box.high += (std::max)(radius_a, radius_b);
         box &= vol_box;
 
         UInt3 low_coord = convert(box.low, UInt3(vol_x, vol_y, vol_z));
@@ -93,7 +93,8 @@ void CPUVoxelizeSWC(CUDABufferView3D<uint8_t>& volume, const std::vector<Float4>
 }
 
 //因为swc体素化后的值都是一样的，因此默认使用uint8类型，体素值为255
-inline static constexpr uint8_t SWCVoxelVal = 255;
+constexpr uint8_t SWCVoxelVal = 255;
+constexpr size_t MaxSegmentCount = 1ull << 20;
 using SWCSegment = std::pair<Float4, Float4>;
 class SWCVoxelizerPrivate;
 class SWCVoxelizer : public UnifiedRescBase{
@@ -101,7 +102,7 @@ public:
     struct VoxelizerCreateInfo{
         mutable Ref<GPUMemMgr> gpu_mem_mgr;
         mutable Ref<HostMemMgr> host_mem_mgr;
-        size_t max_segment_count = 1ull << 20;
+        size_t max_segment_count = MaxSegmentCount;
     };
     SWCVoxelizer(const VoxelizerCreateInfo& info);
 
@@ -119,10 +120,12 @@ public:
 
     void BindPTBuffer(PTBufferHandle handle);
 
+    int GetVoxelizedBlock(CUDABufferView1D<GridVolume::BlockUID> blocks);
+
     struct SWCVoxelizeAlgoParams{
 
 //        std::vector<SWCSegment> ptrs;
-        CUDABufferView1D<SWCSegment> ptrs;
+        CUDABufferView1D<SWCSegment> ptrs;//host buffer
         uint32_t lod = 0;
     };
     void Run(const SWCVoxelizeAlgoParams& params);

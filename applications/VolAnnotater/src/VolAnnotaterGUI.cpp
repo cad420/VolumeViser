@@ -1,7 +1,11 @@
+#include <Algorithm/Voxelization.hpp>
 #include <imgui_internal.h>
 #include "VolAnnotaterGUI.hpp"
 #include "SWCRenderer.hpp"
 #include "NeuronRenderer.hpp"
+#include "Common.hpp"
+
+
 #define FOV 40.f
 
 void VolAnnotaterGUI::Initialize() {
@@ -52,7 +56,7 @@ void VolAnnotaterGUI::initialize() {
 
     //需要创建OpenGL上下文后才能初始化
     swc_resc->Initialize();
-    swc2mesh_resc->Initialize();
+    swc2mesh_resc->Initialize(*viser_resc);
 }
 
 void VolAnnotaterGUI::frame() {
@@ -130,6 +134,8 @@ void VolAnnotaterGUI::show_editor_ui() {
     show_editor_vol_info_window(&vol_info_window_open);
 
     show_editor_vol_render_window(&vol_render_window_open);
+
+    show_editor_mesh_render_info_window(&mesh_render_info_window_open);
 
     show_editor_mesh_render_window(&mesh_render_window_open);
 
@@ -320,12 +326,39 @@ void VolAnnotaterGUI::show_editor_vol_render_window(bool *p_open) {
     ImGui::End();
 }
 
+void VolAnnotaterGUI::show_editor_mesh_render_info_window(bool *p_open) {
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+
+    if(p_open && !*p_open) return;
+
+    if(ImGui::Begin("Neuron Render Info", p_open, window_flags)){
+        ImGui::NewLine();
+
+        ImGui::Checkbox("Sync With Vol Render", &vol_mesh_render_sync);
+
+        if(ImGui::TreeNode("Render Select")){
+
+            if(ImGui::RadioButton("None", swc2mesh_resc->mesh_status == SWC2MeshRescPack::MeshStatus::None))
+                swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::MeshStatus::None);
+            if(ImGui::RadioButton("Merged", swc2mesh_resc->mesh_status == SWC2MeshRescPack::MeshStatus::Merged))
+                swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::MeshStatus::Merged);
+            if(ImGui::RadioButton("Blocked", swc2mesh_resc->mesh_status == SWC2MeshRescPack::MeshStatus::Blocked))
+                swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::MeshStatus::Blocked);
+
+            ImGui::TreePop();
+        }
+
+    }
+
+    ImGui::End();
+}
+
 void VolAnnotaterGUI::show_editor_mesh_render_window(bool *p_open) {
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
 
     if(p_open && !*p_open) return;
 
-    if(ImGui::Begin("Mesh Render", p_open, window_flags)){
+    if(ImGui::Begin("Neuron Render", p_open, window_flags)){
         auto [px, py] = ImGui::GetWindowPos();
         window_priv_data.mesh_render_window_pos = vec2i(px, py);
         auto [x, y] = ImGui::GetWindowSize();
@@ -337,7 +370,7 @@ void VolAnnotaterGUI::show_editor_mesh_render_window(bool *p_open) {
             return;
         }
 
-
+        frame_mesh_render();
 
     }
 
@@ -377,6 +410,11 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
 
         if(ImGui::Button("New SWC", ImVec2(120, 18))){
             swc_resc->CreateSWC();
+            //新建一个swc的时候也创建对应的mesh
+            //这里的代价是很低的 并没有体素化mc生成mesh 只用于记录状态
+            std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
+                    + "_neuron";
+            swc2mesh_resc->CreateMesh(neuron_name);
         }
 
         ImGui::SameLine();
@@ -399,11 +437,17 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
             }
         }
 
-
-        if(ImGui::BeginTable("SWC Points", 2, ImGuiTableFlags_Resizable)){
-            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 30);
+        static ImGuiTableFlags table_flags =
+                ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable
+                | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
+                | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody
+                | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY
+                | ImGuiTableFlags_SizingFixedFit;
+        if(ImGui::BeginTable("SWC Points", 2, table_flags)){
+            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_NoSort |
+            ImGuiTableColumnFlags_WidthFixed, 30);
             ImGui::TableSetupColumn("Tag PID X Y Z Radius");
-
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
             if(!swc_resc->loaded_swc.empty()){
                 auto& sel_swc = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).swc;
@@ -412,14 +456,15 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
                 for(auto it = sel_swc->begin(); it != sel_swc->end(); ++it){
                     ImGui::TableNextRow();
                     bool sel = it->first == sel_swc_pt_id;
-                    ImGui::TableNextColumn();
+                    ImGui::TableSetColumnIndex(0);
                     if(ImGui::Selectable(std::to_string(it->first).c_str(), sel)){
                         swc_resc->swc_priv_data.last_picked_swc_pt_id = it->first;
                     }
                     sprintf(buffer, "%d %d %.5f %.5f %.5f %.5f", it->second.tag, it->second.pid,
                             it->second.x, it->second.y, it->second.z, it->second.radius);
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", buffer);
+                    ImGui::TableSetColumnIndex(1);
+
+                    ImGui::TextColored({1.f, 0.f, 0.f, 1.f}, "%s", buffer);
                 }
             }
 
@@ -463,14 +508,71 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
     if(p_open && !*p_open) return;
 
     if(ImGui::Begin("Neuron Mesh Info", p_open, window_flags)){
+        ImGui::NewLine();
 
+        std::string sel_mesh_str = "None";
+        if(swc2mesh_resc->Selected())
+            sel_mesh_str = swc2mesh_resc->loaded_mesh.at(swc2mesh_resc->selected_mesh_uid).name;
+        if(ImGui::BeginCombo("Loaded Neuron", sel_mesh_str.c_str())){
+            for(auto& [id, _] : swc2mesh_resc->loaded_mesh){
+                bool select = id == swc2mesh_resc->selected_mesh_uid;
+                if(ImGui::Selectable(_.name.c_str(), select)){
+                    swc2mesh_resc->Select(id);
 
-        if(ImGui::BeginTable("Neuron Meshes", 3, ImGuiTableFlags_Resizable)){
-            ImGui::TableSetupColumn("Visible");
+                    LOG_TRACE("Select Neuron Mesh : {}, {}", id, _.name);
+                }
+            }
+
+            ImGui::EndCombo();
+        }
+        if(ImGui::Button("New Neuron", ImVec2(120, 18))){
+
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Delete Neuron", ImVec2(120, 18))){
+
+        }
+
+        if(ImGui::Button("Load", ImVec2(120, 18))){
+
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Export", ImVec2(120, 18))){
+
+        }
+        if(ImGui::Button("Re-Generate", ImVec2(120, 18))){
+            generate_modified_mesh();
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Merge All", ImVec2(120, 18))){
+
+            swc2mesh_resc->MergeAllBlockMesh();
+
+        }
+        ImGuiTableFlags table_flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable
+                                      | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
+                                      | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody
+                                      | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY
+                                      | ImGuiTableFlags_SizingFixedFit;
+        if(ImGui::BeginTable("Neuron Meshes", 3, table_flags)){
+            ImGui::TableSetupColumn("Visible", ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthFixed, 0.f);
             ImGui::TableSetupColumn("BlockUID");
             ImGui::TableSetupColumn("Status");
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
 
+            int idx = 0;
+            for(auto& [uid, block_mesh] : swc2mesh_resc->s2m_priv_data.patch_mesh_mp){
+                ImGui::PushID(idx++);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Checkbox("", &block_mesh.visible);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextColored({0.f, 1.f, 0.f, 1.f}, "%d %d %d", uid.x, uid.y, uid.z);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%s", ToString(block_mesh.status).c_str());
+                ImGui::PopID();
+            }
 
             ImGui::EndTable();
         }
@@ -577,7 +679,9 @@ void VolAnnotaterGUI::frame_vol_render() {
 }
 
 void VolAnnotaterGUI::frame_mesh_render() {
+    if(vol_mesh_render_sync){
 
+    }
 }
 
 void VolAnnotaterGUI::register_cuda_gl_interop_resource() {
@@ -956,10 +1060,101 @@ void VolAnnotaterGUI::update_swc_influenced_blocks() {
 
     auto blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->GetAllModifiedAndInfluencedPts());
 
-
+    for(auto& block : blocks){
+        swc2mesh_resc->SetBlockMeshStatus(block, SWC2MeshRescPack::Modified);
+    }
 
 
 }
+
+void VolAnnotaterGUI::generate_modified_mesh() {
+    //首先找到与受影响数据块相交的线段 然后遍历所有线段 如果与受影响区域相交 那么将其加入队列
+    //有一个限制 数据块不能超过vtex的容量 不然需要分多次进行
+    auto lines = swc_resc->GetSelected().swc->PackLines();
+
+    std::vector<BoundingBox3D> block_boxes;
+    auto block_length_space = vol_render_resc->render_vol.lod0_block_length_space;
+    for(auto& [uid, block_mesh] : swc2mesh_resc->s2m_priv_data.patch_mesh_mp){
+        if(block_mesh.status != SWC2MeshRescPack::Modified) continue;
+        Float3 f_uid = Float3(uid.x, uid.y, uid.z);
+        block_boxes.push_back({f_uid * block_length_space,
+                               (f_uid + Float3(1)) * block_length_space});
+    }
+
+    std::vector<SWCSegment> swc_segments;
+
+    std::unordered_map<SWC::SWCPointKey, SWC::SWCPoint> pt_mp;
+    for(auto& line : lines) for(auto &pt : line) pt_mp[pt.id] = pt;
+
+    auto get_box = [](const SWC::SWCPoint& pt){
+        BoundingBox3D box;
+        box |= Float3(pt.x - pt.radius, pt.y - pt.radius, pt.z - pt.radius);
+        box |= Float3(pt.x + pt.radius, pt.y + pt.radius, pt.z + pt.radius);
+        return box;
+    };
+
+    auto intersect = [&](const BoundingBox3D& box){
+        for(auto& b : block_boxes){
+            if(box.intersect(b))
+                return true;
+        }
+        return false;
+    };
+
+    for(auto& line : lines){
+        for(auto& pt : line){
+            if(pt_mp.count(pt.pid) == 0) continue;
+            auto& prev_pt = pt_mp.at(pt.pid);
+            auto box = get_box(prev_pt) | get_box(pt);
+            if(intersect(box)){
+                swc_segments.emplace_back(Float4(prev_pt.x, prev_pt.y, prev_pt.z, prev_pt.radius),
+                                          Float4(pt.x, pt.y, pt.z, pt.radius));
+            }
+        }
+    }
+
+    size_t count = swc_segments.size();
+    if(count > MaxSegmentCount){
+        throw std::runtime_error("SWC segments' size large than MaxSegmentCount : " + std::to_string(count));
+    }
+
+    LOG_TRACE("start voxelize swc segments count : {}", count);
+
+    SWCVoxelizer::SWCVoxelizeAlgoParams params;
+    params.ptrs = swc2mesh_resc->s2m_priv_data.segment_buffer->view_1d<SWCSegment>(count);
+    for(int i = 0; i < count; i++){
+        params.ptrs.at(i) = swc_segments[i];
+    }
+
+    //todo 这里对vtex进行调度
+
+    swc2mesh_resc->swc_voxelizer->Run(params);
+
+    //voxelize过程中会标记真正受影响的block
+
+    auto blockuid_view = swc2mesh_resc->GetVoxelizedBlockUIDBufferView();
+    int block_cnt = swc2mesh_resc->swc_voxelizer->GetVoxelizedBlock(blockuid_view);
+
+    // run marching cube
+    MarchingCubeAlgo::MarchingCubeAlgoParams mc_params;
+    mc_params.shape = UInt3(viser_resc->vol_priv_data.block_length);
+    mc_params.isovalue = 1.f;
+    for(int i = 0; i < block_cnt; i++){
+        auto uid = blockuid_view.at(i);
+        mc_params.origin = UInt3(uid.x, uid.y, uid.z) * mc_params.shape;
+        mc_params.lod = uid.GetLOD();
+
+        //设置生成的顶点buffer
+
+
+        int tri_num = swc2mesh_resc->mc_algo->Run(mc_params);
+
+        //从mc_params.gen_dev_vertices_ret中拷贝结果
+    }
+
+}
+
+
 
 
 

@@ -303,6 +303,10 @@ VISER_BEGIN
                                                     volume_params.bound.high.z}};
     }
 
+    int SWCVoxelizer::GetVoxelizedBlock(CUDABufferView1D<GridVolume::BlockUID> blocks) {
+        return 0;
+    }
+
 VISER_END
 
 

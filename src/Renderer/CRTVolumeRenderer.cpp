@@ -289,7 +289,7 @@ VISER_BEGIN
                                             uint4 hash_table[][2],
                                             Ray ray){
             // default color is black and depth is 1.0
-            RayCastResult2 ret{make_float4(0), 1.f, make_float3(0)};
+            RayCastResult2 ret{make_float4(0), 0.f, make_float3(0)};
             auto [entry_t, exit_t] = cuda::RayIntersectAABB(params.cu_volume.bound, ray);
             // ray has no intersection with volume
             if(entry_t >= exit_t || exit_t <= 0.f)

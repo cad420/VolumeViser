@@ -17,12 +17,11 @@ void ComputeIntersectedBlocksWithViewFrustum(std::vector<GridVolume::BlockUID>& 
                                              const Frustum& frustum,
                                              std::function<int(const BoundingBox3D& box)> lod);
 
-template<typename ViewSpace>
-void ComputeIntersectedBlocksWithViewSpace(std::vector<GridVolume::BlockUID>& blocks,
-                                             const GridVolume& volume,
-                                             const ViewSpace& space,
-                                             const Float3& block);
-
+void ComputeIntersectedBlocksWithBoundingBox(std::vector<GridVolume::BlockUID>& blocks,
+                                             const Float3& block_space,
+                                             const UInt3& block_dim,
+                                             const BoundingBox3D& volume_box,
+                                             const BoundingBox3D& box);
 
 /**
  * @brief 计算理论上不造成画面失真、闪烁、摩尔纹时每一个lod对应的最远距离

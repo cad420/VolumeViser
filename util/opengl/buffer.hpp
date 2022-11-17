@@ -102,7 +102,7 @@ VUTIL_GL_BEGIN
         }
 
         void reinitialize_buffer_data(const T* data,size_t vertex_count,GLenum usage){
-            assert(vertex_count);
+//            assert(vertex_count);
             buffer_t::reinitialize_buffer_data(data,vertex_count * sizeof(T),usage);
             vertex_count_ = vertex_count;
         }
@@ -167,7 +167,7 @@ VUTIL_GL_BEGIN
         }
 
         void reinitialize_buffer_data(const T* data,size_t index_count,GLenum usage){
-            assert(index_count);
+//            assert(index_count);
             buffer_t::reinitialize_buffer_data(data,index_count * sizeof(T),usage);
             index_count_ = index_count;
         }

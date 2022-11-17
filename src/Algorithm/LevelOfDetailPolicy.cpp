@@ -65,12 +65,30 @@ VISER_BEGIN
 
     }
 
-    template<typename ViewSpace>
-    void ComputeIntersectedBlocksWithViewSpace(std::vector<GridVolume::BlockUID>& blocks,
-                                                 const GridVolume& volume,
-                                                 const ViewSpace& space,
-                                                 const Float3& block){
-
+    void ComputeIntersectedBlocksWithBoundingBox(std::vector<GridVolume::BlockUID>& blocks,
+                                                 const Float3& block_space,
+                                                 const UInt3& block_dim,
+                                                 const BoundingBox3D& volume_box,
+                                                 const BoundingBox3D& _box){
+        auto box = _box & volume_box;
+        box = {box.low - volume_box.low, box.high - volume_box.low};
+        if(!(box.high.x > box.low.x && box.high.y > box.low.y && box.high.z > box.low.z)){
+            return;
+        }
+        auto idx_beg = UInt3(box.low / block_space);
+        auto idx_end = UInt3(box.high/ block_space) + UInt3(1);
+        idx_end.x = std::min(idx_end.x, block_dim.x);
+        idx_end.y = std::min(idx_end.y, block_dim.y);
+        idx_end.z = std::min(idx_end.z, block_dim.z);
+        std::vector<std::pair<GridVolume::BlockUID, BoundingBox3D>> lod0_blocks;
+        for(auto z = idx_beg.z; z < idx_end.z; z++){
+            for(auto y = idx_beg.y; y < idx_end.y; y++){
+                for(auto x = idx_beg.x; x < idx_end.x; x++){
+                    GridVolume::BlockUID block_uid = {x, y, z, 0};
+                    blocks.emplace_back(block_uid);
+                }
+            }
+        }
     }
 
     void ComputeUpBoundLOD(LevelOfDist& lods, float base_space, int width, int height, float fov){
@@ -90,16 +108,5 @@ VISER_BEGIN
         lods.LOD[LevelOfDist::MaxLevelCount - 1] = std::numeric_limits<float>::max();
     }
 
-    template<>
-    void ComputeIntersectedBlocksWithViewSpace<Frustum>(std::vector<GridVolume::BlockUID>& blocks,
-                                                 const GridVolume& volume,
-                                                 const Frustum & space,
-                                                 const Float3& block);
-
-    template<>
-    void ComputeIntersectedBlocksWithViewSpace<BoundingBox3D>(std::vector<GridVolume::BlockUID>& blocks,
-                                                        const GridVolume& volume,
-                                                        const BoundingBox3D& space,
-                                                        const Float3& block);
 
 VISER_END

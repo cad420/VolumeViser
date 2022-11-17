@@ -32,6 +32,8 @@ private:
 
     void show_editor_vol_render_window(bool* p_open);
 
+    void show_editor_mesh_render_info_window(bool* p_open);
+
     void show_editor_mesh_render_window(bool* p_open);
 
     void show_editor_swc_window(bool* p_open);
@@ -81,6 +83,8 @@ private:
 
     void render_swc();
 
+    void frame_mesh_render();
+
     bool can_start_annotating();
 
     bool is_annotating();
@@ -93,7 +97,7 @@ private:
 
     bool stop_and_save_annotating();
 
-    void frame_mesh_render();
+    void generate_modified_mesh();
 
 //    void frame_swc_view_render();
 
@@ -182,10 +186,15 @@ private:
     Timer vol_render_timer;
 
     struct{
+        bool vol_mesh_render_sync = true;
+    };
+
+    struct{
         bool editor_menu_window_open = true;
         bool vol_info_window_open = true;
         bool vol_render_info_window_open = true;
         bool vol_render_window_open = true;
+        bool mesh_render_info_window_open = true;
         bool mesh_render_window_open = true;
         bool swc_info_window_open = true;
         bool swc_tree_window_open = true;

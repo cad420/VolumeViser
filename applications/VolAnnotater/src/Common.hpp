@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Algorithm/LevelOfDetailPolicy.hpp>
+#include <Algorithm/MarchingCube.hpp>
+#include <Algorithm/Voxelization.hpp>
 #include <Core/Renderer.hpp>
 #include <Core/HashPageTable.hpp>
 #include <Model/SWC.hpp>
@@ -63,6 +65,8 @@ public:
         int max_lod = 0;
 
         Float3 volume_space_ratio = {1.f, 1.f, 1.f};
+
+        uint32_t block_length = 0;
 
     }vol_priv_data;
 
@@ -250,7 +254,7 @@ public:
     //如果是none 那么什么都不渲染
     //如果是merged 那么渲染器会渲染loaded_mesh里面保存的一个mesh
     //如果是blocked 那么渲染器会渲染patch_mesh_mp里保存的多个mesh
-    enum MeshStatus{
+    enum MeshStatus : int {
         None = 0,
         Merged = 1,
         Blocked = 2,
@@ -258,7 +262,7 @@ public:
 
     MeshStatus mesh_status = None;
 
-    enum BlockMeshStatus{
+    enum BlockMeshStatus {
         Empty, // mesh没有生成
         Modified, // block涉及到swc的改动
         Updated // 重新生成了mesh
@@ -267,7 +271,10 @@ public:
     struct BlockMesh{
         Handle<Mesh> mesh;
         BlockMeshStatus status = Empty;
+        bool visible = true;
     };
+
+    int MaxVoxelizedBlockCount = 0;
 
     //这里应该存储所有swc涉及范围数据块对应的mesh
     struct{
@@ -275,13 +282,23 @@ public:
         //注意这些数据一旦被切换了就会丢失
         std::unordered_map<BlockUID, BlockMesh> patch_mesh_mp;
 
+        Handle<CUDAHostBuffer> segment_buffer;
+
+        Handle<CUDAHostBuffer> voxelized_blockuid_buffer;
+
 
     }s2m_priv_data;
+
+    Handle<SWCVoxelizer> swc_voxelizer;
+
+    Handle<MarchingCubeAlgo> mc_algo;
 
     std::unique_ptr<NeuronRenderer> neuron_renderer;
 
 public:
-    void Initialize();
+    void Initialize(ViserRescPack& _);
+
+    CUDABufferView1D<BlockUID> GetVoxelizedBlockUIDBufferView() { assert(MaxVoxelizedBlockCount); return s2m_priv_data.voxelized_blockuid_buffer->view_1d<BlockUID>(MaxVoxelizedBlockCount); }
 
     bool LocalUpdating() const { return mesh_status == Blocked; }
 
@@ -294,9 +311,13 @@ public:
 
     /**
      * @brief 更新一个block mesh，并且设置状态为Updated，如果原来不存在，会先调用CreateBlockMesh创建
+     * @note 不会调用MeshUpdated 因为可能有多个block mesh一起更新 需要最后手动调用
      */
     void UpdateBlockMesh(const BlockUID& uid, Handle<Mesh> mesh);
 
+    /**
+     * @note 最后会调用MeshUpdated
+     */
     void UpdateMesh(MeshUID uid, Handle<Mesh> mesh);
 
     void UpdateMesh(Handle<Mesh> mesh) { if(Selected()) UpdateMesh(std::move(mesh)); }
@@ -324,7 +345,7 @@ public:
      */
     void LoadMeshFile(const std::string& filename);
 
-    void CreateMesh(const std::string& filename = "");
+    void CreateMesh(const std::string& name = "", const std::string& filename = "");
 
     bool Selected() const { return CheckUnifiedRescUID(selected_mesh_uid) && loaded_mesh.count(selected_mesh_uid); }
 
@@ -342,3 +363,15 @@ public:
 
     void ExportMeshToFile(const std::string& filename);
 };
+
+inline std::string ToString(SWC2MeshRescPack::BlockMeshStatus status){
+    if(status == SWC2MeshRescPack::Empty)
+        return "Empty";
+    else if(status == SWC2MeshRescPack::Modified)
+        return "Modified";
+    else if(status == SWC2MeshRescPack::Updated)
+        return "Updated";
+    else{
+        assert(false);
+    }
+}

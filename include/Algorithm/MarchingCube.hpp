@@ -33,19 +33,21 @@ public:
     void SetVolume(const VolumeParams& volume_params);
 
     //传入的Texture任意的view设置都可以，内部会重新设置view info然后创建新的tex，但是resc都是一致的
+    //可以只需要绑定一次
     void BindVTexture(VTextureHandle handle, TextureUnit unit);
 
+    //其实也可以绑定一次即可 但是每次绑定一下也很方面 只需要一行代码
     void BindPTBuffer(PTBufferHandle handle);
 
     struct MarchingCubeAlgoParams{
         UInt3 shape;//基于体素的尺寸
         UInt3 origin;//基于体素的起点坐标
         float isovalue;//0-1
-        uint32_t lod;
+        uint32_t lod = 0;
         //这个存放计算结果，是device内存
         CUDABufferView1D<Float3> gen_dev_vertices_ret;
     };
-    void Run(MarchingCubeAlgoParams& params);
+    int Run(MarchingCubeAlgoParams& params);
 
 private:
     std::unique_ptr<MarchingCubeAlgoPrivate> _;
