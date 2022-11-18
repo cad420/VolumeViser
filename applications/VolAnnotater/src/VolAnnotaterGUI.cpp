@@ -4,7 +4,7 @@
 #include "SWCRenderer.hpp"
 #include "NeuronRenderer.hpp"
 #include "Common.hpp"
-
+#include <unordered_set>
 
 #define FOV 40.f
 
@@ -26,6 +26,7 @@ void VolAnnotaterGUI::Initialize() {
     swc_file_dialog.SetTitle("Volume SWC File");
     swc_file_dialog.SetTypeFilters({SWCFile::SWC_FILENAME_EXT_TXT, SWCFile::SWC_FILENAME_EXT_BIN});
 
+    swc2mesh_group.start(1);
 
     status_flags |= VOL_DRAW_VOLUME | VOL_DRAW_SWC | VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
 }
@@ -57,6 +58,8 @@ void VolAnnotaterGUI::initialize() {
     //需要创建OpenGL上下文后才能初始化
     swc_resc->Initialize();
     swc2mesh_resc->Initialize(*viser_resc);
+
+    viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context().set_ctx();
 }
 
 void VolAnnotaterGUI::frame() {
@@ -540,10 +543,14 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
         if(ImGui::Button("Export", ImVec2(120, 18))){
 
         }
-        if(ImGui::Button("Re-Generate", ImVec2(120, 18))){
+        if(ImGui::Button("Re-Generate-Modified", ImVec2(160, 18))){
             generate_modified_mesh();
         }
         ImGui::SameLine();
+        if(ImGui::Button("Re-Generate-All", ImVec2(160, 18))){
+            generate_modified_mesh();
+        }
+
         if(ImGui::Button("Merge All", ImVec2(120, 18))){
 
             swc2mesh_resc->MergeAllBlockMesh();
@@ -866,6 +873,8 @@ void VolAnnotaterGUI::load_volume(const std::string &filename) {
 
     vol_render_resc->OnVolumeLoaded(*viser_resc);
 
+    swc2mesh_resc->OnVolumeLoaded(*viser_resc, *vol_render_resc);
+
     status_flags |= VOL_CAMERA_CHANGED;
 
     status_flags |= VOL_DATA_LOADED;
@@ -1072,6 +1081,7 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     //有一个限制 数据块不能超过vtex的容量 不然需要分多次进行
     auto lines = swc_resc->GetSelected().swc->PackLines();
 
+    //这部分数据块是 影响线段所涉及的
     std::vector<BoundingBox3D> block_boxes;
     auto block_length_space = vol_render_resc->render_vol.lod0_block_length_space;
     for(auto& [uid, block_mesh] : swc2mesh_resc->s2m_priv_data.patch_mesh_mp){
@@ -1120,38 +1130,72 @@ void VolAnnotaterGUI::generate_modified_mesh() {
 
     LOG_TRACE("start voxelize swc segments count : {}", count);
 
+    auto gen_box = [](const Float4& f){
+        BoundingBox3D box;
+        box |= Float3(f.x - f.w, f.y - f.w, f.z - f.w);
+        box |= Float3(f.x + f.w, f.y + f.w, f.z + f.w);
+        return box;
+    };
+    //重新生成真正涉及到的数据数据块
+    std::unordered_set<BlockUID> seg_blocks;
+    for(auto& seg : swc_segments){
+        auto box = gen_box(seg.first) | gen_box(seg.second);
+        std::vector<BlockUID> tmp;
+        ComputeIntersectedBlocksWithBoundingBox(tmp, vol_render_resc->render_vol.lod0_block_length_space,
+                                                vol_render_resc->render_vol.lod0_block_dim,
+                                                vol_render_resc->render_vol.volume_bound, box);
+        for(auto& b : tmp) seg_blocks.insert(b);
+    }
+    //获取页表
+    std::vector<BlockUID> seg_blocks_; seg_blocks_.reserve(seg_blocks.size());
+    for(auto& b : seg_blocks){
+        seg_blocks_.push_back(BlockUID(b).SetSWC());
+    }
+    std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
+    viser_resc->gpu_pt_mgr_ref->GetAndLock(seg_blocks_, blocks_info);
+    for(auto& key : seg_blocks_) viser_resc->gpu_pt_mgr_ref->Promote(key);
+    //获取页表项后即可 没有从host pool中调度的步骤
+    //更新gpu页表并绑定到swc voxelizer
+    swc2mesh_resc->swc_voxelizer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable().GetHandle());
+
     SWCVoxelizer::SWCVoxelizeAlgoParams params;
     params.ptrs = swc2mesh_resc->s2m_priv_data.segment_buffer->view_1d<SWCSegment>(count);
     for(int i = 0; i < count; i++){
         params.ptrs.at(i) = swc_segments[i];
     }
 
-    //todo 这里对vtex进行调度
+    //SWC需要的数据块需要添加额外的标记 调用BlockUID的SetSWC 这样子数据块的key会与原来不同 即相同的xyz lod存在于页表对应不同的物理数据块
+
 
     swc2mesh_resc->swc_voxelizer->Run(params);
 
-    //voxelize过程中会标记真正受影响的block
+    //voxelize过程中会标记真正受影响的block 需要获取 并且也会同步写入到gpu的pt
+    viser_resc->gpu_pt_mgr_ref->GetPageTable(false).DownLoad();
+    auto v_blocks = viser_resc->gpu_pt_mgr_ref->GetPageTable(false).GetKeys(TexCoordFlag_IsValid | TexCoordFlag_IsSWC | TexCoordFlag_IsSWCV);
 
-    auto blockuid_view = swc2mesh_resc->GetVoxelizedBlockUIDBufferView();
-    int block_cnt = swc2mesh_resc->swc_voxelizer->GetVoxelizedBlock(blockuid_view);
+    //对每一个真正体素化影响到的block进行mc
+    //这里的pt在体素化的时候被更新了 添加了TexCoordFlag_IsSWCV 这个其实没啥用了
+    swc2mesh_resc->mc_algo->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable(false).GetHandle());
 
     // run marching cube
     MarchingCubeAlgo::MarchingCubeAlgoParams mc_params;
     mc_params.shape = UInt3(viser_resc->vol_priv_data.block_length);
     mc_params.isovalue = 1.f;
-    for(int i = 0; i < block_cnt; i++){
-        auto uid = blockuid_view.at(i);
+    for(auto& uid : v_blocks){
+        assert(uid.IsSWC());
         mc_params.origin = UInt3(uid.x, uid.y, uid.z) * mc_params.shape;
         mc_params.lod = uid.GetLOD();
-
-        //设置生成的顶点buffer
-
 
         int tri_num = swc2mesh_resc->mc_algo->Run(mc_params);
 
         //从mc_params.gen_dev_vertices_ret中拷贝结果
+
+
     }
 
+
+    //跑完mc后再释放pt
+    viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);
 }
 
 

@@ -82,8 +82,7 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
     }
 
     for(auto key : keys){
-        auto value = _->lru->get_value(key);
-        if(value.has_value()){
+        if(auto value = _->lru->get_value(key); value.has_value()){
             auto [tid, coord] = value.value();
             _->tex_table[tid][coord].rw_lk.lock_read();
 
@@ -115,10 +114,10 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                 _->record_block_mp[key] = {tid, coord};
                 _->lru->emplace_back(key, {tid, coord});
                 items.push_back({key, {.sx = coord.x,
-                        .sy = coord.y,
-                        .sz = coord.z,
-                        .tid = static_cast<uint16_t>(tid),
-                        .flag = static_cast<uint16_t>(0u)}});
+                                       .sy = coord.y,
+                                       .sz = coord.z,
+                                       .tid = static_cast<uint16_t>(tid),
+                                       .flag = static_cast<uint16_t>(0u)}});
             };
         }
     }
@@ -135,19 +134,21 @@ void GPUPageTableMgr::Release(const std::vector<Key>& keys) {
     }
 }
 
-HashPageTable& GPUPageTableMgr::GetPageTable() {
-    _->hpt->Clear();
-    for(auto& [block_uid, tex_coord] : _->record_block_mp){
-        auto& [tid, coord] = tex_coord;
-        if(_->tex_table[tid][coord].rw_lk.is_write_locked()){
-            _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid,
-                                       0}});
-        }
-        else{
-            uint16_t flag = TexCoordFlag_IsValid;
-            if(block_uid.IsBlack()) flag |= TexCoordFlag_IsBlack;
-            if(block_uid.IsSparse()) flag |= TexCoordFlag_IsSparse;
-            _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, flag}});
+HashPageTable& GPUPageTableMgr::GetPageTable(bool update) {
+    if(update){
+        _->hpt->Clear();
+        for(auto& [block_uid, tex_coord] : _->record_block_mp){
+            auto& [tid, coord] = tex_coord;
+            if(_->tex_table[tid][coord].rw_lk.is_write_locked()){
+                _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, 0}});
+            }
+            else{
+                uint16_t flag = TexCoordFlag_IsValid;
+                if(block_uid.IsBlack())  flag |= TexCoordFlag_IsBlack;
+                if(block_uid.IsSparse()) flag |= TexCoordFlag_IsSparse;
+                if(block_uid.IsSWC())    flag |= TexCoordFlag_IsSWC;
+                _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, flag}});
+            }
         }
     }
     return *_->hpt;

@@ -4,6 +4,12 @@
 #include <Core/HashPageTable.hpp>
 VISER_BEGIN
 
+#ifdef VISER_RENDER_ONLY
+#define VTEX_READ_WRITE 0
+#else
+#define VTEX_READ_WRITE 1
+#endif
+
 class GPUVTexMgrPrivate{
 public:
     using GPUTexUnit = GPUVTexMgr::GPUTexUnit;
@@ -81,6 +87,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
                 .extent = {(uint32_t)info.vtex_shape.x,
                            (uint32_t)info.vtex_shape.y,
                            (uint32_t)info.vtex_shape.z},
+                           .read_write = VTEX_READ_WRITE
          },
          .view_info = {
                 .address = cub::e_border,

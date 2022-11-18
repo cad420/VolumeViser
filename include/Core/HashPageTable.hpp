@@ -110,10 +110,38 @@ public:
         return hhpt;
     }
 
+    //将pt从gpu拷贝回host
+    void DownLoad(){
+        static cub::memory_transfer_info info{
+                .width_bytes = HashTableSize * sizeof(HashTableItem),
+                .height = 1,
+                .depth = 1
+        };
+
+        cub::cu_memory_transfer(hash_page_table->view_1d<HashTableItem>(HashTableSize),
+                                hhpt->view_1d<HashTableItem>(HashTableSize), info).launch(cub::cu_stream::null(ctx));
+
+
+    }
+
+    std::vector<HashTableKey> GetKeys(uint32_t flags){
+        std::vector<HashTableKey> ret;
+        auto table = hhpt->view_1d<HashTableItem>(HashTableSize);
+        for(int i = 0; i < HashTableSize; i++){
+            if(table.at(i).first != INVALID_KEY){
+                const auto& val = table.at(i).second;
+                if(val.flag == flags){
+                    ret.push_back(table.at(i).first);
+                }
+            }
+        }
+        return ret;
+    }
+
 private:
     //暂时使用null stream上传，因为数据量很小
     void Update(){
-        cub::memory_transfer_info info{
+        static cub::memory_transfer_info info{
             .width_bytes = HashTableSize * sizeof(HashTableItem),
             .height = 1,
             .depth = 1

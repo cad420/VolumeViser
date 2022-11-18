@@ -12,6 +12,9 @@
 
 VISER_BEGIN
 
+#define VolumeBlock_IsBlack  2u
+#define VolumeBlock_IsSparse 4u
+#define VolumeBlock_IsSWC    8u
 //为了充分使用CPU资源，因此考虑数据块的解压在CPU进行，而且CPU支持更广泛的数据格式
 //目前GPU的解压只支持10bit的yuv，对于16位的数据来说，可能略有不足，而对于CPU则有12bit的支持，甚至14bit
 //使用CUDA host内存，可以利用DMA优势，加快数据从CPU到GPU的传输速率
@@ -22,6 +25,7 @@ public:
         //不超过65535
         //w‘ low 16bits 代表lod, high 16bits 代表flag
         uint32_t x = 0xffff, y = 0xffff, z = 0xffff, w = 0xff;
+        static constexpr int LodBits = 8;
 
         CUB_CPU_GPU BlockUID() = default;
 
@@ -32,19 +36,24 @@ public:
             w = (uid >> 48) & 0xff;
         }
 
-        BlockUID(uint32_t x, uint32_t y, uint32_t z, uint32_t w)
+        CUB_CPU_GPU BlockUID(uint32_t x, uint32_t y, uint32_t z, uint32_t w)
         :x(x), y(y), z(z), w(w)
         {
-            assert(x < (1u << 16) && y < (1u << 16) && z < (1u << 16) && w < (1u << 8));
+            assert(x < (1u << 16) && y < (1u << 16) && z < (1u << 16));
         }
 
-        bool operator==(const BlockUID& uid) const{
-            return x == uid.x && y == uid.y && z == uid.z && w == uid.w;
+        bool operator==(const BlockUID& uid) const {
+            return x == uid.x && y == uid.y && z == uid.z && GetLOD() == uid.GetLOD() && IsSWC() == uid.IsSWC();
         }
 
+        //同一数据块但是不同来源 会产生不同的uid和hash值 以及两者不相等 因此在对应不同的key
         UnifiedRescUID ToUnifiedRescUID() const{
-            return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
-                    (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);
+            if(IsSWC())
+                return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
+                       (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::VoxelizeBlock) << 56);
+            else
+                return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
+                       (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);
         }
 
         //转换成xyzw后判断是否相等
@@ -56,14 +65,18 @@ public:
         bool IsValid() const;
 
         bool IsBlack() const{
-            return (w >> 8) & 2;
+            return (w >> LodBits) & VolumeBlock_IsBlack;
         }
 
         bool IsSparse() const{
-            return (w >> 8) & 4;
+            return (w >> LodBits) & VolumeBlock_IsSparse;
         }
         bool IsSWC() const{
-            return (w >> 8) & 8;
+            return (w >> LodBits) & VolumeBlock_IsSWC;
+        }
+        BlockUID& SetSWC() {
+            w |= VolumeBlock_IsSWC << LodBits;
+            return *this;
         }
 
         CUB_CPU_GPU int GetLOD() const{
@@ -128,7 +141,7 @@ namespace std{
     template<>
     struct hash<viser::GridVolume::BlockUID>{
       size_t operator()(const viser::GridVolume::BlockUID& uid) const {
-          return vutil::hash(uid.x, uid.y, uid.z, uid.w);
+          return vutil::hash(uid.x, uid.y, uid.z, uid.GetLOD(), uid.IsSWC());
       }
     };
 

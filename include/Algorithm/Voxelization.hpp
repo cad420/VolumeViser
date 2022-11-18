@@ -120,8 +120,6 @@ public:
 
     void BindPTBuffer(PTBufferHandle handle);
 
-    int GetVoxelizedBlock(CUDABufferView1D<GridVolume::BlockUID> blocks);
-
     struct SWCVoxelizeAlgoParams{
 
 //        std::vector<SWCSegment> ptrs;

@@ -72,7 +72,7 @@ VISER_BEGIN
                                                  const BoundingBox3D& _box){
         auto box = _box & volume_box;
         box = {box.low - volume_box.low, box.high - volume_box.low};
-        if(!(box.high.x > box.low.x && box.high.y > box.low.y && box.high.z > box.low.z)){
+        if(!(box.high.x >= box.low.x && box.high.y >= box.low.y && box.high.z >=  box.low.z)){
             return;
         }
         auto idx_beg = UInt3(box.low / block_space);

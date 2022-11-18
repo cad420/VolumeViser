@@ -27,7 +27,12 @@ set_source_files_properties(
 
 add_library(VolumeViserLib ${CORE_SRCS})
 
-
+set_target_properties(
+        VolumeViserLib
+        PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES 80
+)
 
 target_include_directories(
         VolumeViserLib PUBLIC

@@ -370,7 +370,7 @@ VISER_BEGIN
 
 
 
-
+            ret.radius = 0.003f;
             ret.pos = ray_cast_pos;
             return ret;
         }

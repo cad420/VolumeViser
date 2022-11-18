@@ -100,6 +100,7 @@ public:
     void SWC::InsertNodeLeaf(const SWC::SWCPoint& point) noexcept {
         assert(point.id > 0);
         assert(!QueryNode(point.id));
+        _->direct_influenced_pts[New_Add].emplace_back(point);
         _->updated = true;
         _->swc_point_mp[point.id] = point;
         if(point.pid <= 0) return;
@@ -107,7 +108,7 @@ public:
         p_node.children.insert(point.id);
         _->node_mp[point.id] = {point.id, point.pid};
 
-        _->direct_influenced_pts[New_Add].emplace_back(point);
+
     }
 
     void SWC::InsertNodeInternal(const SWCPoint& point, SWCPointKey kid) noexcept {
@@ -115,6 +116,7 @@ public:
         assert(id > 0);
         assert(!QueryNode(id));
         _->updated = true;
+        _->direct_influenced_pts[New_Add].emplace_back(point);
         _->swc_point_mp[id] = point;
         assert(_->node_mp[pid].children.count(kid));
         _->node_mp[pid].children.erase(kid);
@@ -122,7 +124,7 @@ public:
         _->swc_point_mp[kid].pid = id;
         _->node_mp[id] = {id, pid, {kid}};
 
-        _->direct_influenced_pts[New_Add].emplace_back(point);
+
     }
 
     bool SWC::CheckConnection(SWC::SWCPointKey id0, SWC::SWCPointKey id1) noexcept {

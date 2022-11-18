@@ -31,10 +31,10 @@ public:
 
 // also used in gpu kernel
 #define TexCoordFlag_IsValid  0x1u //代表数据是否存在显存
-#define TexCoordFlag_IsBlack  0x2u //代表数据块本身是否全为0
-#define TexCoordFlag_IsSparse 0x4u //代表数据块本身是否为稀疏的
-#define TexCoordFlag_IsSWC    0x8u //代表数据块本身是否为SWC体素化使用
-
+#define TexCoordFlag_IsBlack  VolumeBlock_IsBlack //代表数据块本身是否全为0
+#define TexCoordFlag_IsSparse VolumeBlock_IsSparse //代表数据块本身是否为稀疏的
+#define TexCoordFlag_IsSWC    VolumeBlock_IsSWC //代表数据块本身是否为SWC体素化使用
+#define TexCoordFlag_IsSWCV   16u // 代表数据块在体素化算法过程中被更新了
     struct TexCoord{
         uint32_t sx, sy, sz;//一块纹理内部的偏移坐标
         uint16_t tid;//纹理索引
@@ -60,7 +60,7 @@ public:
     //释放最近一次GetAndLock传入的keys
     void Release(const std::vector<Key>& keys);
 
-    HashPageTable& GetPageTable();
+    HashPageTable& GetPageTable(bool update = true);
 
     void Promote(const Key& key);
 

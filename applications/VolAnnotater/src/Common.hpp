@@ -274,7 +274,6 @@ public:
         bool visible = true;
     };
 
-    int MaxVoxelizedBlockCount = 0;
 
     //这里应该存储所有swc涉及范围数据块对应的mesh
     struct{
@@ -283,9 +282,6 @@ public:
         std::unordered_map<BlockUID, BlockMesh> patch_mesh_mp;
 
         Handle<CUDAHostBuffer> segment_buffer;
-
-        Handle<CUDAHostBuffer> voxelized_blockuid_buffer;
-
 
     }s2m_priv_data;
 
@@ -298,11 +294,11 @@ public:
 public:
     void Initialize(ViserRescPack& _);
 
-    CUDABufferView1D<BlockUID> GetVoxelizedBlockUIDBufferView() { assert(MaxVoxelizedBlockCount); return s2m_priv_data.voxelized_blockuid_buffer->view_1d<BlockUID>(MaxVoxelizedBlockCount); }
-
     bool LocalUpdating() const { return mesh_status == Blocked; }
 
     bool QueryBlockMesh(const BlockUID& uid) const { return s2m_priv_data.patch_mesh_mp.count(uid) != 0;}
+
+    void OnVolumeLoaded(ViserRescPack& _, VolRenderRescPack& __);
 
     /**
      * @brief 创建一个block mesh，并且设置状态为Empty，如果原来存在会被清除

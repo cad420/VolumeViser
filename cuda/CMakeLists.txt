@@ -23,7 +23,7 @@ set_target_properties(
         culib
         PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
-        CUDA_ARCHITECTURES 75
+        CUDA_ARCHITECTURES 80
 )
 
 target_compile_options(

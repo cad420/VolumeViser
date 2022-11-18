@@ -113,6 +113,9 @@ private:
     // 使得整个程序的fps保持稳定的60帧 其它的绘制任务以异步形式执行 即如果没有在规定时间内完成 保持上一帧结果
     vutil::thread_group_t render_group;
 
+    // 将swc转mesh任务以异步形式启动 不影响到ui绘制线程
+    vutil::thread_group_t swc2mesh_group;
+
     ImGui::FileBrowser vol_file_dialog;
     ImGui::FileBrowser swc_file_dialog;
 

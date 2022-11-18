@@ -486,6 +486,18 @@ void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
                                                                           MaxSegmentCount * sizeof(SWCSegment),
                                                                           false);
 
+    SWCVoxelizer::VoxelizerCreateInfo v_info{
+            .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
+            .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
+    };
+    swc_voxelizer = NewHandle<SWCVoxelizer>(RescAccess::Unique, v_info);
+
+    MarchingCubeAlgo::MarchingCubeAlgoCreateInfo mc_info{
+            .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
+            .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
+    };
+    mc_algo = NewHandle<MarchingCubeAlgo>(RescAccess::Unique, mc_info);
+
     neuron_renderer = std::make_unique<NeuronRenderer>(NeuronRenderer::NeuronRendererCreateInfo{});
 }
 
@@ -661,6 +673,31 @@ void SWC2MeshRescPack::UpdateMesh(MeshUID uid, Handle<Mesh> mesh) {
 
     if(uid == selected_mesh_uid)
         MeshUpdated();
+}
+
+void SWC2MeshRescPack::OnVolumeLoaded(ViserRescPack& _, VolRenderRescPack& __) {
+    auto volume_desc = _.vol_priv_data.volume->GetDesc();
+    VolumeParams vol_params;
+    vol_params.block_length = volume_desc.block_length;
+    vol_params.padding = volume_desc.padding;
+    vol_params.voxel_dim = volume_desc.shape;
+    vol_params.bound = {
+            {0.f, 0.f, 0.f},
+            Float3(vol_params.voxel_dim) * __.render_base_space * _.vol_priv_data.volume_space_ratio
+    };
+    vol_params.space = __.render_base_space * _.vol_priv_data.volume_space_ratio;
+
+    swc_voxelizer->SetVolume(vol_params);
+
+    mc_algo->SetVolume(vol_params);
+
+    auto vtexs = _.gpu_vtex_mgr_ref->GetAllTextures();
+    for(auto& [unit, handle] : vtexs){
+        swc_voxelizer->BindVTexture(handle, unit);
+
+        mc_algo->BindVTexture(handle, unit);
+    }
+
 }
 
 //============================================================================================
