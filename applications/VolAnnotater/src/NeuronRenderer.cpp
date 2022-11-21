@@ -6,7 +6,8 @@ NeuronRenderer::NeuronRenderer(const NeuronRenderer::NeuronRendererCreateInfo &i
             shader_t<GL_FRAGMENT_SHADER>::from_file("glsl/neuron_shading.frag")
             );
 
-
+    tf_params_buffer.initialize_handle();
+    tf_params_buffer.reinitialize_buffer_data(nullptr, GL_DYNAMIC_DRAW);
 }
 
 NeuronRenderer::~NeuronRenderer() {
@@ -46,7 +47,19 @@ void NeuronRenderer::DeleteNeuronMesh(PatchID patch_id) {
 }
 
 void NeuronRenderer::Draw(const mat4 &view, const mat4 &proj) {
+    shader.bind();
 
+    tf_params.proj_view = proj * view;
+    tf_params_buffer.set_buffer_data(&tf_params);
+    tf_params_buffer.bind(0);
 
+    for(auto& [uid, draw_patch] : patches){
+        draw_patch.vao.bind();
 
+        GL_EXPR(glDrawElements(GL_TRIANGLES, draw_patch.ebo.index_count(), GL_UNSIGNED_INT, nullptr));
+
+        draw_patch.vao.unbind();
+    }
+
+    shader.unbind();
 }

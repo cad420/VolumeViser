@@ -34,6 +34,7 @@ void VolAnnotaterGUI::Initialize() {
 // 初始化opengl相关
 void VolAnnotaterGUI::initialize() {
     GL_EXPR(glEnable(GL_DEPTH_TEST));
+    GL_EXPR(glEnable(GL_CULL_FACE));
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->AddFontFromFileTTF("EditorFont.TTF",  16, nullptr, nullptr);
     io.Fonts->Build();
@@ -686,7 +687,33 @@ void VolAnnotaterGUI::frame_vol_render() {
 }
 
 void VolAnnotaterGUI::frame_mesh_render() {
+    mat4 view, proj;
+    auto w = mesh_render_framebuffer.frame_width;
+    auto h = mesh_render_framebuffer.frame_height;
     if(vol_mesh_render_sync){
+        auto old = camera.get_w_over_h();
+        auto wh = (float)mesh_render_framebuffer.frame_width / (float)mesh_render_framebuffer.frame_height;
+        camera.set_w_over_h(wh);
+        view = camera.get_view();
+        proj = camera.get_proj();
+        camera.set_w_over_h(old);
+    }
+
+    if(swc2mesh_resc->DrawMesh()){
+
+        mesh_render_framebuffer.fbo.bind();
+        GL_EXPR(glViewport(0, 0, w, h));
+        mesh_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT0, mesh_render_framebuffer.color);
+        vutil::gl::framebuffer_t::clear_color_depth_buffer();
+
+//        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        swc2mesh_resc->neuron_renderer->Draw(view, proj);
+//        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+        mesh_render_framebuffer.fbo.unbind();
+
+        ImGui::Image((void*)(intptr_t)(mesh_render_framebuffer.color.handle()),
+                     ImVec2(w, h));
 
     }
 }
@@ -932,8 +959,8 @@ void VolAnnotaterGUI::check_window_resize_event() {
 }
 
 void VolAnnotaterGUI::create_mesh_render_gl_framebuffer_resource() {
-    auto w = window_priv_data.swc_view_window_size.x;
-    auto h = window_priv_data.swc_view_window_size.y;
+    auto w = window_priv_data.mesh_render_window_size.x;
+    auto h = window_priv_data.mesh_render_window_size.y;
     mesh_render_framebuffer.frame_width = w;
     mesh_render_framebuffer.frame_height = h;
 
@@ -1070,7 +1097,7 @@ void VolAnnotaterGUI::update_swc_influenced_blocks() {
     auto blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->GetAllModifiedAndInfluencedPts());
 
     for(auto& block : blocks){
-        swc2mesh_resc->SetBlockMeshStatus(block, SWC2MeshRescPack::Modified);
+        swc2mesh_resc->SetBlockMeshStatus(block.SetSWC(), SWC2MeshRescPack::Modified);
     }
 
 
@@ -1180,19 +1207,28 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     // run marching cube
     MarchingCubeAlgo::MarchingCubeAlgoParams mc_params;
     mc_params.shape = UInt3(viser_resc->vol_priv_data.block_length);
-    mc_params.isovalue = 1.f;
+    mc_params.isovalue = 0.5f;
     for(auto& uid : v_blocks){
         assert(uid.IsSWC());
         mc_params.origin = UInt3(uid.x, uid.y, uid.z) * mc_params.shape;
         mc_params.lod = uid.GetLOD();
 
         int tri_num = swc2mesh_resc->mc_algo->Run(mc_params);
+        LOG_DEBUG("Marching Cube for block uid {} {} {} {} gen tri num {}",
+                  uid.x, uid.y, uid.z, uid.w, tri_num);
 
-        //从mc_params.gen_dev_vertices_ret中拷贝结果
+        //从mc_params.gen_host_vertices_ret中拷贝结果 并且生成normal 即转换为MeshData0
 
-
+        auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+        auto view = mc_params.gen_host_vertices_ret;
+        mesh->Insert(MeshData0(tri_num, [&](int vert_idx)->const Float3&{
+            return view.at(vert_idx);
+        }), 0);
+        swc2mesh_resc->UpdateBlockMesh(uid, std::move(mesh));
     }
-
+    //通知mesh渲染器更新数据
+    swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
+    swc2mesh_resc->MeshUpdated();
 
     //跑完mc后再释放pt
     viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);

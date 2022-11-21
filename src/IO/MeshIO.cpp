@@ -216,4 +216,71 @@ MeshData0 Merge(const std::vector<MeshData0>& meshes){
     return ret;
 }
 
+MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert) {
+    struct TriFace{
+        uint32_t idx[3];
+    };
+    struct V2F{
+        std::vector<uint32_t> faces;
+    };
+    uint32_t index = 0;
+    std::unordered_map<PosType, uint32_t> tri_pos_idx_mp;
+    std::vector<PosType> unique_pos;
+    std::vector<NormalType> unique_norm;
+    std::vector<TriFace> tris;
+    std::unordered_map<uint32_t, V2F> vert_face_mp;
+    tris.reserve(tri_count);
+
+    this->indices.resize(tri_count * 3);
+
+    for(int i = 0; i < tri_count; i++){
+        auto& tri_face = tris.emplace_back();
+        for(int j = 0; j < 3; j++){
+            auto& vert_pos = get_vert(i * 3 + j);
+            if(vert_pos.x < 1.f && vert_pos.y < 1.f && vert_pos.z < 1.f){
+                LOG_ERROR("error");
+            }
+            if(tri_pos_idx_mp.count(vert_pos) == 0){
+                unique_pos.emplace_back(vert_pos);
+                tri_pos_idx_mp[vert_pos] = index++;
+            }
+            auto idx = tri_pos_idx_mp.at(vert_pos);
+            tri_face.idx[j] = idx;
+            vert_face_mp[idx].faces.emplace_back(i);
+            this->indices[i * 3 + j] = idx;
+        }
+    }
+
+
+
+    auto get_normal = [&](uint32_t face_idx){
+        auto vert_a = unique_pos[tris[face_idx].idx[0]];
+        auto vert_b = unique_pos[tris[face_idx].idx[1]];
+        auto vert_c = unique_pos[tris[face_idx].idx[2]];
+        auto ab = vert_b - vert_a;
+        auto ac = vert_c - vert_a;
+        auto norm = vutil::cross(ab, ac);
+        return norm.normalized();
+    };
+    int vert_count = unique_pos.size();
+    unique_norm.resize(vert_count);
+    for(int i = 0; i < vert_count; i++){
+        auto& vert = unique_pos[i];
+        auto vert_idx = tri_pos_idx_mp.at(vert);
+        NormalType norm;
+        for(auto f : vert_face_mp.at(vert_idx).faces){
+            norm += get_normal(f);
+        }
+        unique_norm[i] = norm.normalized();
+    }
+
+    this->vertices.resize(vert_count);
+    for(int i = 0; i < vert_count; i++){
+        this->vertices[i] = {unique_pos[i], unique_norm[i]};
+    }
+    LOG_TRACE("input tri num : {}, final gen vert num : {}", tri_count, vert_count);
+}
+
 VISER_END
+
+

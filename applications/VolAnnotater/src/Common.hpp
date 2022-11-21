@@ -296,6 +296,8 @@ public:
 
     bool LocalUpdating() const { return mesh_status == Blocked; }
 
+    bool DrawMesh() const { return mesh_status != None; }
+
     bool QueryBlockMesh(const BlockUID& uid) const { return s2m_priv_data.patch_mesh_mp.count(uid) != 0;}
 
     void OnVolumeLoaded(ViserRescPack& _, VolRenderRescPack& __);
@@ -316,7 +318,7 @@ public:
      */
     void UpdateMesh(MeshUID uid, Handle<Mesh> mesh);
 
-    void UpdateMesh(Handle<Mesh> mesh) { if(Selected()) UpdateMesh(std::move(mesh)); }
+    void UpdateMesh(Handle<Mesh> mesh) { if(Selected()) UpdateMesh(selected_mesh_uid, std::move(mesh)); }
 
     /**
      * @brief 将uid指定的block状态改为 status 如果这个block不存在 那么会调用CreateBlockMesh先创建

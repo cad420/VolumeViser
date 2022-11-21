@@ -44,8 +44,8 @@ public:
         UInt3 origin;//基于体素的起点坐标
         float isovalue;//0-1
         uint32_t lod = 0;
-        //这个存放计算结果，是device内存
-        CUDABufferView1D<Float3> gen_dev_vertices_ret;
+        //这个存放计算结果 由内部提供 只需要Run结束后从这里读取即可
+        CUDABufferView1D<Float3> gen_host_vertices_ret;
     };
     int Run(MarchingCubeAlgoParams& params);
 

@@ -64,6 +64,7 @@ VUTIL_GL_BEGIN
 
         float get_fov_deg() const noexcept;
 
+        float get_w_over_h() const noexcept;
     private:
 
 

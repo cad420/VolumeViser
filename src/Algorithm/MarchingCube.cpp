@@ -848,7 +848,7 @@ VISER_BEGIN
             // 12 kb
 //            __shared__ float3 vert_list[12 * ThreadsPerBlocks];
             float3 vert_list[12];
-            vert_list[0] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[1], field[0], field[0]);
+            vert_list[0] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[1], field[0], field[1]);
             vert_list[1] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[2], field[1], field[2]);
             vert_list[2] = VertexInterp(params.cu_mc_params.isovalue, vert[2], vert[3], field[2], field[3]);
             vert_list[3] = VertexInterp(params.cu_mc_params.isovalue, vert[3], vert[0], field[3], field[0]);
@@ -955,13 +955,13 @@ VISER_BEGIN
 
                 //index表示这个体素之前已经有index个顶点生成
                 uint32_t index = params.num_verts_scanned.at(voxel_index) + i * 3;
-                printf("tri_num %d i %d, a %d b %d c %d voxel_index %d index %d vert_num %d\n",
-                       tri_num, i, a, b, c, voxel_index, index,
-                       params.vertex_num.at(x, y, z));
+//                printf("tri_num %d i %d, a %d b %d c %d voxel_index %d index %d vert_num %d\n",
+//                       tri_num, i, a, b, c, voxel_index, index,
+//                       params.vertex_num.at(x, y, z));
                 if(index >= params.gen_vert_num){
-                    printf("index %d, gen_vert_num %d, tri_num %d, m_case_idx %d,"
-                           "vert_num %d\n", index, params.gen_vert_num, tri_num,
-                           m_case_idx, params.vertex_num.at(x, y, z));
+//                    printf("index %d, gen_vert_num %d, tri_num %d, m_case_idx %d,"
+//                           "vert_num %d\n", index, params.gen_vert_num, tri_num,
+//                           m_case_idx, params.vertex_num.at(x, y, z));
                     assert(false);
                 }
                 //check index
@@ -969,6 +969,15 @@ VISER_BEGIN
                     params.vertex_pos.at(index) = vert_list[a];
                     params.vertex_pos.at(index + 1) = vert_list[b];
                     params.vertex_pos.at(index + 2) = vert_list[c];
+                    printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
+                           "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
+                           "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
+                           m_case_idx, index,
+                           a, vert_list[a].x, vert_list[a].y, vert_list[c].z,
+                           b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
+                           c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
+                           field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
+                           );
                 }
             }
 
@@ -992,9 +1001,11 @@ VISER_BEGIN
         Handle<CUDABuffer> vol_vert_num;
         Handle<CUDABuffer> vol_mc_scanned;// max_voxel_num * sizeof(uint32_t)
         //一般体数据生成的三角形数量相对于体素数量是很少的
+        //dev
         Handle<CUDABuffer> vol_vert_pos;// max_voxel_num / 8 * sizeof(float3)
 
-
+        //host
+        Handle<CUDAHostBuffer> vol_gen_host_vert;
 
 
         size_t max_voxel_num;
@@ -1040,10 +1051,12 @@ VISER_BEGIN
         _->vol_mc_code = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
         _->vol_mc_scanned = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
         _->vol_vert_num = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
+
+        _->vol_gen_host_vert = info.host_mem_mgr->AllocPinnedHostMem(RescAccess::Unique, info.max_voxel_num / 8 * sizeof(Float3), false);
         _->vol_vert_pos = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num / 8 * sizeof(Float3));
 
         _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
-
+        _->params.max_vert_num = _->max_vert_num;
 
         _->uid = _->GenMCAlgoUID();
     }
@@ -1116,8 +1129,13 @@ VISER_BEGIN
             cub::cu_kernel::pending(info, &MCKernel1_GenTriangles, params)
             .launch(_->compute_stream).check_error_on_throw();
 
-            //将结果写入params中
-            mc_params.gen_dev_vertices_ret = _->vol_vert_pos->view_1d<Float3>(total_vert_num);
+            //将结果从dev传回host
+            auto dev_ret = _->vol_vert_pos->view_1d<Float3>(total_vert_num);
+            auto host_ret = _->vol_gen_host_vert->view_1d<Float3>(total_vert_num);
+            cub::memory_transfer_info tf_info; tf_info.width_bytes = total_vert_num * sizeof(Float3);
+            cub::cu_memory_transfer(dev_ret, host_ret, tf_info).launch(_->compute_stream).check_error_on_throw();
+
+            mc_params.gen_host_vertices_ret = host_ret;
 
             return total_vert_num / 3;
         }

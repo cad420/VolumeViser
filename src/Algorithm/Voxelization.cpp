@@ -264,7 +264,7 @@ VISER_BEGIN
                     tex_coord.sy = hash_table[i][1].y;
                     tex_coord.sz = hash_table[i][1].z;
                     tex_coord.tid = hash_table[i][1].w >> 16;
-                    tex_coord.flag = hash_table[i][1].w & 0xffff;
+                    tex_coord.flag |= hash_table[i][1].w & 0xffff;
                 }
 
                 g_lk.unlock();

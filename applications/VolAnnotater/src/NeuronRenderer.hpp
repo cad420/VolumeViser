@@ -28,6 +28,12 @@ public:
 private:
     program_t shader;
 
+    struct alignas(16) Transform{
+        mat4 model;
+        mat4 proj_view;
+    }tf_params;
+    std140_uniform_block_buffer_t<Transform> tf_params_buffer;
+
     struct DrawPatch{
         mat4 model = mat4::identity();
         vertex_array_t vao;

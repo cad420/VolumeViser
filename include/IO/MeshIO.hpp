@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Extension/IOInterface.hpp>
+#include <functional>
 
 VISER_BEGIN
 
@@ -22,6 +23,9 @@ struct Vertex{
 };
 struct MeshData0{
     MeshData0() = default;
+
+    MeshData0(int tri_count, std::function<const PosType&(int vert_idx)> get_vert);
+
     MeshData0(const MeshData0&) = default;
     MeshData0& operator=(const MeshData0&) = default;
     MeshData0(MeshData0&& other) noexcept
@@ -35,6 +39,8 @@ struct MeshData0{
     std::vector<Vertex> vertices;
     std::vector<IndexType> indices;
 };
+
+
 struct MeshData1{
     MeshData1() = default;
     MeshData1(const MeshData1&) = default;
