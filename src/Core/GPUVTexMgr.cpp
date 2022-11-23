@@ -34,6 +34,8 @@ public:
     cub::cu_submitted_tasks submitted_tasks;
     std::unordered_map<size_t, GPUPageTableMgr::TexCoord> submitted_items;
 
+    Handle<CUDABuffer> cu_black_buffer;
+
     std::mutex g_mtx;
 
     UnifiedRescUID uid;
@@ -79,6 +81,9 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
 
     _ = std::make_unique<GPUVTexMgrPrivate>();
 
+    _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+
+    _->transfer_stream = cub::cu_stream(_->ctx);
 
     GPUMemMgr::TextureCreateInfo tex_info{
         .resc_info ={
@@ -118,6 +123,9 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     _->vtex_block_length = info.vtex_block_length;
     _->vtex_block_dim = info.vtex_shape / info.vtex_block_length;
     _->vtex_block_size_bytes = (size_t)_->vtex_ele_size * _->vtex_block_length * _->vtex_block_length * _->vtex_block_length;
+
+    _->cu_black_buffer = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, _->vtex_block_size_bytes);
+    CUB_CHECK(cudaMemset(_->cu_black_buffer->get_data(), 0, _->vtex_block_size_bytes));
 
     _->uid = _->GenRescUID();
 }
@@ -185,7 +193,11 @@ std::vector<GPUVTexMgr::GPUVTex> GPUVTexMgr::GetAllTextures() {
     return res;
 }
 
-
+void GPUVTexMgr::Clear(UnifiedRescUID uid, TexCoord dst) {
+    auto [tid, transfer_info] = _->GetTransferInfo(dst);
+    cub::cu_memory_transfer(*_->cu_black_buffer, *_->tex_mp.at(tid), transfer_info)
+    .launch(_->transfer_stream).check_error_on_throw();
+}
 
 
 VISER_END

@@ -25,10 +25,13 @@ void VolAnnotaterGUI::Initialize() {
     vol_file_dialog.SetTypeFilters({".json"});
     swc_file_dialog.SetTitle("Volume SWC File");
     swc_file_dialog.SetTypeFilters({SWCFile::SWC_FILENAME_EXT_TXT, SWCFile::SWC_FILENAME_EXT_BIN});
+    mesh_file_dialog.SetTitle("Neuron Mesh File");
+    mesh_file_dialog.SetTypeFilters({MeshFile::MESH_FILENAME_EXT_OBJ});
 
     swc2mesh_group.start(1);
 
-    status_flags |= VOL_DRAW_VOLUME | VOL_DRAW_SWC | VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
+    status_flags |= VOL_DRAW_VOLUME | VOL_DRAW_SWC;
+    if(vol_swc_blend_with_depth) status_flags |= VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
 }
 
 // 初始化opengl相关
@@ -43,7 +46,7 @@ void VolAnnotaterGUI::initialize() {
     Float3 default_pos = {4.1, 6.21, 7.f};
 
     camera.set_position(default_pos);
-    camera.set_perspective(FOV, 0.01f, 10.f);
+    camera.set_perspective(FOV, 0.001f, 6.f);
     camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     camera.set_move_speed(0.01);
     camera.set_view_rotation_speed(0.001f);
@@ -59,6 +62,10 @@ void VolAnnotaterGUI::initialize() {
     //需要创建OpenGL上下文后才能初始化
     swc_resc->Initialize();
     swc2mesh_resc->Initialize(*viser_resc);
+
+    swc_resc->on_swc_selected = [this](MeshUID uid){
+        swc2mesh_resc->Select(uid);
+    };
 
     viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context().set_ctx();
 }
@@ -297,6 +304,29 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
 
     if(ImGui::Begin("Vol Render Info", p_open, window_flags)){
         ImGui::BulletText("Vol Render Frame Time: %s", vol_render_timer.duration_str().c_str());
+
+
+        if(ImGui::TreeNode("Camera Setting")){
+            bool update = false;
+            update |= ImGui::InputFloat("Move Speed", &vol_camera_move_speed, 0.f, 0.f, "%.5f");
+            update |= ImGui::InputFloat("Rotate Speed", &vol_camera_view_ratation_speed, 0.f, 0.f, "%.5f");
+            if(update){
+                update_vol_camera_setting(false);
+            }
+            ImGui::TreePop();
+        }
+        if(ImGui::TreeNode("Vol Render Setting")){
+
+
+            ImGui::TreePop();
+        }
+        if(ImGui::TreeNode("SWC Render Setting")){
+            if(ImGui::Checkbox("Blend With Depth", &vol_swc_blend_with_depth)){
+                if(vol_swc_blend_with_depth) status_flags |= VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
+                else status_flags &= ~VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
+            }
+            ImGui::TreePop();
+        }
     }
 
     ImGui::End();
@@ -395,7 +425,7 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
         if (!swc_resc->loaded_swc.empty())
             sel_swc_str = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name;
         else sel_swc_str = "None";
-        if (ImGui::BeginCombo("Loaded SWC", sel_swc_str.c_str())) {
+        if (ImGui::BeginCombo("Selected SWC", sel_swc_str.c_str())) {
             if(!is_annotating()){
                 for (auto &[id, _]: swc_resc->loaded_swc) {
                     bool select = id == swc_resc->selected_swc_uid;
@@ -403,6 +433,9 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
                     if (ImGui::Selectable(_.name.c_str(), select)) {
                         swc_resc->SelectSWC(id);
                         LOG_TRACE("Select SWC: {}, {}", id, _.name);
+                        if(swc_resc->swc_mesh_mp.count(id))
+                            swc2mesh_resc->Select(swc_resc->swc_mesh_mp.at(id));
+                        update_swc_influenced_blocks();
                     }
                 }
 
@@ -414,17 +447,22 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
 
         if(ImGui::Button("New SWC", ImVec2(120, 18))){
             swc_resc->CreateSWC();
+
             //新建一个swc的时候也创建对应的mesh
             //这里的代价是很低的 并没有体素化mc生成mesh 只用于记录状态
             std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
                     + "_neuron";
             swc2mesh_resc->CreateMesh(neuron_name);
+
+            swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
+
+            update_swc_influenced_blocks();
         }
 
         ImGui::SameLine();
 
         if(ImGui::Button("Delete SWC", ImVec2(120, 18))){
-
+            swc_resc->DeleteSelSWC();
         }
 
         if(ImGui::Button("Load", ImVec2(120, 18))){
@@ -481,6 +519,17 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
     swc_file_dialog.Display();
     if(swc_file_dialog.HasSelected()){
         swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
+        //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
+        swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
+
+        std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
+                                  + "_neuron";
+        swc2mesh_resc->CreateMesh(neuron_name);
+
+        swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
+
+        update_swc_influenced_blocks();
+
         swc_file_dialog.ClearSelected();
     }
 }
@@ -517,7 +566,7 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
         std::string sel_mesh_str = "None";
         if(swc2mesh_resc->Selected())
             sel_mesh_str = swc2mesh_resc->loaded_mesh.at(swc2mesh_resc->selected_mesh_uid).name;
-        if(ImGui::BeginCombo("Loaded Neuron", sel_mesh_str.c_str())){
+        if(ImGui::BeginCombo("Selected Neuron", sel_mesh_str.c_str())){
             for(auto& [id, _] : swc2mesh_resc->loaded_mesh){
                 bool select = id == swc2mesh_resc->selected_mesh_uid;
                 if(ImGui::Selectable(_.name.c_str(), select)){
@@ -530,7 +579,7 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
             ImGui::EndCombo();
         }
         if(ImGui::Button("New Neuron", ImVec2(120, 18))){
-
+            swc2mesh_resc->CreateMesh();
         }
         ImGui::SameLine();
         if(ImGui::Button("Delete Neuron", ImVec2(120, 18))){
@@ -538,17 +587,28 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
         }
 
         if(ImGui::Button("Load", ImVec2(120, 18))){
-
+            mesh_file_dialog.Open();
         }
         ImGui::SameLine();
         if(ImGui::Button("Export", ImVec2(120, 18))){
-
+            static int export_count = 0;
+            std::string export_filename;
+            auto name = swc2mesh_resc->GetSelected().name;
+            if(name.empty())
+                export_filename = "neuron_mesh_" + std::to_string(++export_count) + MeshFile::MESH_FILENAME_EXT_OBJ;
+            else
+                export_filename = name + MeshFile::MESH_FILENAME_EXT_OBJ;
+            swc2mesh_resc->ExportMeshToFile(export_filename);
         }
         if(ImGui::Button("Re-Generate-Modified", ImVec2(160, 18))){
             generate_modified_mesh();
+
         }
         ImGui::SameLine();
+        //这个用于全部swc点的mesh生成 但是生成的还是blocked 之后整体的使用异步队列实现
         if(ImGui::Button("Re-Generate-All", ImVec2(160, 18))){
+            //把当前的block mesh全部设置为Modified
+            update_swc_influenced_blocks(true);
             generate_modified_mesh();
         }
 
@@ -587,6 +647,15 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
     }
 
     ImGui::End();
+
+    mesh_file_dialog.Display();
+    if(mesh_file_dialog.HasSelected()){
+        auto filename = mesh_file_dialog.GetSelected().string();
+
+        swc2mesh_resc->LoadMeshFile(filename);
+
+        mesh_file_dialog.ClearSelected();
+    }
 }
 
 void VolAnnotaterGUI::show_debug_window(bool *p_open) {
@@ -612,6 +681,11 @@ void VolAnnotaterGUI::show_debug_window(bool *p_open) {
         if(ImGui::TreeNode("Timer")){
             ImGui::BulletText("App FPS: %.2f", ImGui::GetIO().Framerate);
 
+            ImGui::TreePop();
+        }
+
+        if(ImGui::TreeNode("Mesh Render")){
+            ImGui::Checkbox("Line Mode", &debug_priv_data.mesh_render_line_mode);
             ImGui::TreePop();
         }
 
@@ -706,9 +780,21 @@ void VolAnnotaterGUI::frame_mesh_render() {
         mesh_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT0, mesh_render_framebuffer.color);
         vutil::gl::framebuffer_t::clear_color_depth_buffer();
 
-//        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        swc2mesh_resc->neuron_renderer->Draw(view, proj);
-//        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+
+        if(debug_priv_data.mesh_render_line_mode){ GL_EXPR(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)); }
+
+        swc2mesh_resc->neuron_renderer->Begin(view, proj);
+        if(swc2mesh_resc->mesh_status == SWC2MeshRescPack::Merged)
+            swc2mesh_resc->neuron_renderer->Draw(swc2mesh_resc->loaded_mesh.at(swc2mesh_resc->selected_mesh_uid).mesh->GetUID());
+        else
+            for(auto& [id, _] : swc2mesh_resc->s2m_priv_data.patch_mesh_mp){
+                if(_.visible && _.status != SWC2MeshRescPack::Empty)
+                    swc2mesh_resc->neuron_renderer->Draw(id.ToUnifiedRescUID());
+            }
+        swc2mesh_resc->neuron_renderer->End();
+
+        if(debug_priv_data.mesh_render_line_mode) { GL_EXPR(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)); }
 
         mesh_render_framebuffer.fbo.unbind();
 
@@ -906,6 +992,8 @@ void VolAnnotaterGUI::load_volume(const std::string &filename) {
 
     status_flags |= VOL_DATA_LOADED;
 
+    update_vol_camera_setting(true);
+
     LOG_TRACE("load_volume finish...");
 }
 
@@ -1024,7 +1112,10 @@ void VolAnnotaterGUI::check_and_add_swc_pt() {
     swc_pt.tag = 1;
 
     auto is_valid = [&]()->bool{
-
+        if(swc_pt.radius == 0.f){
+            LOG_INFO("swc pt with radius is 0.f, this may be caused for query with block which is not lod0");
+            return false;
+        }
         return true;
     };
 
@@ -1088,18 +1179,22 @@ bool VolAnnotaterGUI::can_start_annotating() {
     return true;
 }
 
-void VolAnnotaterGUI::update_swc_influenced_blocks() {
+void VolAnnotaterGUI::update_swc_influenced_blocks(bool all) {
     if(!swc2mesh_resc->LocalUpdating()){
         LOG_DEBUG("update_swc_influenced_blocks but MeshStatus is not Blocked");
         return;
     }
-
-    auto blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->GetAllModifiedAndInfluencedPts());
+    std::vector<BlockUID> blocks;
+    if(all){
+        blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->PackAll());
+    }
+    else
+        blocks = vol_render_resc->ComputeIntersectBlocks(swc_resc->GetSelected().swc->GetAllModifiedAndInfluencedPts());
 
     for(auto& block : blocks){
         swc2mesh_resc->SetBlockMeshStatus(block.SetSWC(), SWC2MeshRescPack::Modified);
     }
-
+    swc2mesh_resc->MeshUpdated();
 
 }
 
@@ -1226,12 +1321,31 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         }), 0);
         swc2mesh_resc->UpdateBlockMesh(uid, std::move(mesh));
     }
+    //有一些被标记为modified的block其实不会被体素化 这部分也更更新为Updated 虽然这部分可能没有mesh
+    //因此 将所有存在的block mesh都标记为Updated
+    swc2mesh_resc->UpdateAllBlockMesh();
+
     //通知mesh渲染器更新数据
     swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
     swc2mesh_resc->MeshUpdated();
 
     //跑完mc后再释放pt
     viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);
+    //清除体素化写入的vtex
+    for(auto& [uid, tex] : blocks_info){
+        viser_resc->gpu_vtex_mgr_ref->Clear(uid.ToUnifiedRescUID(), tex);
+    }
+
+}
+
+void VolAnnotaterGUI::update_vol_camera_setting(bool init) {
+    if(init){
+        vol_camera_move_speed = vol_render_resc->render_base_space * 3.f;
+        vol_camera_view_ratation_speed = vol_render_resc->render_base_space * 5.f;
+    }
+
+    camera.set_move_speed(vol_camera_move_speed);
+    camera.set_view_rotation_speed(vol_camera_view_ratation_speed);
 }
 
 

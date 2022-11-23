@@ -357,14 +357,18 @@ inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_
         CUDA_MEMCPY3D m;
         std::memset(&m, 0, sizeof(m));
 
-        if(src_type == e_cu_host)
+        if(src_type == e_cu_host){
             m.srcMemoryType = CU_MEMORYTYPE_HOST;
-        else
+            m.srcHost = src_ptr;
+        }
+        else{
             m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+            m.srcDevice = (CUdeviceptr)src_ptr;
+        }
         m.srcXInBytes = info.src_x_bytes;
         m.srcY = info.src_y;
         m.srcZ = info.src_z;
-        m.srcHost = src_ptr;
+
 
         m.dstMemoryType = CU_MEMORYTYPE_ARRAY;
         m.dstArray = (CUarray)dst;

@@ -26,10 +26,10 @@ VISER_BEGIN
             uint32_t hash_v = GetHashValue(key);
 
             auto pos = hash_v % HashTableSize;
-            printf("Update hash %u pos %d key %d %d %d %d val %d %d %d %d\n",
-                   hash_v, pos,
-                   key.x, key.y, key.z, key.w,
-                   val.x, val.y, val.z, val.w);
+//            printf("Update hash %u pos %d key %d %d %d %d val %d %d %d %d\n",
+//                   hash_v, pos,
+//                   key.x, key.y, key.z, key.w,
+//                   val.x, val.y, val.z, val.w);
             int i = 0;
             bool positive = false;
             while(i < HashTableSize){
@@ -286,6 +286,8 @@ VISER_BEGIN
 
         Handle<CUDABuffer> cu_glk;
 
+        Handle<CUDABuffer> cu_clear_buffer;
+
         std::mutex mtx;
 
         UnifiedRescUID uid;
@@ -398,6 +400,7 @@ VISER_BEGIN
                                                     volume_params.bound.high.y,
                                                     volume_params.bound.high.z}};
     }
+
 
 
 VISER_END

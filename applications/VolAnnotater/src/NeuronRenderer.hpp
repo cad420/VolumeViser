@@ -23,7 +23,11 @@ public:
 
     void DeleteNeuronMesh(PatchID patch_id);
 
-    void Draw(const mat4& view, const mat4& proj);
+    void Begin(const mat4& view, const mat4& proj);
+
+    void Draw(PatchID patch_id);
+
+    void End();
 
 private:
     program_t shader;

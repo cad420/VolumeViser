@@ -216,6 +216,10 @@ VISER_BEGIN
         }
         CUB_GPU float4 ScalarToRGBA(const CTRVolumeRenderKernelParams& params,
                                     float scalar, uint32_t lod){
+            if(scalar > 0.3f){
+                return make_float4(1.f,0.5f,0.25f,0.6f);
+            }
+            else return make_float4(0.f);
             if(params.cu_per_frame_params.debug_mode == 3){
                 return make_float4(scalar, scalar, scalar, 1.f);
             }
@@ -366,12 +370,69 @@ VISER_BEGIN
                     dt *= 2.f;
                 }
             }
-            // compute radius
-
-
-
-            ret.radius = 0.003f;
             ret.pos = ray_cast_pos;
+            uint32_t cur_lod = ComputeLod(params, ray_cast_pos);
+            printf("after query lod %d\n", cur_lod);
+            // compute radius
+            float step = params.cu_render_params.ray_step * 0.2f;
+            const int MaxSearchSteps = 256;
+            const float ScalarThreshold = 0.32f;
+            bool not_lod0 = false;
+            float3 pos0, pos1;
+            auto compute_radius = [&](bool advance){
+                for(int i = 0; i < MaxSearchSteps; i++){
+                    float3 sampling_pos;
+                    if(advance)
+                        sampling_pos = ray_cast_pos + ray.d * (float)i * step;
+                    else
+                        sampling_pos = ray_cast_pos - ray.d * (float)i * step;
+                    uint32_t cur_lod = ComputeLod(params, sampling_pos);
+                    if(cur_lod != 0){
+                        printf("not lod0 but is %d\n", cur_lod);
+                        not_lod0 = true;
+                        break;
+                    }
+                    sampling_pos = CalcVirtualSamplingPos(params, sampling_pos);
+                    auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
+                    if(scalar < ScalarThreshold){
+                        if(advance)
+                            pos1 = ray_cast_pos + ray.d *(float)i * step;
+                        else
+                            pos0 = ray_cast_pos - ray.d *(float)i * step;
+                        printf("steps count: %d\n", i);
+                        break;
+                    }
+                }
+            };
+            compute_radius(true);
+            compute_radius(false);
+            if(not_lod0){
+                printf("Calc Radius but is not lod0\n");
+                ret.radius = 0.f;
+                return ret;
+            }
+            ret.radius = length(pos1 - pos0) * 0.5;
+            // compute max intensity pos
+            steps = ret.radius / step;
+            float max_scalar = 0.f;
+            float3 pos;
+            for(int i = 0; i < steps; i++){
+                float3 sampling_pos = pos0 + ray.d * (float)i * step;
+                uint32_t cur_lod = ComputeLod(params, sampling_pos);
+                if(cur_lod != 0){
+                    not_lod0 = true;
+                    break;
+                }
+                sampling_pos = CalcVirtualSamplingPos(params, sampling_pos);
+                auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
+                if(scalar > max_scalar){
+                    max_scalar = scalar;
+                    pos = pos0 + ray.d * (float)i * step;
+                }
+            }
+            if(!not_lod0)
+                ret.pos = pos;
+
             return ret;
         }
         CUB_GPU RayCastResult RayCastVolume(const CTRVolumeRenderKernelParams& params,
@@ -409,8 +470,7 @@ VISER_BEGIN
 //            return ret;
 
             while(ray_cast_dist < ray_max_cast_dist){
-                float3 cur_ray_pos = ray_cast_pos + 0.5f * dt * ray.d;
-
+                float3 cur_ray_pos = ray_cast_pos;// + 0.5f * dt * ray.d;
                 uint32_t cur_lod = ComputeLod(params, cur_ray_pos);
                 bool upgrade = false;
                 if(cur_lod > prev_lod){
@@ -423,7 +483,7 @@ VISER_BEGIN
 
                 auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
 
-                bool skip = (flag == 0) || (flag & TexCoordFlag_IsValid && flag & TexCoordFlag_IsBlack);
+//                bool skip = (flag == 0) || (flag & TexCoordFlag_IsValid && flag & TexCoordFlag_IsBlack);
 //                if(skip){
 //                    ray_cast_pos = CalcSkipPos(params, ray_cast_pos, ray.d, cur_lod);
 //
@@ -449,11 +509,11 @@ VISER_BEGIN
                     }
                 }
 //                ray_cast_pos += dt * ray.d;
+                if(upgrade){
+                    dt = (1 << cur_lod) * params.cu_render_params.ray_step;
+                }
                 ray_cast_pos = prev_lod_samping_pos + (++steps - pre_lod_sampling_steps) * ray.d * dt;
                 ray_cast_dist += dt;
-                if(upgrade){
-                    dt *= 2.f;
-                }
             }
             // view space depth
             // todo return proj depth
@@ -746,7 +806,7 @@ VISER_BEGIN
         }
     }
     void CRTVolumeRenderer::Query(int x, int y, CUDABufferView1D<float>& info, int flag) {
-        const dim3 tile = {16u, 16u, 1u};
+        const dim3 tile = {16, 16, 1u};
         _->kernel_params.cu_tag.x = x;
         _->kernel_params.cu_tag.y = y;
         _->kernel_params.cu_tag.flag = flag;

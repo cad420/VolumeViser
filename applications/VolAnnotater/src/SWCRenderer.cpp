@@ -116,7 +116,7 @@ void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
         patch.vbo = std::move(vbo);
         patch.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), patch.vbo, 0);
         patch.vao.enable_attrib(attrib_var_t<Vertex>(0));
-        patch.loaded_vertices_count = new_vertices_count;
+//        patch.loaded_vertices_count = new_vertices_count;
     }
     if(patch.loaded_indices_count && patch.loaded_indices_count % preserved_indices_per_patch == 0){
         int new_indices_count = patch.loaded_indices_count + preserved_indices_per_patch;
@@ -129,6 +129,6 @@ void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
                                          patch.loaded_indices_count * sizeof(uint32_t)));
         patch.ebo = std::move(ebo);
         patch.vao.bind_index_buffer(patch.ebo);
-        patch.loaded_indices_count = new_indices_count;
+//        patch.loaded_indices_count = new_indices_count;
     }
 }

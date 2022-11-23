@@ -334,7 +334,13 @@ void SWCRescPack::CreateSWC(const std::string& filename) {
 }
 
 void SWCRescPack::DeleteSelSWC() {
+    if(!Selected()) return;
+    //删除绑定的mesh uid
+    DeleteSWCMesh();
 
+    loaded_swc.erase(selected_swc_uid);
+
+    selected_swc_uid = INVALID_RESC_ID;
 }
 
 void SWCRescPack::SelectSWC(SWCUID swc_id) {
@@ -380,6 +386,9 @@ void SWCRescPack::SelectSWC(SWCUID swc_id) {
         }
     }
 
+    //如果有绑定mesh uid 那么调用切换函数
+    if(swc_mesh_mp.count(selected_swc_uid))
+        on_swc_selected(swc_mesh_mp.at(selected_swc_uid));
 }
 
 void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
@@ -477,6 +486,22 @@ void SWCRescPack::ExportSWCToFile(const std::string &filename) {
     }
 }
 
+void SWCRescPack::BindMeshToSWC(MeshUID mesh_id) {
+    assert(Selected());
+    swc_mesh_mp[selected_swc_uid] = mesh_id;
+
+}
+void SWCRescPack::DeleteSWCMesh() {
+    assert(Selected());
+    swc_mesh_mp.erase(selected_swc_uid);
+
+}
+
+void SWCRescPack::Commit() {
+    assert(Selected());
+    loaded_swc.at(selected_swc_uid).swc->Commit();
+}
+
 //============================================================================================
 
 void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
@@ -536,6 +561,8 @@ void SWC2MeshRescPack::MergeAllBlockMesh() {
         res.push_back(block_mesh.mesh);
     }
     merged_mesh.mesh = Mesh::Merge(res);
+
+    SetMeshStatus(Merged);
 }
 
 void SWC2MeshRescPack::SetMeshStatus(MeshStatus status) {
@@ -554,9 +581,10 @@ void SWC2MeshRescPack::MeshUpdated() {
     }
     else if(mesh_status == Blocked){
         for(auto& [uid, block_mesh] : s2m_priv_data.patch_mesh_mp){
-            if(block_mesh.status != Updated){
+            if(block_mesh.status == Empty){
                 LOG_ERROR("Update render block mesh but status is not Updated but is {}",
                           block_mesh.status == Empty ? "Empty" : "Modified");
+                continue;
             }
             neuron_renderer->AddNeuronMesh(block_mesh.mesh->GetPackedMeshData(), uid.ToUnifiedRescUID());
         }
@@ -699,5 +727,15 @@ void SWC2MeshRescPack::OnVolumeLoaded(ViserRescPack& _, VolRenderRescPack& __) {
     }
 
 }
+
+void SWC2MeshRescPack::UpdateAllBlockMesh() {
+    for(auto& [id, block_mesh] : s2m_priv_data.patch_mesh_mp){
+        if(block_mesh.mesh->Empty())
+            block_mesh.status = Empty;
+        else
+            block_mesh.status = Updated;
+    }
+}
+
 
 //============================================================================================

@@ -50,6 +50,8 @@ public:
 
     std::vector<GPUVTex> GetAllTextures();
 
+    void Clear(UnifiedRescUID uid, TexCoord dst);
+
 protected:
     std::unique_ptr<GPUVTexMgrPrivate> _;
 };

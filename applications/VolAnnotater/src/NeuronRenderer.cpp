@@ -46,20 +46,29 @@ void NeuronRenderer::DeleteNeuronMesh(PatchID patch_id) {
     patches.erase(patch_id);
 }
 
-void NeuronRenderer::Draw(const mat4 &view, const mat4 &proj) {
+void NeuronRenderer::Begin(const mat4 &view, const mat4 &proj){
     shader.bind();
 
     tf_params.proj_view = proj * view;
     tf_params_buffer.set_buffer_data(&tf_params);
     tf_params_buffer.bind(0);
+}
 
-    for(auto& [uid, draw_patch] : patches){
-        draw_patch.vao.bind();
-
-        GL_EXPR(glDrawElements(GL_TRIANGLES, draw_patch.ebo.index_count(), GL_UNSIGNED_INT, nullptr));
-
-        draw_patch.vao.unbind();
+void NeuronRenderer::Draw(PatchID patch_id) {
+    if(patches.count(patch_id) == 0) {
+        LOG_ERROR("draw patch id is not existed: {}", patch_id);
+        return;
     }
 
+    auto& draw_patch = patches.at(patch_id);
+    draw_patch.vao.bind();
+
+    GL_EXPR(glDrawElements(GL_TRIANGLES, draw_patch.ebo.index_count(), GL_UNSIGNED_INT, nullptr));
+
+    draw_patch.vao.unbind();
+}
+
+
+void NeuronRenderer::End(){
     shader.unbind();
 }

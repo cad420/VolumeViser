@@ -137,6 +137,8 @@ using SWCUID = viser::UnifiedRescUID;
 using SWCNeuronID = size_t;
 using SWCPointKey = SWC::SWCPointKey;
 
+using MeshUID = viser::UnifiedRescUID;
+
 constexpr size_t SWC_MAX_NEURON_NUM = 1024ull;
 constexpr size_t SWC_MAX_POINT_NUM = 1ull << 16;
 /**
@@ -152,6 +154,12 @@ public:
     };
     std::unordered_map<SWCUID, SWCInfo> loaded_swc;//所有加载、创建的swc对象
     SWCUID selected_swc_uid = INVALID_RESC_ID;//当前被选中编辑的swc uid
+
+    //由于mesh也可以自己生成或者从文件中加载 因此两者的对应关系是 swc->mesh but mesh x-> swc
+    //因此当切换swc时 也可以切换对应的mesh 但是切换mesh不会改变当前选择的swc
+    //每次新建或者加载一个swc时 会新建一个关联的mesh 但是删除swc不会删除对应的mesh
+    std::unordered_map<SWCUID, MeshUID> swc_mesh_mp;//swc与对应生成的mesh
+    std::function<void(MeshUID)> on_swc_selected;
 
     // 一个swc可能含有多条神经 每条神经是一颗树 只有一个根节点 并且每条神经之间是不连通的
     struct{
@@ -186,7 +194,7 @@ public:
     std::unique_ptr<SWCRenderer> swc_renderer;
 
 public:
-    bool Selected() const { return CheckUnifiedRescUID(selected_swc_uid); }
+    bool Selected() const { return CheckUnifiedRescUID(selected_swc_uid) && loaded_swc.count(selected_swc_uid); }
 
     SWCInfo& GetSelected() { return loaded_swc.at(selected_swc_uid); }
 
@@ -204,7 +212,18 @@ public:
     void CreateSWC(const std::string& filename = "");
 
     /**
-     * @brief 在内存中删除当前选中的swc文件
+     * @brief 将mesh uid绑定到当前选择的swc
+     */
+    void BindMeshToSWC(MeshUID mesh_id);
+
+    /**
+     * @brief 将当前swc绑定的mesh uid删除
+     */
+    void DeleteSWCMesh();
+
+    /**
+     * @brief 在内存中删除当前选中的swc文件，切换到None
+     * 会调用DeleteSWCMesh删除与其绑定的mesh uid
      */
     void DeleteSelSWC();
 
@@ -224,6 +243,8 @@ public:
      */
     void SaveSWCToFile();
 
+    void Commit();
+
     /**
      * @brief 将当前选定的swc保存到文件中 文件名包含了swc文件的格式时txt还是bin
      */
@@ -232,7 +253,7 @@ public:
 private:
 
 };
-using MeshUID = viser::UnifiedRescUID;
+
 
 /**
  * @brief SWC转换为Mesh和神经元网格渲染相关资源
@@ -262,10 +283,10 @@ public:
 
     MeshStatus mesh_status = None;
 
-    enum BlockMeshStatus {
-        Empty, // mesh没有生成
-        Modified, // block涉及到swc的改动
-        Updated // 重新生成了mesh
+    enum BlockMeshStatus :int {
+        Empty = 0, // mesh没有生成
+        Modified = 1, // block涉及到swc的改动
+        Updated = 2 // 重新生成了mesh
     };
 
     struct BlockMesh{
@@ -313,6 +334,8 @@ public:
      */
     void UpdateBlockMesh(const BlockUID& uid, Handle<Mesh> mesh);
 
+    void UpdateAllBlockMesh();
+
     /**
      * @note 最后会调用MeshUpdated
      */
@@ -327,6 +350,7 @@ public:
 
     /**
      *@brief 将所有patch_mesh_mp里保存的mesh进行合并并保存到loaded_mesh里 会将MeshStatus设置为Merged
+     * 最后会调用MeshUpdated
      */
     void MergeAllBlockMesh();
 
@@ -351,6 +375,8 @@ public:
      * @brief 切换当前选中的mesh 会将MeshStatus设置为Merged，并且会丢失patch_mesh_mp里的数据
      */
     void Select(MeshUID mesh_id);
+
+    MeshInfo& GetSelected() { assert(Selected()); return loaded_mesh.at(selected_mesh_uid); }
 
     /**
      * @brief 清除patch_mesh_mp里的数据

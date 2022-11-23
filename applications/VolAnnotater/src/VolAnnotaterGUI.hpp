@@ -54,13 +54,7 @@ private:
 private:
     void load_volume(const std::string& filename);
 
-    void load_swc(const std::string& filename);
-
-    void export_swc();
-
-    void load_mesh(const std::string& filename);
-
-    void export_mesh();
+    void update_vol_camera_setting(bool init);
 
 private:
     // framebuffer 大小改变时需要调用
@@ -91,7 +85,7 @@ private:
 
     void check_and_add_swc_pt();
 
-    void update_swc_influenced_blocks();
+    void update_swc_influenced_blocks(bool all = false);
 
     bool check_and_start_annotating();
 
@@ -118,6 +112,7 @@ private:
 
     ImGui::FileBrowser vol_file_dialog;
     ImGui::FileBrowser swc_file_dialog;
+    ImGui::FileBrowser mesh_file_dialog;
 
     struct{
         vec2i vol_render_window_size = {0, 0};
@@ -183,13 +178,19 @@ private:
     }v2p_priv_data;
 
     struct{
-
+        bool mesh_render_line_mode = false;
     }debug_priv_data;
 
     Timer vol_render_timer;
 
     struct{
         bool vol_mesh_render_sync = true;
+
+        float vol_camera_move_speed = 0.f;
+
+        float vol_camera_view_ratation_speed = 0.f;
+
+        bool vol_swc_blend_with_depth = false;
     };
 
     struct{

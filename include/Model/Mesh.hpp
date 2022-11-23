@@ -52,7 +52,7 @@ public:
      */
     MeshData GetPackedMeshData() const;
 
-
+    bool Empty() const ;
 protected:
     std::unique_ptr<MeshPrivate> _;
 };

@@ -127,7 +127,7 @@ void MeshFile::WriteMeshData(const MeshData0& data) {
     for(auto& tri : tris){
         std::string str = "f";
         for(int i = 0; i < 3; i++){
-            str += " " + std::to_string(tri.pos[i]) + "/" + std::to_string(tri.norm[i]);
+            str += " " + std::to_string(tri.pos[i]) + "//" + std::to_string(tri.norm[i]);
         }
         str += "\n";
         _->fs.write(str.data(), str.length());
@@ -237,17 +237,23 @@ MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert
         auto& tri_face = tris.emplace_back();
         for(int j = 0; j < 3; j++){
             auto& vert_pos = get_vert(i * 3 + j);
-            if(vert_pos.x < 1.f && vert_pos.y < 1.f && vert_pos.z < 1.f){
-                LOG_ERROR("error");
-            }
+//            if(vert_pos.x < 3.f || vert_pos.y < 5.f || vert_pos.z < 5.f){
+//                LOG_ERROR("vert pos error: i {}, j {}, {} {} {}", i, j, vert_pos.x, vert_pos.y, vert_pos.z);
+//            }
             if(tri_pos_idx_mp.count(vert_pos) == 0){
                 unique_pos.emplace_back(vert_pos);
                 tri_pos_idx_mp[vert_pos] = index++;
             }
-            auto idx = tri_pos_idx_mp.at(vert_pos);
-            tri_face.idx[j] = idx;
-            vert_face_mp[idx].faces.emplace_back(i);
-            this->indices[i * 3 + j] = idx;
+//            try{
+                auto idx = tri_pos_idx_mp.at(vert_pos);
+                tri_face.idx[j] = idx;
+                vert_face_mp[idx].faces.emplace_back(i);
+                this->indices[i * 3 + j] = idx;
+//            }
+//            catch(const std::exception& err){
+//                LOG_ERROR("vert pos error: i {}, j {}, {} {} {}, has: {}", i, j, vert_pos.x, vert_pos.y, vert_pos.z,
+//                          tri_pos_idx_mp.count(vert_pos));
+//            }
         }
     }
 

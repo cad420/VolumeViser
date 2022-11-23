@@ -729,68 +729,6 @@ VISER_BEGIN
                || z >= params.cu_mc_params.shape.z)
                 return;
 
-            __shared__ const char*const* tri_edge_table[43];
-            __shared__ const char*const*const* case13_edge_table[7];
-            __shared__ int case13_offset[7];
-            if(threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0){
-                tri_edge_table[0] = nullptr; // 0
-                tri_edge_table[1] = reinterpret_cast<const char*const*>(tiling1); // 1
-                tri_edge_table[2] = reinterpret_cast<const char*const*>(tiling2); // 2
-                tri_edge_table[3] = reinterpret_cast<const char*const*>(tiling3_1); // 3.1
-                tri_edge_table[4] = reinterpret_cast<const char*const*>(tiling3_2); // 3.2
-                tri_edge_table[5] = reinterpret_cast<const char*const*>(tiling4_1); // 4.1
-                tri_edge_table[6] = reinterpret_cast<const char*const*>(tiling4_2); // 4.2
-                tri_edge_table[7] = reinterpret_cast<const char*const*>(tiling5); // 5
-                tri_edge_table[8] = reinterpret_cast<const char*const*>(tiling6_1_1); // 6.1.1 or 6.1
-                tri_edge_table[9] = reinterpret_cast<const char*const*>(tiling6_1_2); // 6.1.2 or 6.2
-                tri_edge_table[10] = reinterpret_cast<const char*const*>(tiling6_2); // 6.2 or 6.3
-                tri_edge_table[11] = reinterpret_cast<const char*const*>(tiling7_1); // 7.1
-                tri_edge_table[12] = reinterpret_cast<const char*const*>(m_tiling7_2[0]); // 7.2
-                tri_edge_table[13] = reinterpret_cast<const char*const*>(m_tiling7_2[1]); // 7.2 or 7.3
-                tri_edge_table[14] = reinterpret_cast<const char*const*>(m_tiling7_3[0]); // 7.3 or 7.4
-                tri_edge_table[15] = reinterpret_cast<const char*const*>(m_tiling7_2[2]); // 7.3 or 7.5
-                tri_edge_table[16] = reinterpret_cast<const char*const*>(m_tiling7_3[1]); // 7.3 or 7.6
-                tri_edge_table[17] = reinterpret_cast<const char*const*>(m_tiling7_3[2]); // 7.3 or 7.7
-                tri_edge_table[18] = reinterpret_cast<const char*const*>(tiling7_4_1); // 7.4.1 or 7.8
-                tri_edge_table[19] = reinterpret_cast<const char*const*>(tiling7_4_2); // 7.4.2 or 7.9
-                tri_edge_table[20] = reinterpret_cast<const char*const*>(tiling8); // 8
-                tri_edge_table[21] = reinterpret_cast<const char*const*>(tiling9); // 9
-                tri_edge_table[22] = reinterpret_cast<const char*const*>(tiling10_1_1); // 10.1.1 or 10.1
-                tri_edge_table[23] = reinterpret_cast<const char*const*>(tiling10_1_2); // 10.1.2 or 10.2
-                tri_edge_table[24] = reinterpret_cast<const char*const*>(tiling10_2); // 10.2 or 10.3
-                tri_edge_table[25] = reinterpret_cast<const char*const*>(tiling10_2_); // 10.2 or 10.4
-                tri_edge_table[26] = reinterpret_cast<const char*const*>(tiling10_1_1_); // 10.1.1 or 10.5
-                tri_edge_table[27] = reinterpret_cast<const char*const*>(tiling11); // 11
-                tri_edge_table[28] = reinterpret_cast<const char*const*>(tiling12_1_1); // 12.1.1 or 12.1
-                tri_edge_table[29] = reinterpret_cast<const char*const*>(tiling12_1_2); // 12.1.2 or 12.2
-                tri_edge_table[30] = reinterpret_cast<const char*const*>(tiling12_2); // 12.2 or 12.3
-                tri_edge_table[31] = reinterpret_cast<const char*const*>(tiling12_2_); // 12.2 or 12.4
-                tri_edge_table[32] = reinterpret_cast<const char*const*>(tiling12_1_1_); // 12.1.1 or 12.5
-                tri_edge_table[33] = reinterpret_cast<const char*const*>(tiling13_1); // 13.1
-                case13_edge_table[0] = reinterpret_cast<const char*const*const*>(tiling13_2); // 13.2
-                case13_offset[0] = 1;
-                case13_edge_table[1] = reinterpret_cast<const char*const*const*>(tiling13_3); // 13.3
-                case13_offset[1] = 7;
-                case13_edge_table[2] = reinterpret_cast<const char*const*const*>(tiling13_4); // 13.4
-                case13_offset[2] = 19;
-                case13_edge_table[3] = reinterpret_cast<const char*const*const*>(tiling13_5_1); // 13.5.1 or 13.5
-                case13_offset[3] = 23;
-                case13_edge_table[4] = reinterpret_cast<const char*const*const*>(tiling13_5_2); // 13.5.2 or 13.6
-                case13_offset[4] = 23;
-                case13_edge_table[5] = reinterpret_cast<const char*const*const*>(tiling13_3_); // 13.3 or 13.7
-                case13_offset[5] = 27;
-                case13_edge_table[6] = reinterpret_cast<const char*const*const*>(tiling13_2_); // 13.2 or 13.8
-                case13_offset[6] = 39;
-                tri_edge_table[41] = reinterpret_cast<const char*const*>(tiling13_1_); // 13.1 or 13.9
-                tri_edge_table[42] = reinterpret_cast<const char*const*>(tiling14); // 14
-
-                if(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0){
-                    for(int i = 0; i < 34; i++){
-                        printf("tri_edge_table[%d]: %lld\n", i, (size_t)tri_edge_table[i]);
-                    }
-                }
-            }
-
             __syncthreads();
 
 //            printf("ok1\n");
@@ -847,7 +785,7 @@ VISER_BEGIN
 
             // 12 kb
 //            __shared__ float3 vert_list[12 * ThreadsPerBlocks];
-            float3 vert_list[12];
+            float3 vert_list[13];
             vert_list[0] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[1], field[0], field[1]);
             vert_list[1] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[2], field[1], field[2]);
             vert_list[2] = VertexInterp(params.cu_mc_params.isovalue, vert[2], vert[3], field[2], field[3]);
@@ -862,7 +800,7 @@ VISER_BEGIN
             vert_list[9] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[5], field[1], field[5]);
             vert_list[10] = VertexInterp(params.cu_mc_params.isovalue, vert[2], vert[6], field[2], field[6]);
             vert_list[11] = VertexInterp(params.cu_mc_params.isovalue, vert[3], vert[7], field[3], field[7]);
-
+            vert_list[12] = make_float3(0.f);
             uint32_t code = params.vol_code.at(x, y, z);
 
 //            printf("ok2\n");
@@ -923,30 +861,40 @@ VISER_BEGIN
                 case 42 : edge_table = tiling14[config_idx_in_case];
             }
 
-//            if(m_case_idx < 34 || m_case_idx > 40){
-////                printf("m_case_idx %u, config_idx_in_case %u\n", m_case_idx, config_idx_in_case);
-//                printf("okok %lld, m_case_idx %u, config_idx_in_case %u\n",
-//                       (size_t)tri_edge_table[m_case_idx], m_case_idx, config_idx_in_case);
-//                assert(config_idx_in_case < MyCaseTable[m_case_idx]);
-//                edge_table = tri_edge_table[m_case_idx][config_idx_in_case];
-//                printf("okok2 %lld, m_case_idx %u, config_idx_in_case %u, edge_table %lld\n",
-//                       (size_t)tri_edge_table[m_case_idx], m_case_idx, config_idx_in_case,
-//                       (size_t)edge_table);
-//            }
-//            else{
-////                printf("m_case_idx %u, config_idx_in_case %u, subconfig13_val %u\n",
-////                       m_case_idx, config_idx_in_case, subconfig13_val);
-//                printf("exit\n");
-//                return;
-//                edge_table = case13_edge_table[m_case_idx - 34][config_idx_in_case][subconfig13_val - case13_offset[m_case_idx - 34]];
-//            }
+            bool computed12 = false;
+            auto compute12 = [&](int idx){
+                int cnt = 0;
+                for(int i = 0; i < 4; i++){
+                    if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4] - params.cu_mc_params.isovalue) < 0.f){
+                        vert_list[12] += vert_list[i];
+                        cnt += 1;
+//                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[(i + 1) % 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                    }
+                }
+                for(int i = 4; i < 8; i++){
+                    if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4 + 4] - params.cu_mc_params.isovalue) < 0.f){
+                        vert_list[12] += vert_list[i + 4];
+                        cnt += 1;
+//                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[(i + 1) % 4 + 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                    }
+                }
+                for(int i = 0; i < 4; i++){
+                    if((field[i] - params.cu_mc_params.isovalue) * (field[i + 4] - params.cu_mc_params.isovalue) < 0.f){
+                        vert_list[12] += vert_list[i + 8];
+                        cnt += 1;
+//                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[i + 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                    }
+                }
+                if(cnt)
+                    vert_list[12] /= (float)cnt;
+            };
 
-
-//            int a = edge_table[0 * 3];
-//            int b = edge_table[0 * 3 + 1];
-//            int c = edge_table[0 * 3 + 2];
-//            printf("ok3 edge table %lld a %d b %d c %d\n", edge_table, a, b, c);
-//            return;
             for(int i = 0; i < tri_num; i++){
 
                 int a = edge_table[i * 3];
@@ -964,20 +912,34 @@ VISER_BEGIN
 //                           m_case_idx, params.vertex_num.at(x, y, z));
                     assert(false);
                 }
+
+                if((a == 12 || b == 12 || c == 12) && !computed12){
+                    compute12(index);
+                    computed12 = true;
+                }
+
                 //check index
                 if(index + 3 < params.max_vert_num){
                     params.vertex_pos.at(index) = vert_list[a];
                     params.vertex_pos.at(index + 1) = vert_list[b];
                     params.vertex_pos.at(index + 2) = vert_list[c];
-                    printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
-                           "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
-                           "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
-                           m_case_idx, index,
-                           a, vert_list[a].x, vert_list[a].y, vert_list[c].z,
-                           b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
-                           c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
-                           field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
-                           );
+//                    if(index == 11010 * 3) {
+//                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
+//                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
+//                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
+//                               m_case_idx, index,
+//                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
+//                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
+//                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
+//                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
+//                        );
+//                        for (int i = 0; i < 8; i++) {
+//                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
+//                        }
+//                        for(int i = 0; i < 13; i++){
+//                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
+//                        }
+//                    }
                 }
             }
 

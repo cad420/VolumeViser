@@ -111,6 +111,14 @@ Handle<Mesh> Mesh::Merge(const std::vector<Handle<Mesh>> &meshes) {
     return ret;
 }
 
+bool Mesh::Empty() const {
+    for(auto& [id, mesh_data] : _->shapes){
+        if(mesh_data.indices.size() > 0)
+            return false;
+    }
+    return true;
+}
+
 VISER_END
 
 

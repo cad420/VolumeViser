@@ -58,6 +58,7 @@ VISER_BEGIN
             }
             res.insert(GridVolume::BlockUID{idx.x, idx.y, idx.z, l});
         }
+        LOG_DEBUG("Lod intersect blocks count : {}", res.size());
         blocks.reserve(res.size());
         for(auto& b : res){
             blocks.emplace_back(b);
