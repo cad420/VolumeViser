@@ -18,7 +18,7 @@ struct Vertex{
     NormalType normal;
 
     bool operator==(const Vertex& vert) const{
-        return pos == vert.pos && normal == vert.normal;
+        return pos == vert.pos;
     }
 };
 struct MeshData0{
@@ -107,7 +107,7 @@ namespace std{
     template<>
     struct hash<viser::Vertex>{
         size_t operator()(const viser::Vertex& vert) const{
-            return vutil::hash(vert.pos, vert.normal);
+            return vutil::hash(vert.pos);
         }
     };
 }

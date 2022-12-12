@@ -208,7 +208,9 @@ MeshData0 Merge(const std::vector<MeshData0>& meshes){
                 if(vert_mp.count(vert) == 0){
                     vert_mp[vert] = idx++;
                     ret.vertices.push_back(vert);
+
                 }
+
                 ret.indices.push_back(vert_mp.at(vert));
             }
         }
@@ -244,16 +246,16 @@ MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert
                 unique_pos.emplace_back(vert_pos);
                 tri_pos_idx_mp[vert_pos] = index++;
             }
-//            try{
+            try{
                 auto idx = tri_pos_idx_mp.at(vert_pos);
                 tri_face.idx[j] = idx;
                 vert_face_mp[idx].faces.emplace_back(i);
                 this->indices[i * 3 + j] = idx;
-//            }
-//            catch(const std::exception& err){
-//                LOG_ERROR("vert pos error: i {}, j {}, {} {} {}, has: {}", i, j, vert_pos.x, vert_pos.y, vert_pos.z,
-//                          tri_pos_idx_mp.count(vert_pos));
-//            }
+            }
+            catch(const std::exception& err){
+                LOG_ERROR("vert pos error: i {}, j {}, {} {} {}, has: {}", i, j, vert_pos.x, vert_pos.y, vert_pos.z,
+                          tri_pos_idx_mp.count(vert_pos));
+            }
         }
     }
 
@@ -276,6 +278,10 @@ MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert
         NormalType norm;
         for(auto f : vert_face_mp.at(vert_idx).faces){
             norm += get_normal(f);
+        }
+        if(vert_face_mp.at(vert_idx).faces.size() == 1){
+            LOG_DEBUG("one face for vert : {}", vert_idx);
+            LOG_DEBUG("vert pos: {} {} {}", vert.x, vert.y, vert.z);
         }
         unique_norm[i] = norm.normalized();
     }

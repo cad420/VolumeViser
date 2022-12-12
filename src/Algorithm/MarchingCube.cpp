@@ -759,16 +759,15 @@ VISER_BEGIN
             uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
             uint32_t voxel_index = x + y * params.cu_mc_params.shape.x + z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y;
 
-            float3 p = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
             float3 vert[8];
-            vert[0] = p;
-            vert[1] = p + make_float3(params.cu_vol_params.space.x, 0.f, 0.f);
-            vert[2] = p + make_float3(params.cu_vol_params.space.x, params.cu_vol_params.space.y, 0.f);
-            vert[3] = p + make_float3(0.f, params.cu_vol_params.space.y, 0.f);
-            vert[4] = p + make_float3(0.f, 0.f, params.cu_vol_params.space.z);
-            vert[5] = p + make_float3(params.cu_vol_params.space.x, 0.f, params.cu_vol_params.space.z);
-            vert[6] = p + make_float3(params.cu_vol_params.space.x, params.cu_vol_params.space.y, params.cu_vol_params.space.z);
-            vert[7] = p + make_float3(0.f, params.cu_vol_params.space.y, params.cu_vol_params.space.z);
+            vert[0] = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
+            vert[1] = make_float3((voxel_coord.x + 1) + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
+            vert[2] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
+            vert[3] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
+            vert[4] = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[5] = make_float3((voxel_coord.x + 1) + 0.5f, voxel_coord.y + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[6] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[7] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
 
 
             float field[8];
@@ -868,27 +867,27 @@ VISER_BEGIN
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i];
                         cnt += 1;
-//                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[(i + 1) % 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
+                               field[i], field[(i + 1) % 4],
+                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 4; i < 8; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4 + 4] - params.cu_mc_params.isovalue) < 0.f){
-                        vert_list[12] += vert_list[i + 4];
+                        vert_list[12] += vert_list[i];
                         cnt += 1;
-//                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[(i + 1) % 4 + 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+                               field[i], field[(i + 1) % 4 + 4],
+                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 0; i < 4; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[i + 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i + 8];
                         cnt += 1;
-//                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[i + 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+                               field[i], field[i + 4],
+                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 if(cnt)
@@ -923,23 +922,23 @@ VISER_BEGIN
                     params.vertex_pos.at(index) = vert_list[a];
                     params.vertex_pos.at(index + 1) = vert_list[b];
                     params.vertex_pos.at(index + 2) = vert_list[c];
-//                    if(index == 11010 * 3) {
-//                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
-//                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
-//                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
-//                               m_case_idx, index,
-//                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
-//                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
-//                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
-//                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
-//                        );
-//                        for (int i = 0; i < 8; i++) {
-//                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
-//                        }
-//                        for(int i = 0; i < 13; i++){
-//                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
-//                        }
-//                    }
+                    if(index == 10941 * 3) {
+                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
+                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
+                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
+                               m_case_idx, index,
+                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
+                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
+                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
+                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
+                        );
+                        for (int i = 0; i < 8; i++) {
+                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
+                        }
+                        for(int i = 0; i < 13; i++){
+                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
+                        }
+                    }
                 }
             }
 

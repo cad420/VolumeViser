@@ -252,7 +252,7 @@ void VolRenderRescPack::UpdateDefaultLOD(ViserRescPack& _, float ratio) {
 
 std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vector<SWC::SWCPoint> &pts) {
     std::vector<BlockUID> ret;
-//#define MINIMUM_INTERSECT_BLOCKS
+#define MINIMUM_INTERSECT_BLOCKS
 #ifndef MINIMUM_INTERSECT_BLOCKS
     BoundingBox3D box;
     for(auto& pt : pts){
@@ -284,7 +284,9 @@ std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vecto
                                                 render_vol.lod0_block_dim,
                                                 render_vol.volume_bound,
                                                 box);
-        for(auto& b : tmp) st.insert(b);
+        for(auto& b : tmp)
+            st.insert(b);
+        tmp.clear();
     }
     for(auto& b : st)
         ret.push_back(b);
@@ -312,6 +314,10 @@ void SWCRescPack::LoadSWCFile(const std::string &filename) {
         CreateSWC(filename);
 
         for(auto& pt : swc_pts){
+            pt.x *= 0.00032f;
+            pt.y *= 0.00032f;
+            pt.z *= 0.00032f;
+            pt.radius *= 0.001f;
             InsertSWCPoint(pt);
         }
     }
@@ -737,5 +743,14 @@ void SWC2MeshRescPack::UpdateAllBlockMesh() {
     }
 }
 
+void SWC2MeshRescPack::SmoothMesh(float lambda, float mu, int iterations) {
+    if(!Selected() || mesh_status != Merged){
+        LOG_ERROR("SmoothMesh must set selected and merged before");
+        return;
+    }
+    GetSelected().mesh->Smooth(lambda, mu, iterations);
+
+    MeshUpdated();
+}
 
 //============================================================================================

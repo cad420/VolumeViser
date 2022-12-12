@@ -42,6 +42,8 @@ private:
 
     void show_editor_neuron_mesh_window(bool *p_open);
 
+    void show_smooth_mesh_window(bool* p_open);
+
     void show_debug_window(bool *p_open);
 private:
     void check_window_resize_event();
@@ -156,6 +158,12 @@ private:
     }vol_swc_render_framebuffer;
 
 
+    struct{
+        float lambda = 0.3;
+        float mu = -0.2;
+        int iterations = 100;
+    }mesh_smooth_priv_data;
+
     // 神经元网格绘制的OpenGL framebuffer资源
     struct{
         int frame_width = 0, frame_height = 0;
@@ -191,6 +199,8 @@ private:
         float vol_camera_view_ratation_speed = 0.f;
 
         bool vol_swc_blend_with_depth = false;
+
+        bool vol_render_swc = true;
     };
 
     struct{
@@ -203,5 +213,6 @@ private:
         bool swc_info_window_open = true;
         bool swc_tree_window_open = true;
         bool neuron_mesh_window_open = true;
+        bool smooth_mesh_window_open = false;
     };
 };

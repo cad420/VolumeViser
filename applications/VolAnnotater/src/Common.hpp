@@ -344,6 +344,12 @@ public:
     void UpdateMesh(Handle<Mesh> mesh) { if(Selected()) UpdateMesh(selected_mesh_uid, std::move(mesh)); }
 
     /**
+     * @brief 将当前Merged状态下的Mesh进行光滑操作，完成后会通知渲染器更新
+     * @note 一定要在Selected和Merged状态下
+     */
+    void SmoothMesh(float lambda, float mu, int iterations);
+
+    /**
      * @brief 将uid指定的block状态改为 status 如果这个block不存在 那么会调用CreateBlockMesh先创建
      */
     void SetBlockMeshStatus(const BlockUID& uid, BlockMeshStatus status);

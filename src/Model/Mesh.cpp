@@ -2,6 +2,7 @@
 // Created by wyz on 2022/11/11.
 //
 #include <Model/Mesh.hpp>
+#include <Algorithm/MeshSmooth.hpp>
 
 VISER_BEGIN
 
@@ -30,8 +31,12 @@ Mesh::~Mesh() {
 
 }
 
-void Mesh::Smooth() {
+void Mesh::Smooth(float lambda, float mu, int iterations) {
+    if(GetMeshShapeCount() > 1){
+        MergeShape();
+    }
 
+    MeshSmoothing(_->shapes.at(0), lambda, mu, iterations, 0);
 }
 
 void Mesh::Simplify() {

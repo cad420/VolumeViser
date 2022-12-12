@@ -28,7 +28,8 @@ void VolAnnotaterGUI::Initialize() {
     mesh_file_dialog.SetTitle("Neuron Mesh File");
     mesh_file_dialog.SetTypeFilters({MeshFile::MESH_FILENAME_EXT_OBJ});
 
-    swc2mesh_group.start(1);
+    swc2mesh_group.start(2);
+    render_group.start(2);
 
     status_flags |= VOL_DRAW_VOLUME | VOL_DRAW_SWC;
     if(vol_swc_blend_with_depth) status_flags |= VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
@@ -42,11 +43,11 @@ void VolAnnotaterGUI::initialize() {
     io.Fonts->AddFontFromFileTTF("EditorFont.TTF",  16, nullptr, nullptr);
     io.Fonts->Build();
 
-
-    Float3 default_pos = {4.1, 6.21, 7.f};
+//    Float3 default_pos = {4.1, 6.21, 7.f};
+    Float3 default_pos = {1.1, 1.21, 7.f};
 
     camera.set_position(default_pos);
-    camera.set_perspective(FOV, 0.001f, 6.f);
+    camera.set_perspective(FOV, 0.001f, 10.f);
     camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     camera.set_move_speed(0.01);
     camera.set_view_rotation_speed(0.001f);
@@ -138,25 +139,51 @@ void VolAnnotaterGUI::handle_events() {
 }
 
 void VolAnnotaterGUI::show_editor_ui() {
+    Timer timer;
+    timer.start();
     show_editor_menu(&editor_menu_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor menu");
+    timer.start();
     show_editor_vol_render_info_window(&vol_render_info_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor vol render info window");
+    timer.start();
     show_editor_vol_info_window(&vol_info_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor vol info window");
+    timer.start();
     show_editor_vol_render_window(&vol_render_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor vol render window");
+    timer.start();
     show_editor_mesh_render_info_window(&mesh_render_info_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor mesh render info window");
+    timer.start();
     show_editor_mesh_render_window(&mesh_render_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor mesh render window");
+    timer.start();
     show_editor_swc_window(&swc_info_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor swc window");
+    timer.start();
     show_editor_swc_tree_window(&swc_tree_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor swc tree window");
+    timer.start();
     show_editor_neuron_mesh_window(&neuron_mesh_window_open);
-
+    timer.stop();
+//    timer.print_duration("editor neuron mesh window");
+    timer.start();
+    show_smooth_mesh_window(&smooth_mesh_window_open);
+    timer.stop();
+//    timer.print_duration("smooth mesh window");
+    timer.start();
     show_debug_window(nullptr);
+    timer.stop();
+//    timer.print_duration("debug window");
 }
 
 void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
@@ -321,6 +348,10 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
             ImGui::TreePop();
         }
         if(ImGui::TreeNode("SWC Render Setting")){
+            if(ImGui::Checkbox("Render SWC", &vol_render_swc)){
+                if(vol_render_swc) status_flags |= VOL_DRAW_SWC;
+                else status_flags &= ~VOL_DRAW_SWC;
+            }
             if(ImGui::Checkbox("Blend With Depth", &vol_swc_blend_with_depth)){
                 if(vol_swc_blend_with_depth) status_flags |= VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
                 else status_flags &= ~VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
@@ -403,7 +434,7 @@ void VolAnnotaterGUI::show_editor_mesh_render_window(bool *p_open) {
             ImGui::End();
             return;
         }
-
+//        AutoTimer t("frame mesh render");
         frame_mesh_render();
 
     }
@@ -495,7 +526,10 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
                 auto& sel_swc = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).swc;
                 auto sel_swc_pt_id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
                 static char buffer[64] = {'\0'};
+                const int max_display_item = 32;
+                int display_items = 0;
                 for(auto it = sel_swc->begin(); it != sel_swc->end(); ++it){
+                    if(display_items++ > max_display_item) break;
                     ImGui::TableNextRow();
                     bool sel = it->first == sel_swc_pt_id;
                     ImGui::TableSetColumnIndex(0);
@@ -617,6 +651,13 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
             swc2mesh_resc->MergeAllBlockMesh();
 
         }
+        ImGui::SameLine();
+        if(ImGui::Button("Smooth Mesh", ImVec2(120, 18))){
+            smooth_mesh_window_open = !smooth_mesh_window_open;
+        }
+
+
+
         ImGuiTableFlags table_flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable
                                       | ImGuiTableFlags_Sortable | ImGuiTableFlags_SortMulti
                                       | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody
@@ -656,6 +697,26 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
 
         mesh_file_dialog.ClearSelected();
     }
+}
+
+void VolAnnotaterGUI::show_smooth_mesh_window(bool *p_open) {
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+
+    if(p_open && !*p_open) return;
+
+    if(ImGui::Begin("Mesh Smoothing Settings", p_open, window_flags)){
+        ImGui::SliderFloat("lambda", &mesh_smooth_priv_data.lambda, 0.f, 1.f);
+        ImGui::SliderFloat("mu", &mesh_smooth_priv_data.mu, -1.f, 0.f);
+        ImGui::SliderInt("iterations", &mesh_smooth_priv_data.iterations, 1, 1000);
+        if(ImGui::Button("Smoothing", ImVec2(120, 18))){
+            *p_open = false;
+            //这里不用多线程了 否则需要切换OpenGL Context
+            swc2mesh_resc->SmoothMesh(mesh_smooth_priv_data.lambda,
+                                      mesh_smooth_priv_data.mu,
+                                      mesh_smooth_priv_data.iterations);
+        }
+    }
+    ImGui::End();
 }
 
 void VolAnnotaterGUI::show_debug_window(bool *p_open) {
@@ -751,6 +812,7 @@ void VolAnnotaterGUI::frame_vol_render() {
 
 
     if(status_flags & VOL_DRAW_SWC){
+//        AutoTimer timer("render swc");
         render_swc();
     }
 
@@ -774,7 +836,7 @@ void VolAnnotaterGUI::frame_mesh_render() {
     }
 
     if(swc2mesh_resc->DrawMesh()){
-
+//        AutoTimer t("draw mesh");
         mesh_render_framebuffer.fbo.bind();
         GL_EXPR(glViewport(0, 0, w, h));
         mesh_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT0, mesh_render_framebuffer.color);
@@ -1327,7 +1389,6 @@ void VolAnnotaterGUI::generate_modified_mesh() {
 
     //通知mesh渲染器更新数据
     swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
-    swc2mesh_resc->MeshUpdated();
 
     //跑完mc后再释放pt
     viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);

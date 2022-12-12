@@ -216,10 +216,11 @@ VISER_BEGIN
         }
         CUB_GPU float4 ScalarToRGBA(const CTRVolumeRenderKernelParams& params,
                                     float scalar, uint32_t lod){
-            if(scalar > 0.3f){
-                return make_float4(1.f,0.5f,0.25f,0.6f);
-            }
-            else return make_float4(0.f);
+//            if(scalar > 0.3f){
+//                return make_float4(1.f,0.5f,0.25f,0.6f);
+//            }
+//            else return make_float4(0.f);
+            if(scalar < 0.3f) return make_float4(0.f);
             if(params.cu_per_frame_params.debug_mode == 3){
                 return make_float4(scalar, scalar, scalar, 1.f);
             }

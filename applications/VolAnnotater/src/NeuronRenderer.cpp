@@ -61,6 +61,8 @@ void NeuronRenderer::Draw(PatchID patch_id) {
     }
 
     auto& draw_patch = patches.at(patch_id);
+    if(draw_patch.ebo.index_count() == 0) return;
+
     draw_patch.vao.bind();
 
     GL_EXPR(glDrawElements(GL_TRIANGLES, draw_patch.ebo.index_count(), GL_UNSIGNED_INT, nullptr));

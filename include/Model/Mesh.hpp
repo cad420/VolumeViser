@@ -26,8 +26,14 @@ public:
 
     void Insert(MeshData data, int shape_index);
 
-    void Smooth();
+    /**
+     * @brief 会先调用MergeShape
+     */
+    void Smooth(float lambda, float mu, int iterations);
 
+    /**
+     * @brief 会先调用MergeShape
+     */
     void Simplify();
 
     void Lock() override;
