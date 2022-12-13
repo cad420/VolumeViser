@@ -29,6 +29,8 @@ VUTIL_GL_BEGIN
         double get_delta_cursor_x() const noexcept;
         double get_delta_cursor_y() const noexcept;
 
+        int get_y_scroll() const noexcept;
+
         void show_cursor(bool show);
         bool is_cursor_visible() const noexcept;
 
@@ -47,7 +49,7 @@ VUTIL_GL_BEGIN
     private:
         std::bitset<3> pre_frame_table;
         std::bitset<3> cur_frame_table;
-
+        int scroll_y = 0;
         double cur_x = 0, cur_y = 0;
         double rel_x = 0, rel_y = 0;
         bool show = true;
@@ -97,7 +99,7 @@ VUTIL_GL_BEGIN
         cur_frame_table.reset();
         cur_x = 0, cur_y = 0;
         rel_x = 0, rel_y = 0;
-
+        scroll_y = 0;
         if(!show)
             show_cursor(true);
     }
@@ -120,7 +122,12 @@ VUTIL_GL_BEGIN
     }
     inline void mouse_t::set_scroll( int offset )
     {
+        LOG_DEBUG("set scroll {}", offset);
+        scroll_y = offset;
+    }
 
+    inline int mouse_t::get_y_scroll() const noexcept {
+        return scroll_y;
     }
 
 VUTIL_GL_END

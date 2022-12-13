@@ -318,6 +318,7 @@ VUTIL_GL_BEGIN
         glfwSetMouseButtonCallback(impl->glfw_window,WindowParser::glfw_mouse_button_callback);
         glfwSetCharCallback(impl->glfw_window,WindowParser::glfw_char_callback);
 //	glfwSetCursorPosCallback(impl->glfw_window,WindowParser::glfw_cursor_callback);
+        glfwSetScrollCallback(impl->glfw_window, WindowParser::glfw_scroll_callback);
 
         resize();
 
