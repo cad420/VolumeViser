@@ -80,46 +80,48 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
     if(keys.size() > _->total_items){
         throw std::runtime_error("Too many keys for GPUPageTableMgr to GetAndLock");
     }
-
-    for(auto key : keys){
-        if(auto value = _->lru->get_value(key); value.has_value()){
-            auto [tid, coord] = value.value();
-            _->tex_table[tid][coord].rw_lk.lock_read();
-
-            items.push_back({key, {.sx = coord.x,
-                                   .sy = coord.y,
-                                   .sz = coord.z,
-                                   .tid = static_cast<uint16_t>(tid),
-                                   .flag = static_cast<uint16_t>(0u | TexCoordFlag_IsValid)}});
-        }
-        else{
-            if(_->freed.empty()){
-                auto [block_uid, tex_coord] = _->lru->back();
-                auto [tid, coord] = tex_coord;
-                _->tex_table[tid][coord].rw_lk.lock_write();
-                _->record_block_mp.erase(block_uid);
-                _->record_block_mp[key] = tex_coord;
-                _->lru->emplace_back(key, {tid, coord});
+    try {
+        for (auto key: keys) {
+            if (auto value = _->lru->get_value(key); value.has_value()) {
+                auto [tid, coord] = value.value();
+                _->tex_table[tid][coord].rw_lk.lock_read();
 
                 items.push_back({key, {.sx = coord.x,
-                                       .sy = coord.y,
-                                       .sz = coord.z,
-                                       .tid = static_cast<uint16_t>(tid),
-                                       .flag = static_cast<uint16_t>(0u)}});
+                        .sy = coord.y,
+                        .sz = coord.z,
+                        .tid = static_cast<uint16_t>(tid),
+                        .flag = static_cast<uint16_t>(0u | TexCoordFlag_IsValid)}});
+            } else {
+                if (_->freed.empty()) {
+                    auto [block_uid, tex_coord] = _->lru->back();
+                    auto [tid, coord] = tex_coord;
+                    _->tex_table[tid][coord].rw_lk.lock_write();
+                    _->record_block_mp.erase(block_uid);
+                    _->record_block_mp[key] = tex_coord;
+                    _->lru->emplace_back(key, {tid, coord});
+
+                    items.push_back({key, {.sx = coord.x,
+                            .sy = coord.y,
+                            .sz = coord.z,
+                            .tid = static_cast<uint16_t>(tid),
+                            .flag = static_cast<uint16_t>(0u)}});
+                } else {
+                    auto [tid, coord] = _->freed.front();
+                    _->freed.pop();
+                    _->tex_table[tid][coord].rw_lk.lock_write();
+                    _->record_block_mp[key] = {tid, coord};
+                    _->lru->emplace_back(key, {tid, coord});
+                    items.push_back({key, {.sx = coord.x,
+                            .sy = coord.y,
+                            .sz = coord.z,
+                            .tid = static_cast<uint16_t>(tid),
+                            .flag = static_cast<uint16_t>(0u)}});
+                };
             }
-            else {
-                auto [tid, coord] = _->freed.front();
-                _->freed.pop();
-                _->tex_table[tid][coord].rw_lk.lock_write();
-                _->record_block_mp[key] = {tid, coord};
-                _->lru->emplace_back(key, {tid, coord});
-                items.push_back({key, {.sx = coord.x,
-                                       .sy = coord.y,
-                                       .sz = coord.z,
-                                       .tid = static_cast<uint16_t>(tid),
-                                       .flag = static_cast<uint16_t>(0u)}});
-            };
         }
+    }catch(const std::exception& err){
+        LOG_ERROR("GetAndLock error : {}", err.what());
+        exit(0);
     }
 }
 

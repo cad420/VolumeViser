@@ -66,7 +66,7 @@ VUTIL_BEGIN
     template <typename T>
     void image2d_t<T>::initialize( int w, int h, const T &init_val )
     {
-        *this = image2d_t<T>({w,h},init_val);
+        *this = image2d_t<T>(w,h,init_val);
     }
 
     template <typename T>

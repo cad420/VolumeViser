@@ -113,6 +113,13 @@ public:
 
     bool IsRoot(SWCPointKey id) noexcept;
 
+    // if a is root of b
+    bool IsRoot(SWCPointKey a, SWCPointKey b) noexcept;
+
+    SWCPointKey GetFirstCommonRoot(SWCPointKey a, SWCPointKey b) noexcept;
+
+    int GetNodeToRootLength(SWCPointKey a) noexcept;
+
     std::vector<SWCPointKey> GetNodeKids(SWCPointKey id) noexcept;
 
     void DeleteNode(SWCPointKey id, bool connect = false) noexcept;

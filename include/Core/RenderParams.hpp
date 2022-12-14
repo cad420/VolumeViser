@@ -18,7 +18,7 @@ template<typename K, typename V>
 struct TransferFuncT{
     using Key = K;
     using Value = V;
-    std::map<Key, Value> pts;
+    mutable std::map<Key, Value> pts;
 
     std::vector<Value> Gen1DTF(int dim = 256) const ;
 
@@ -78,6 +78,7 @@ struct RenderParams{
         int dim = 256;
     }tf;
     struct {
+        bool updated = false;
         bool use_2d_tf = false;
         float ray_step = 0.f;
         float max_ray_dist = 0.f;

@@ -10,7 +10,7 @@ public:
         int preserved_indices_per_patch = 128;
     };
 
-    using Vertex = vec4f;// pos:vec3 + radius:float
+    using Vertex = vec4f;// pos:vec3 + swc_id:int as float
 
     explicit SWCRenderer(const SWCRendererCreateInfo& info);
 
@@ -26,8 +26,13 @@ public:
     //对于标注线，如果中间的点删了，则需要直接删除整条线的数据然后重新添加该条线的所有数据
     void DeleteLine(PatchID patch_id);
 
-    void Draw(const mat4& view, const mat4& proj);
+    void Draw(const mat4& view, const mat4& proj, bool tag = false);
 
+    void Set(SWCPointKey a, SWCPointKey b);
+
+    void AddVertex(Vertex& v);
+
+    void ClearVertex();
 
 private:
     int preserved_vertices_per_patch;
@@ -41,9 +46,17 @@ private:
         int loaded_vertices_count;
         int loaded_indices_count;
     };
+    //画点
+    struct DrawTag{
+        mat4 model;
+        vertex_array_t vao;
+        vertex_buffer_t<Vertex> vbo;
+        int loaded_vertices_count = 0;
+    };
     struct Patch{
         std::unordered_map<Vertex, uint32_t> vertices_mp;
         DrawPatch draw_patch;
+        DrawTag draw_tag;
         uint32_t idx = 0;
     };
     std::unordered_map<size_t, Patch> patches;
@@ -54,6 +67,9 @@ private:
     }transform_params;
     std140_uniform_block_buffer_t<TransformParams> transform_params_buffer;
     program_t shader;
+
+    program_t pt_shader;
 private:
     void ExpandIfFull(DrawPatch& patch);
+    void ExpandIfFull(DrawTag& tag);
 };

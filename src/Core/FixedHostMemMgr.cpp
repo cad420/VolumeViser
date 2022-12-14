@@ -55,19 +55,28 @@ UnifiedRescUID FixedHostMemMgr::GetUID() const {
 }
 
 Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
-    auto value = _->lru->get_value(uid);
-    if(value.has_value()){
-        return value.value();
-    }
-    else{
-        if(_->freed.empty()){
-            _->lru->back().first = uid;
+    try {
+        auto value = _->lru->get_value(uid);
+        LOG_DEBUG("000 {}", uid);
+        if (value.has_value()) {
+            LOG_DEBUG("111 {}", uid);
+            return value.value();
+        } else {
+            if (_->freed.empty()) {
+                _->lru->emplace_back(uid, std::move(_->lru->back().second));
+                LOG_DEBUG("222 {}", uid);
+            } else {
+                _->lru->emplace_back(uid, std::move(_->freed.front()));
+                _->freed.pop();
+                LOG_DEBUG("333 {}", uid);
+            }
+            LOG_DEBUG("444 {}", uid);
+            return _->lru->get_value(uid).value();
         }
-        else{
-            _->lru->emplace_back(uid, std::move(_->freed.front()));
-            _->freed.pop();
-        }
-        return _->lru->get_value(uid).value();
+    } catch (const std::exception& err) {
+        auto id = GridVolume::BlockUID(uid);
+        LOG_ERROR("GetBlock error : {}, block uid: {}, {} {} {} {}", err.what(),
+                  uid, id.x, id.y, id.z, id.GetLOD());
     }
 }
 

@@ -15,6 +15,7 @@
 
 #include <set>
 #include <fstream>
+#include <unordered_set>
 
 using namespace viser;
 using namespace vutil;
@@ -130,6 +131,8 @@ public:
 
     void UpdateDefaultLOD(ViserRescPack& _, float ratio = 1.f);
 
+    void UpdateTransferFunc(const std::vector<std::pair<float, Float4>>& pts);
+
     std::vector<BlockUID> ComputeIntersectBlocks(const std::vector<SWC::SWCPoint>& pts);
 };
 
@@ -141,6 +144,42 @@ using MeshUID = viser::UnifiedRescUID;
 
 constexpr size_t SWC_MAX_NEURON_NUM = 1024ull;
 constexpr size_t SWC_MAX_POINT_NUM = 1ull << 16;
+
+struct DrawTreeNode;
+struct DrawPoint{
+    Float2 pos;
+    int draw_id = -1;
+    SWCPointKey pt_id;
+};
+struct SWCDrawTree{
+public:
+    DrawTreeNode* draw_tree_root = nullptr;
+
+    std::vector<std::pair<Float2, Float2>> draw_lines;
+
+    std::vector<DrawPoint> draw_points;
+
+    std::unordered_set<SWCPointKey> draw_segment_points;
+
+    Handle<SWC> swc;
+public:
+
+    void Build(Handle<SWC> swc);
+
+    //计算两个点之间的所有点，不包括端点
+    void SelSegPoints(SWCPointKey a, SWCPointKey b);
+
+    bool PointInsideSeg(SWCPointKey a) { return draw_segment_points.count(a);}
+
+private:
+    //只用于画线的信息，丢失了SWCPoint相关的信息
+    std::vector<std::pair<Float2, Float2>> CalcDrawLines();
+
+    //SWCPoint映射到平面上的点信息，用于辅助点选中
+    std::vector<DrawPoint> CalcDrawSWCPoints();
+
+};
+
 /**
  * @brief SWC标注和渲染相关资源
  */
@@ -175,6 +214,12 @@ public:
 
         SWCPointKey last_picked_swc_pt_id = SWC::INVALID_SWC_KEY;
 
+        //当swc被更新时需要重新build
+        SWCDrawTree swc_draw_tree;
+
+        int picked_count = 1;
+        std::queue<SWCPointKey> picked_swc_pt_q;
+
         void Reset(){
             available_neuron_ids.clear();
             for(size_t i = 1; i <= SWC_MAX_NEURON_NUM; i++){
@@ -188,6 +233,9 @@ public:
             pt_to_neuron_mp.clear();
 
             last_picked_swc_pt_id = SWC::INVALID_SWC_KEY;
+
+            while(!picked_swc_pt_q.empty()) picked_swc_pt_q.pop();
+            for(int i = 0; i < picked_count; i++) picked_swc_pt_q.push(0);
         }
     }swc_priv_data;
 
@@ -197,6 +245,16 @@ public:
     bool Selected() const { return CheckUnifiedRescUID(selected_swc_uid) && loaded_swc.count(selected_swc_uid); }
 
     SWCInfo& GetSelected() { return loaded_swc.at(selected_swc_uid); }
+
+    /**
+     * @brief 记录一个被选中的swc point id，自动保持最近2个被选中的
+     * 会先检查是否合法的id 如果不合法 则不加入 不抛出异常
+     */
+    void AddPickedSWCPoint(SWCPointKey id);
+
+    void UpdatePickedSWCSegmentPoints();
+
+    void SetSWCPointPickSize(int s);
 
     void Initialize();
     /**
@@ -405,3 +463,6 @@ inline std::string ToString(SWC2MeshRescPack::BlockMeshStatus status){
         assert(false);
     }
 }
+
+
+

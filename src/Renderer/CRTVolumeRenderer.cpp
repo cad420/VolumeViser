@@ -753,9 +753,9 @@ VISER_BEGIN
             info.width_bytes = sizeof(TransferFunc::Value) * render_params.tf.dim;
             info.height = info.depth = 1;
             auto v = _->tf1d->view_1d<float4>(256);
-//            for(int i = 0; i < 256; i++){
-//                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w << std::endl;
-//            }
+            for(int i = 0; i < 256; i++){
+                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w << std::endl;
+            }
             cub::cu_memory_transfer(*_->tf1d, *_->cu_tf_tex, info).launch(_->render_stream);
             info.height = render_params.tf.dim;
             cub::cu_memory_transfer(*_->tf2d, *_->cu_2d_tf_tex, info).launch(_->render_stream);
@@ -763,7 +763,7 @@ VISER_BEGIN
             _->kernel_params.cu_tf_tex = _->cu_tf_tex->_get_tex_handle();
             _->kernel_params.cu_2d_tf_tex = _->cu_2d_tf_tex->_get_tex_handle();
         }
-        {
+        if(render_params.other.updated){
             _->kernel_params.cu_render_params.ray_step = render_params.other.ray_step;
             _->kernel_params.cu_render_params.max_ray_dist = render_params.other.max_ray_dist;
             _->kernel_params.cu_render_params.inv_tex_shape = float3{

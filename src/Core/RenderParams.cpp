@@ -5,9 +5,13 @@ VISER_BEGIN
     namespace{
     template<typename Key, typename Value>
     void Gen1DTFImpl(const TransferFuncT<Key, Value>& tf, Value* ptr, int dim){
+        if(tf.pts.empty()) return;
+        std::memset(ptr, 0, sizeof(Value) * dim);
         double dt = 1.0 / dim;
         bool first = true;
         int last = -1;
+        tf.pts[0] = tf.pts.begin()->second;
+        tf.pts[1.f] = std::prev(tf.pts.end())->second;
         for(auto& pt : tf.pts){
             int cur = std::max<int>(0, std::floor<int>(static_cast<int>(pt.first * dim) - 0.5));
             ptr[cur] = pt.second;

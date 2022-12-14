@@ -38,6 +38,8 @@ private:
 
     void show_editor_swc_window(bool* p_open);
 
+    void show_editor_swc_op_window(bool* p_open);
+
     void show_editor_swc_tree_window(bool* p_open);
 
     void show_editor_neuron_mesh_window(bool *p_open);
@@ -74,6 +76,12 @@ private:
 
     void update_vol_render_per_frame_params(PerFrameParams& params);
 
+    // 负责查询鼠标点击处是否有对应的swc point，如果有则记录并返回true
+    bool pick_swc_point();
+
+    //更新一些状态量，以及被选中后的渲染颜色
+    void process_picked_swc_point();
+
     // 点查询 与体绘制(render_volume)串行
     bool query_volume();
 
@@ -83,6 +91,7 @@ private:
 
     bool can_start_annotating();
 
+    //todo rename to is_editing
     bool is_annotating();
 
     void check_and_add_swc_pt();
@@ -126,6 +135,7 @@ private:
         vec2i swc_view_window_size = {0, 0};
         vec2i swc_view_window_pos = {0, 0};
         bool swc_view_resize = false;
+        bool vol_mesh_render_hovered = false;
     }window_priv_data;
 
     enum Status : size_t{
@@ -134,11 +144,19 @@ private:
         VOL_ANNOTATING = 1ull << 2,
         VOL_DRAW_VOLUME = 1ull << 3,
         VOL_DRAW_SWC = 1ull << 4,
-        VOL_SWC_VOLUME_BLEND_WITH_DEPTH = 1ull << 5
+        VOL_SWC_VOLUME_BLEND_WITH_DEPTH = 1ull << 5,
+        VOL_DRAW_SWC_TAG = 1ull << 6,
+        VOL_RENDER_PARAMS_CHANGED = 1ull << 7
     };
 
     size_t status_flags = 0;
 
+
+    enum SWCOpStatus{
+        SWC_OP_Point,
+        SWC_OP_Segment
+    };
+    SWCOpStatus swc_op = SWC_OP_Point;
 
     //体绘制 用于opengl cuda资源交互相关
     struct{
@@ -155,6 +173,8 @@ private:
         renderbuffer_t rbo;
         texture2d_t color;
         texture2d_t depth;
+        texture2d_t hash_id;
+        vutil::image2d_t<int> m_hash_id;
     }vol_swc_render_framebuffer;
 
 
@@ -201,6 +221,10 @@ private:
         bool vol_swc_blend_with_depth = false;
 
         bool vol_render_swc = true;
+
+        bool vol_render_swc_point_tag = false;
+
+        bool vol_render_volume = true;
     };
 
     struct{
@@ -211,6 +235,7 @@ private:
         bool mesh_render_info_window_open = true;
         bool mesh_render_window_open = true;
         bool swc_info_window_open = true;
+        bool swc_op_window_open = true;
         bool swc_tree_window_open = true;
         bool neuron_mesh_window_open = true;
         bool smooth_mesh_window_open = false;

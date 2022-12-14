@@ -4,6 +4,7 @@
 #include "SWCRenderer.hpp"
 #include "NeuronRenderer.hpp"
 #include <unordered_set>
+#include <algorithm>
 
 //============================================================================================
 void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
@@ -210,11 +211,12 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
     render_params.lod.updated = true;
     render_params.lod.leve_of_dist = lod;
     render_params.tf.updated = true;
-    render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
+//    render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
     render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 1.f, 0.5f, 0.f);
     render_params.tf.tf_pts.pts[0.6f] = Float4(1.f, 0.5f, 0.f, 1.f);
     render_params.tf.tf_pts.pts[0.96f] = Float4(1.f, 0.5f, 0.f, 1.f);
-    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
+//    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
+    render_params.other.updated = true;
     render_params.other.ray_step = render_base_space * 0.5;
     render_params.other.max_ray_dist = 6.f;
     render_params.other.inv_tex_shape = Float3(1.f / AppSettings::VTexShape.x,
@@ -227,6 +229,16 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
         crt_vol_renderer->BindVTexture(handle, unit);
     }
 
+}
+
+void VolRenderRescPack::UpdateTransferFunc(const std::vector<std::pair<float, Float4>>& pts){
+    RenderParams render_params;
+    render_params.tf.updated = true;
+    for (auto &pt : pts)
+    {
+        render_params.tf.tf_pts.pts[pt.first] = pt.second;
+    }
+    crt_vol_renderer->SetRenderParams(render_params);
 }
 
 void VolRenderRescPack::UpdateUpBoundLOD(ViserRescPack& _, float fov_rad, float ratio) {
@@ -294,12 +306,15 @@ std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vecto
     return ret;
 }
 
+
 //============================================================================================
 
 void SWCRescPack::Initialize() {
     swc_file = NewHandle<SWCFile>(viser::RescAccess::Unique);
 
     swc_renderer = std::make_unique<SWCRenderer>(SWCRenderer::SWCRendererCreateInfo{});
+
+
 }
 
 void SWCRescPack::LoadSWCFile(const std::string &filename) {
@@ -314,12 +329,14 @@ void SWCRescPack::LoadSWCFile(const std::string &filename) {
         CreateSWC(filename);
 
         for(auto& pt : swc_pts){
-            pt.x *= 0.00032f;
-            pt.y *= 0.00032f;
-            pt.z *= 0.00032f;
+            pt.x *= 0.001f;
+            pt.y *= 0.001f;
+            pt.z *= 0.001f;
             pt.radius *= 0.001f;
             InsertSWCPoint(pt);
         }
+
+        swc_priv_data.swc_draw_tree.Build(GetSelected().swc);
     }
     catch (const ViserFileOpenError& err) {
         LOG_ERROR("LoadSWCFile error : {}", err.what());
@@ -386,8 +403,8 @@ void SWCRescPack::SelectSWC(SWCUID swc_id) {
         int root = swc->GetNodeRoot(line[0].id);
         auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
         for(int i = 1; i < n; i++){
-            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, line[i - 1].radius);
-            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, line[i].radius);
+            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, vutil::intBitsToFloat(line[i - 1].id));
+            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, vutil::intBitsToFloat(line[i].id));
             swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
         }
     }
@@ -406,13 +423,23 @@ void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
         pt.pid = -1;
     }
     else{
+        if(pt.pid != 0){
+//            swc_priv_data.last_picked_swc_pt_id = pt.pid;
+            AddPickedSWCPoint(pt.pid);
+        }
+
         pt.pid = swc_priv_data.last_picked_swc_pt_id;
     }
     if(swc_priv_data.available_swc_pt_ids.empty()){
         throw std::runtime_error("ERROR: Available SWC Point IDS Not Enough!!!");
     }
-    auto id = *swc_priv_data.available_swc_pt_ids.begin();
-    swc_priv_data.available_swc_pt_ids.erase(swc_priv_data.available_swc_pt_ids.begin());
+
+    SWCNeuronID id;
+    if(pt.id == 0)
+        id = *swc_priv_data.available_swc_pt_ids.begin();
+    else
+        id = pt.id;
+    swc_priv_data.available_swc_pt_ids.erase(id);
     pt.id = id;
 
     swc->InsertNodeLeaf(pt);
@@ -425,20 +452,20 @@ void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
         auto neuron_id = *swc_priv_data.available_neuron_ids.begin();
         swc_priv_data.available_neuron_ids.erase(swc_priv_data.available_neuron_ids.begin());
         swc_priv_data.pt_to_neuron_mp[pt.id] = neuron_id;
-        swc_renderer->InitLine({vec4f(pt.x, pt.y, pt.z, pt.radius)}, {}, neuron_id);
+        swc_renderer->InitLine({vec4f(pt.x, pt.y, pt.z, vutil::intBitsToFloat(pt.id))}, {}, neuron_id);
     }
     else{
         //与上一次选中的点形成一条线
         auto neuron_id = swc_priv_data.pt_to_neuron_mp.at(swc->GetNodeRoot(pt.pid));
-        vec4f cur_vert = vec4f(pt.x, pt.y, pt.z, pt.radius);
+        vec4f cur_vert = vec4f(pt.x, pt.y, pt.z, vutil::intBitsToFloat(pt.id));
         auto prev_node = swc->GetNode(pt.pid);
-        auto prev_vert = vec4f(prev_node.x, prev_node.y, prev_node.z, prev_node.radius);
+        auto prev_vert = vec4f(prev_node.x, prev_node.y, prev_node.z, vutil::intBitsToFloat(prev_node.id));
         swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
     }
     //更新最新一次选中的点
     //默认当成功插入一个点后 该点成为最新一次选中的点
-    swc_priv_data.last_picked_swc_pt_id = pt.id;
-
+//    swc_priv_data.last_picked_swc_pt_id = pt.id;
+    AddPickedSWCPoint(pt.id);
 }
 
 void SWCRescPack::SaveSWCToFile(){
@@ -506,6 +533,35 @@ void SWCRescPack::DeleteSWCMesh() {
 void SWCRescPack::Commit() {
     assert(Selected());
     loaded_swc.at(selected_swc_uid).swc->Commit();
+}
+void SWCRescPack::AddPickedSWCPoint(SWCPointKey id){
+    assert(id > 0);
+    swc_priv_data.picked_swc_pt_q.push(id);
+    if(swc_priv_data.picked_swc_pt_q.size() > swc_priv_data.picked_count){
+        swc_priv_data.picked_swc_pt_q.pop();
+    }
+    assert(swc_priv_data.picked_swc_pt_q.size() == swc_priv_data.picked_count);
+    swc_renderer->Set(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
+
+    swc_priv_data.last_picked_swc_pt_id = id;
+
+}
+void SWCRescPack::SetSWCPointPickSize(int s)
+{
+    swc_priv_data.picked_count = s;
+    while(swc_priv_data.picked_swc_pt_q.size() > s) swc_priv_data.picked_swc_pt_q.pop();
+    if(!swc_priv_data.picked_swc_pt_q.empty() && swc_priv_data.picked_swc_pt_q.size() < s){
+        auto t = swc_priv_data.picked_swc_pt_q.front();
+        swc_priv_data.picked_swc_pt_q.pop();
+        swc_priv_data.picked_swc_pt_q.push(0);
+        swc_priv_data.picked_swc_pt_q.push(t);
+    }
+    if(!swc_priv_data.picked_swc_pt_q.empty())
+        swc_renderer->Set(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
+}
+void SWCRescPack::UpdatePickedSWCSegmentPoints()
+{
+    swc_priv_data.swc_draw_tree.SelSegPoints(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
 }
 
 //============================================================================================
@@ -754,3 +810,251 @@ void SWC2MeshRescPack::SmoothMesh(float lambda, float mu, int iterations) {
 }
 
 //============================================================================================
+
+
+using TreeNodeEleT = SWC::SWCPoint;
+struct TreeNode{
+    TreeNodeEleT data;
+    int longest_depth = 0;
+    float longest_path_length = 0.f;
+    std::vector<TreeNode*> kids;
+};
+struct DrawTreeNode{
+    Float2 pos;
+    TreeNode* swc_node;
+    DrawTreeNode* next = nullptr;//水平下一个子节点
+    std::vector<DrawTreeNode*> up;//往上的子节点
+    std::vector<DrawTreeNode*> down;//往下的子节点
+};
+
+
+
+void SWCDrawTree::Build(Handle<SWC> swc) {
+
+    //传入的只能有一个根节点
+    std::unordered_map<SWC::SWCPointKey, TreeNode*> mp;
+    TreeNode* root = nullptr;
+    int swc_pt_count = 0;
+    for(auto it = swc->begin(); it != swc->end(); ++it){
+        auto key = it->first;
+        auto& pt = it->second;
+        auto node = new TreeNode();
+        node->data = pt;
+        assert(mp.count(key) == 0);
+        mp[key] = node;
+        if(pt.pid == -1)
+            root = node;
+        swc_pt_count += 1;
+    }
+    for(auto& [key, node] : mp){
+        auto pid = node->data.pid;
+        if(pid != -1){
+            mp.at(pid)->kids.push_back(node);
+        }
+    }
+    VISER_WHEN_DEBUG(
+    std::function<int(TreeNode*)> dfs_count = [&](TreeNode* node){
+        if(!node) return 0;
+        int cnt = 1;
+        for(auto kid : node->kids){
+            cnt += dfs_count(kid);
+        }
+        return cnt;
+    };
+    auto swc_pt_count_check = dfs_count(root);
+    LOG_DEBUG("swc pt count {}, check {}", swc_pt_count, swc_pt_count_check);
+    assert(swc_pt_count_check == swc_pt_count);
+    )
+
+    LOG_DEBUG("Build SWC Tree ok...");
+
+    auto calc_dist = [](TreeNode* a, TreeNode* b){
+        return Float3(a->data.x - b->data.x, a->data.y - b->data.y, a->data.z - b->data.z).length();
+    };
+
+    std::function<int(TreeNode*)> calc_longest_path_length = [&](TreeNode* node){
+        if(!node) return 0;
+        int len = 0;
+        float dist = 0.f;
+        for(auto kid : node->kids){
+            auto l = calc_longest_path_length(kid);
+            if(len < l){
+                len = l;
+                dist = kid->longest_path_length + calc_dist(node, kid);
+            }
+        }
+        node->longest_depth = len + 1;
+        node->longest_path_length = dist;
+        return len + 1;
+    };
+
+    int longest_depth = calc_longest_path_length(root);
+    LOG_DEBUG("SWC Tree Longest Path Length is {}", longest_depth);
+
+    DrawTreeNode* draw_root = nullptr;
+
+    const int MaxLevel = 16;
+    std::map<int, float> levels;
+    for(int level = 0; level <= MaxLevel; level++)
+        levels[level] = levels[-level] = std::numeric_limits<float>::max();
+
+
+    std::function<DrawTreeNode*(TreeNode*, float, float, int)> calc_2d = [&](TreeNode* node, float x, float y, int base)->DrawTreeNode*{
+        if(!node) return nullptr;
+
+        auto draw_node = new DrawTreeNode();
+        draw_node->swc_node = node;
+        draw_node->pos = Float2(x, y);
+        //降序排序 按最长路径的节点个数 路径的长度可能不是最长的 没关系
+        std::sort(node->kids.begin(), node->kids.end(), [](TreeNode* a, TreeNode* b){
+            return a->longest_depth > b->longest_depth;
+        });
+        int n = node->kids.size();
+        if(n == 0){
+            //没有子节点
+
+        }
+        else{
+            //只有一个水平的子节点
+            auto& swc_pt = node->data;
+            auto& swc_pt1 = node->kids.front()->data;
+            auto dist = Float3(swc_pt.x - swc_pt1.x, swc_pt.y - swc_pt1.y, swc_pt.z - swc_pt1.z).length();
+            draw_node->next = calc_2d(node->kids.front(), x + dist, y, base);
+            if(n > 1){
+
+                auto search_level = [&](int level, float tx, float x)->bool{
+                    if(tx < levels[level] - 0.001f){
+                        levels[level] = x;
+                        for(int i = 1; i < level; i ++)
+                            levels[i] = std::min(x, levels[i]);
+                        for(int i = -1; i > level; i--)
+                            levels[i] = std::min(x, levels[i]);
+                        return true;
+                    }
+                    else return false;
+                };
+
+                for(int i = 1; i < n; i++){
+                    for(int level = std::abs(base) + 1; level <= MaxLevel; level++){
+                        float nx = x + calc_dist(node, node->kids[i]);
+                        float tx = nx + node->kids[i]->longest_path_length;
+                        if(base >= 0 && search_level(level, tx, x)){
+                            auto& t = draw_node->up.emplace_back();
+                            t = calc_2d(node->kids[i], nx, level, level);
+                            break;
+                        }
+                        if(base <= 0 && search_level(-level, tx, x)){
+                            auto& t = draw_node->down.emplace_back();
+                            t = calc_2d(node->kids[i], nx, -level, -level);
+                            break;
+                        }
+                    }
+                }
+
+            }
+        }
+
+        return draw_node;
+    };
+    draw_root = calc_2d(root, 0.f, 0.f, 0);
+
+    this->draw_tree_root = draw_root;
+
+    this->draw_lines = CalcDrawLines();
+
+    this->draw_points = CalcDrawSWCPoints();
+
+    this->swc = std::move(swc);
+}
+
+std::vector<std::pair<Float2, Float2>> SWCDrawTree::CalcDrawLines() {
+    std::vector<std::pair<Float2, Float2>> ret;
+
+    std::function<void(DrawTreeNode*)> dfs = [&](DrawTreeNode* node){
+        if(!node) return;
+        if(node->next){
+            ret.emplace_back(node->pos, node->next->pos);
+            dfs(node->next);
+        }
+        if(!node->up.empty()){
+            auto h = node->up.back()->pos.y - node->pos.y;
+            auto x = node->pos.x;
+            ret.emplace_back(node->pos, node->pos + Float2(0, h));
+            for(auto kid : node->up){
+                ret.emplace_back(Float2(x, kid->pos.y), kid->pos);
+                dfs(kid);
+            }
+        }
+        if(!node->down.empty()){
+            auto h = node->down.back()->pos.y - node->pos.y;
+            auto x = node->pos.x;
+            ret.emplace_back(node->pos, node->pos + Float2(0, h));
+            for(auto kid : node->down){
+                ret.emplace_back(Float2(x, kid->pos.y), kid->pos);
+                dfs(kid);
+            }
+        }
+    };
+    dfs(draw_tree_root);
+
+    return ret;
+}
+
+std::vector<DrawPoint> SWCDrawTree::CalcDrawSWCPoints() {
+    std::vector<DrawPoint> ret;
+    int id = 0;
+
+    std::function<void(DrawTreeNode*)> dfs = [&](DrawTreeNode* node){
+        if(!node) return;
+        auto& p = ret.emplace_back();
+        p.pos = node->pos;
+        p.draw_id = id++;
+        p.pt_id = node->swc_node->data.id;
+        dfs(node->next);
+        for(auto kid : node->up) dfs(kid);
+        for(auto kid : node->down) dfs(kid);
+    };
+
+    dfs(draw_tree_root);
+
+    return ret;
+}
+void SWCDrawTree::SelSegPoints(SWCPointKey a, SWCPointKey b){
+    assert(swc.IsValid());
+
+    if(!swc->QueryNode(a) || !swc->QueryNode(b)){
+        LOG_DEBUG("SelSegPoints with invalid a or b");
+        return;
+    }
+
+    if(!swc->CheckConnection(a, b)){
+        LOG_ERROR("SelSegPoints: a and b are not connected");
+    }
+    draw_segment_points.clear();
+
+    int p = swc->GetFirstCommonRoot(a, b);
+    if(p == b){
+        std::swap(a, b);
+        p = a;
+    }
+    if(p == a){
+        for(auto it = swc->begin(); it != swc->end(); ++it){
+            bool ok1 = swc->IsRoot(a, it->first);
+            bool ok2 = swc->IsRoot(it->first, b);
+            if(ok1 && ok2){
+                draw_segment_points.insert(it->first);
+            }
+        }
+    }
+    else{
+        for(auto it = swc->begin(); it != swc->end(); ++it){
+            bool ok1 = swc->IsRoot(p, it->first);
+            bool ok2 = swc->IsRoot(it->first, a);
+            ok2 = ok2 || swc->IsRoot(it->first, b);
+            if(ok1 && ok2){
+                draw_segment_points.insert(it->first);
+            }
+        }
+    }
+
+}

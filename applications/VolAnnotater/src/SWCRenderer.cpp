@@ -5,6 +5,13 @@ SWCRenderer::SWCRenderer(const SWCRenderer::SWCRendererCreateInfo &info) {
             shader_t<GL_VERTEX_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/line_shading.vert"),
             shader_t<GL_FRAGMENT_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/line_shading.frag")
             );
+
+    pt_shader = program_t::build_from(
+        shader_t<GL_VERTEX_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.vert"),
+        shader_t<GL_FRAGMENT_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.frag"),
+        shader_t<GL_GEOMETRY_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.geom")
+        );
+
     preserved_vertices_per_patch = info.preserved_vertices_per_patch;
     preserved_indices_per_patch = info.preserved_indices_per_patch;
 
@@ -28,13 +35,16 @@ void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vecto
     assert(preserved_indices_per_patch && preserved_vertices_per_patch);
     auto& patch = patches[patch_id];
     auto& draw_patch = patch.draw_patch;
+    auto& draw_tag = patch.draw_tag;
     draw_patch.model = model;
+    draw_tag.model = model;
     for(auto& vert : vertices){
         patch.vertices_mp[vert] = patch.idx++;
     }
     int vsize = vertices.size(), isize = indices.size();
     draw_patch.loaded_vertices_count = vsize;
     draw_patch.loaded_indices_count = isize;
+    draw_tag.loaded_vertices_count = vsize;
     // note vertices.size() == 0
     int vcnt = std::max(1, (vsize + preserved_vertices_per_patch - 1) / preserved_vertices_per_patch);
     int icnt = std::max(1, (isize + preserved_indices_per_patch - 1) / preserved_indices_per_patch);
@@ -48,8 +58,15 @@ void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vecto
     draw_patch.vao.bind_index_buffer(draw_patch.ebo);
     draw_patch.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), draw_patch.vbo, 0);
     draw_patch.vao.enable_attrib(attrib_var_t<Vertex>(0));
-    if(vertices.size() > 0)
+    draw_tag.vao.initialize_handle();
+    draw_tag.vbo.initialize_handle();
+    draw_tag.vbo.reinitialize_buffer_data(nullptr, vsize, GL_DYNAMIC_DRAW);
+    draw_tag.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), draw_tag.vbo, 0);
+    draw_tag.vao.enable_attrib(attrib_var_t<Vertex>(0));
+    if(vertices.size() > 0){
         draw_patch.vbo.set_buffer_data(vertices.data(), 0, vertices.size());
+        draw_tag.vbo.set_buffer_data(vertices.data(), 0, vertices.size());
+    }
     if(indices.size() > 0)
         draw_patch.ebo.set_buffer_data(indices.data(), 0, indices.size());
 }
@@ -60,6 +77,7 @@ void SWCRenderer::AddLine(const SWCRenderer::Vertex &vertex_a, const SWCRenderer
     }
     auto& patch = patches.at(patch_id);
     ExpandIfFull(patch.draw_patch);
+    ExpandIfFull(patch.draw_tag);
     std::vector<Vertex> vtx;
     if(patch.vertices_mp.count(vertex_a) == 0){
         vtx.push_back(vertex_a);
@@ -69,9 +87,12 @@ void SWCRenderer::AddLine(const SWCRenderer::Vertex &vertex_a, const SWCRenderer
         vtx.push_back(vertex_b);
         patch.vertices_mp[vertex_b] = patch.idx++;
     }
-    if(vtx.size() > 0)
+    if(vtx.size() > 0){
         patch.draw_patch.vbo.set_buffer_data(vtx.data(), patch.draw_patch.loaded_vertices_count, vtx.size());
+        patch.draw_tag.vbo.set_buffer_data(vtx.data(), patch.draw_tag.loaded_vertices_count, vtx.size());
+    }
     patch.draw_patch.loaded_vertices_count += vtx.size();
+    patch.draw_tag.loaded_vertices_count += vtx.size();
 
     uint32_t idxes[2] = {patch.vertices_mp.at(vertex_a), patch.vertices_mp.at(vertex_b)};
     patch.draw_patch.ebo.set_buffer_data(idxes, patch.draw_patch.loaded_indices_count, 2);
@@ -83,7 +104,7 @@ void SWCRenderer::DeleteLine(size_t patch_id) {
 
 }
 
-void SWCRenderer::Draw(const mat4 &view, const mat4& proj) {
+void SWCRenderer::Draw(const mat4 &view, const mat4& proj, bool tag) {
     shader.bind();
     //todo: id mapping to color
     transform_params.model = mat4::identity();
@@ -101,6 +122,25 @@ void SWCRenderer::Draw(const mat4 &view, const mat4& proj) {
     }
 
     shader.unbind();
+
+    if(!tag) return;
+
+    pt_shader.bind();
+
+    transform_params_buffer.bind(0);
+
+    for(auto& [id, patch] : patches){
+        auto& draw_tag = patch.draw_tag;
+        draw_tag.vao.bind();
+
+        GL_EXPR(glDrawArrays(GL_POINTS, 0, draw_tag.loaded_vertices_count));
+
+        draw_tag.vao.unbind();
+    }
+
+
+    pt_shader.unbind();
+
 }
 
 void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
@@ -131,4 +171,28 @@ void SWCRenderer::ExpandIfFull(DrawPatch& patch) {
         patch.vao.bind_index_buffer(patch.ebo);
 //        patch.loaded_indices_count = new_indices_count;
     }
+}
+void SWCRenderer::ExpandIfFull(DrawTag& tag){
+    if(tag.loaded_vertices_count && tag.loaded_vertices_count % preserved_vertices_per_patch == 0){
+        int new_vertices_count = tag.loaded_vertices_count + preserved_vertices_per_patch;
+        vertex_buffer_t<Vertex> vbo;
+        vbo.initialize_handle();
+        vbo.reinitialize_buffer_data(nullptr, new_vertices_count, GL_DYNAMIC_DRAW);
+        GL_EXPR(glCopyNamedBufferSubData(tag.vbo.handle(),
+                                         vbo.handle(),
+                                         0, 0,
+                                         tag.loaded_vertices_count * sizeof(Vertex)));
+        tag.vbo = std::move(vbo);
+        tag.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), tag.vbo, 0);
+        tag.vao.enable_attrib(attrib_var_t<Vertex>(0));
+    }
+}
+void SWCRenderer::Set(SWCPointKey a, SWCPointKey b)
+{
+    pt_shader.bind();
+
+    pt_shader.set_uniform_var("PickedID[0]", a);
+    pt_shader.set_uniform_var("PickedID[1]", b);
+
+    pt_shader.unbind();
 }

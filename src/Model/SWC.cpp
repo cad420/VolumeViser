@@ -319,6 +319,33 @@ public:
     void SWC::Commit() noexcept {
         _->direct_influenced_pts.clear();
     }
+    bool SWC::IsRoot(SWC::SWCPointKey a, SWC::SWCPointKey b) noexcept{
+        if(b == -1) return false;
+        if(a == b) return true;
+        return IsRoot(a, _->swc_point_mp.at(b).pid);
+    }
 
+    SWC::SWCPointKey SWC::GetFirstCommonRoot(SWCPointKey a, SWCPointKey b) noexcept{
+        assert(CheckConnection(a, b));
+        int len_a = GetNodeToRootLength(a);
+        int len_b = GetNodeToRootLength(b);
+        if(len_a < len_b){
+            std::swap(len_a, len_b);
+            std::swap(a, b);
+        }
+        int d = len_a - len_b;
+        while(d-- > 0) a = _->swc_point_mp.at(a).pid;
+        for(int i = 0; i < len_b; i++){
+            if(a == b) return a;
+            a = _->swc_point_mp.at(a).pid;
+            b = _->swc_point_mp.at(b).pid;
+        }
+        LOG_ERROR("GetFirstCommonRoot : a and b is not connected");
+        return -1;
+    }
+    int SWC::GetNodeToRootLength(SWC::SWCPointKey a) noexcept {
+        if(a == -1) return 0;
+        return GetNodeToRootLength(_->swc_point_mp.at(a).pid) + 1;
+    }
 
-VISER_END
+    VISER_END

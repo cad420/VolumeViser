@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../common.hpp"
-
+#include "../console/logger.hpp"
 #include <unordered_map>
 #include <list>
 #include <optional>
@@ -49,18 +49,22 @@ VUTIL_BEGIN
         /**
          * if key exists then the value of key will update and move this item to head
          */
-        void emplace_back(const Key& key,Value&& value){
+        void emplace_back(const Key& key,Value value){
             auto it = pos.find(key);
             if(it != pos.end()){
+                LOG_DEBUG("find");
                 it->second->second = std::move(value);
                 move_to_head(it->second);
                 return;
             }
-            if(data.size()>capacity){
+            LOG_DEBUG("not exist");
+            if(data.size() >= capacity){
                 pos.erase(data.back().first);//erase by key for unordered_map
                 data.pop_back();
             }
+            LOG_DEBUG("1111");
             data.emplace_front(std::make_pair(key,std::move(value)));
+            LOG_DEBUG("2222");
             pos[key] = data.begin();
         }
         float get_load_factor() const{

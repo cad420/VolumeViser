@@ -60,9 +60,11 @@ template<> struct GeneralRescTraits<FrameBuffer>      { static constexpr bool va
 template<typename T>
 inline constexpr bool IsGeneralResc = GeneralRescTraits<T>::value;
 
+using Float2 = vutil::vec2f;
 using Float3 = vutil::vec3f;
 using Float4 = vutil::vec4f;
 
+using Int2 = vutil::tvec2<int>;
 using Int3 = vutil::tvec3<int>;
 using UInt3 = vutil::tvec3<uint32_t>;
 

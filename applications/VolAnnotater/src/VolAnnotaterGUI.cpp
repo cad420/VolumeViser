@@ -44,7 +44,7 @@ void VolAnnotaterGUI::initialize() {
     io.Fonts->Build();
 
 //    Float3 default_pos = {4.1, 6.21, 7.f};
-    Float3 default_pos = {1.1, 1.21, 7.f};
+    Float3 default_pos = {3.1, 3.21, 7.f};
 
     camera.set_position(default_pos);
     camera.set_perspective(FOV, 0.001f, 10.f);
@@ -94,10 +94,15 @@ void VolAnnotaterGUI::destroy() {
 void VolAnnotaterGUI::pre_render() {
     status_flags &= ~VOL_CAMERA_CHANGED;
 
+    //vol需要最后画
+    status_flags &= ~VOL_RENDER_PARAMS_CHANGED;
+
     vol_render_resc->vol_query_priv_data.clicked = false;
 }
 
 void VolAnnotaterGUI::handle_events() {
+    //只在鼠标交互vol mesh render时更新相机
+    if(!window_priv_data.vol_mesh_render_hovered) return;
     bool moved = keyboard->is_pressed('W') | keyboard->is_pressed('A')
                           | keyboard->is_pressed('D') | keyboard->is_pressed('S')
                           | keyboard->is_pressed(KEY_SPACE) | keyboard->is_pressed(KEY_LSHIFT);
@@ -169,6 +174,9 @@ void VolAnnotaterGUI::show_editor_ui() {
     timer.stop();
 //    timer.print_duration("editor swc window");
     timer.start();
+
+    show_editor_swc_op_window(&swc_op_window_open);
+
     show_editor_swc_tree_window(&swc_tree_window_open);
     timer.stop();
 //    timer.print_duration("editor swc tree window");
@@ -334,6 +342,10 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
 
 
         if(ImGui::TreeNode("Camera Setting")){
+            auto pos = camera.get_position();
+            ImGui::BulletText("Camera Pos %.3f %.3f %.3f", pos.x, pos.y, pos.z);
+            auto dir = camera.get_xyz_direction();
+            ImGui::BulletText("Camera Dir %.3f %.3f %.3f", dir.x, dir.y, dir.z);
             bool update = false;
             update |= ImGui::InputFloat("Move Speed", &vol_camera_move_speed, 0.f, 0.f, "%.5f");
             update |= ImGui::InputFloat("Rotate Speed", &vol_camera_view_ratation_speed, 0.f, 0.f, "%.5f");
@@ -343,7 +355,192 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
             ImGui::TreePop();
         }
         if(ImGui::TreeNode("Vol Render Setting")){
+            if(ImGui::Checkbox("Render Volume", &vol_render_volume)){
+                if(vol_render_volume) status_flags |= VOL_DRAW_VOLUME;
+                else status_flags &= ~VOL_DRAW_VOLUME;
+            }
 
+            if(ImGui::TreeNode("TransferFunc")){
+                bool tf_update = false;
+
+                static std::map<int, Float4> pt_mp;
+
+                static Float3 color;
+                static bool selected_pt = false;
+                static int sel_pos;
+                if(selected_pt){
+                    color = pt_mp.at(sel_pos).xyz();
+                }
+                if(ImGui::ColorEdit3("Point Color(RGBA)", &color.x)){
+                    if(selected_pt){
+                        auto& c = pt_mp.at(sel_pos);
+                        c.x = color.x;
+                        c.y = color.y;
+                        c.z = color.z;
+
+                        tf_update = true;
+                    }
+                }
+
+
+
+                ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
+                ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
+                const int ysize = 255;
+                canvas_sz.y = ysize;
+                ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
+                ImGui::InvisibleButton("tf", canvas_sz);
+
+
+                ImGuiIO& io = ImGui::GetIO();
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+                draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(30, 30, 30, 255));
+                draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(200, 200, 200, 255));
+
+                const bool is_hovered = ImGui::IsItemHovered(); // Hovered
+                const bool is_active = ImGui::IsItemActive();   // Held
+                const ImVec2 origin(canvas_p0.x, canvas_p0.y); // Lock scrolled origin
+                const ImVec2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
+                const ImVec2 tf_origin(canvas_p0.x, canvas_p0.y + canvas_sz.y);
+
+                bool check_add = false;
+                if(is_active && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)){
+                    check_add = true;
+                }
+
+                auto canvas_y_to_alpha = [&](float y){
+                    return (ysize - y) / float(ysize);
+                };
+                auto alpha_to_canvas_y = [&](float alpha){
+                    return ysize - alpha * ysize;
+                };
+
+
+
+                if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
+                    bool pick = false;
+                    for(auto& [x_pos, color] : pt_mp){
+                        if(std::abs(x_pos - mouse_pos_in_canvas.x) < 5
+                            && std::abs(alpha_to_canvas_y(color.w) - mouse_pos_in_canvas.y) < 5){
+                            selected_pt = true;
+                            sel_pos = x_pos;
+                            pick = true;
+                            break;
+                        }
+                    }
+                    if(!pick) selected_pt = false;
+                }
+
+
+
+                if(!selected_pt && check_add){
+                    auto it = pt_mp.upper_bound(mouse_pos_in_canvas.x);
+                    Float4 rgba;
+                    rgba.w = canvas_y_to_alpha(mouse_pos_in_canvas.y);
+                    if(it == pt_mp.end()){
+                        auto itt = pt_mp.lower_bound(mouse_pos_in_canvas.x);
+                        if(itt == pt_mp.begin()){
+                            rgba.x = rgba.y = rgba.z = 0.f;
+                        }
+                        else{
+                            itt = std::prev(itt);
+                            rgba.x = itt->second.x;
+                            rgba.y = itt->second.y;
+                            rgba.z = itt->second.z;
+                        }
+                    }
+                    else{
+                        auto itt = pt_mp.lower_bound(mouse_pos_in_canvas.x);
+                        if(itt == pt_mp.begin()){
+                            rgba.x = it->second.x;
+                            rgba.y = it->second.y;
+                            rgba.z = it->second.z;
+                        }
+                        else{
+                            itt = std::prev(itt);
+                            float u = (mouse_pos_in_canvas.x - itt->first) / (float)(it->first - itt->first);
+                            rgba.x = itt->second.x * (1.f - u) + it->second.x * u;
+                            rgba.y = itt->second.y * (1.f - u) + it->second.y * u;
+                            rgba.z = itt->second.z * (1.f - u) + it->second.z * u;
+                        }
+                    }
+                    pt_mp[mouse_pos_in_canvas.x] = rgba;
+                    selected_pt = true;
+                    sel_pos = mouse_pos_in_canvas.x;
+                    tf_update = true;
+                }
+
+
+                //add
+                if(is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left)
+                    && selected_pt){
+                    int nx = sel_pos + io.MouseDelta.x;
+                    auto c = pt_mp.at(sel_pos);
+                    int ny = alpha_to_canvas_y(c.w) + io.MouseDelta.y;
+//                    LOG_DEBUG("ny : {}, delta y: {}", ny, io.MouseDelta.y);
+                    ny = (std::min)(ny, ysize);
+                    ny = (std::max)(ny, 0);
+                    if(nx == sel_pos || pt_mp.count(nx) == 0){
+                        c.w = canvas_y_to_alpha(ny);
+                        pt_mp.erase(sel_pos);
+                        sel_pos = nx;
+                        pt_mp[nx] = c;
+                        tf_update = true;
+                    }
+                }
+
+                //delete
+                if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Right)
+                    && selected_pt){
+                    selected_pt = false;
+                    pt_mp.erase(sel_pos);
+                    tf_update = true;
+                }
+
+                draw_list->PushClipRect(canvas_p0, canvas_p1, true);
+                bool first = true;
+                ImVec2 prev;
+                if(!pt_mp.empty()){
+                    auto it = pt_mp.begin();
+                    ImVec2 p = ImVec2(it->first + origin.x, alpha_to_canvas_y(it->second.w) + origin.y);
+                    draw_list->AddLine(ImVec2(origin.x, p.y), p, IM_COL32(0, 0, 0, 255));
+                    auto itt = std::prev(pt_mp.end());
+                    p = ImVec2(itt->first + origin.x, alpha_to_canvas_y(itt->second.w) + origin.y);
+                    draw_list->AddLine(p, ImVec2(origin.x + canvas_sz.x, p.y), IM_COL32(0, 0, 0, 255));
+                }
+                for(auto& [x, c] : pt_mp){
+                    ImVec2 cur = ImVec2(x + origin.x, alpha_to_canvas_y(c.w) + origin.y);
+                    if(first){
+                        first = false;
+                    }
+                    else{
+                        draw_list->AddLine(prev, cur, IM_COL32(0, 0, 0, 255));
+                    }
+                    prev = cur;
+                }
+                for(auto& [x, c] : pt_mp){
+                    ImVec2 cur = ImVec2(x + origin.x, alpha_to_canvas_y(c.w) + origin.y);
+                    draw_list->AddCircleFilled(cur, 5.f,
+                                               IM_COL32(int(c.x * 255), int(c.y * 255), int(c.z * 255), 255));
+                    if(x == sel_pos && selected_pt){
+                        draw_list->AddCircle(cur, 6.f, IM_COL32(255, 127, 0, 255), 0, 2.f);
+                    }
+                }
+                draw_list->PopClipRect();
+
+                ImGui::TreePop();
+
+                if(tf_update){
+                    std::vector<std::pair<float, Float4>> pts;
+                    for(auto& [x, c] : pt_mp){
+                        pts.emplace_back((float)x / (float)canvas_sz.x, c);
+                    }
+                    vol_render_resc->UpdateTransferFunc(pts);
+
+                    status_flags |= VOL_RENDER_PARAMS_CHANGED;
+                }
+            }
 
             ImGui::TreePop();
         }
@@ -352,10 +549,17 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
                 if(vol_render_swc) status_flags |= VOL_DRAW_SWC;
                 else status_flags &= ~VOL_DRAW_SWC;
             }
+
             if(ImGui::Checkbox("Blend With Depth", &vol_swc_blend_with_depth)){
                 if(vol_swc_blend_with_depth) status_flags |= VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
                 else status_flags &= ~VOL_SWC_VOLUME_BLEND_WITH_DEPTH;
             }
+            if(ImGui::Checkbox("Render SWC Point Tag", &vol_render_swc_point_tag)){
+                if(vol_render_swc_point_tag) status_flags |= VOL_DRAW_SWC_TAG;
+                else status_flags &= ~VOL_DRAW_SWC_TAG;
+            }
+
+
             ImGui::TreePop();
         }
     }
@@ -380,8 +584,8 @@ void VolAnnotaterGUI::show_editor_vol_render_window(bool *p_open) {
             ImGui::End();
             return;
         }
-
-
+        ImGui::InvisibleButton("vol-render", ImVec2(x, y));
+        window_priv_data.vol_mesh_render_hovered = ImGui::IsItemHovered();
 
          frame_vol_render();
 
@@ -435,6 +639,8 @@ void VolAnnotaterGUI::show_editor_mesh_render_window(bool *p_open) {
             return;
         }
 //        AutoTimer t("frame mesh render");
+        ImGui::InvisibleButton("mesh-render", ImVec2(x, y));
+        window_priv_data.vol_mesh_render_hovered |= ImGui::IsItemHovered();
         frame_mesh_render();
 
     }
@@ -526,21 +732,22 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
                 auto& sel_swc = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).swc;
                 auto sel_swc_pt_id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
                 static char buffer[64] = {'\0'};
-                const int max_display_item = 32;
-                int display_items = 0;
+//                const int max_display_item = 32;
+//                int display_items = 0;
                 for(auto it = sel_swc->begin(); it != sel_swc->end(); ++it){
-                    if(display_items++ > max_display_item) break;
+//                    if(display_items++ > max_display_item) break;
                     ImGui::TableNextRow();
                     bool sel = it->first == sel_swc_pt_id;
                     ImGui::TableSetColumnIndex(0);
                     if(ImGui::Selectable(std::to_string(it->first).c_str(), sel)){
-                        swc_resc->swc_priv_data.last_picked_swc_pt_id = it->first;
+//                        swc_resc->swc_priv_data.last_picked_swc_pt_id = it->first;
+                        swc_resc->AddPickedSWCPoint(it->first);
                     }
                     sprintf(buffer, "%d %d %.5f %.5f %.5f %.5f", it->second.tag, it->second.pid,
                             it->second.x, it->second.y, it->second.z, it->second.radius);
                     ImGui::TableSetColumnIndex(1);
 
-                    ImGui::TextColored({1.f, 0.f, 0.f, 1.f}, "%s", buffer);
+                    ImGui::TextColored(sel ? ImVec4{1.f, 0.f, 0.f, 1.f} : ImVec4{1.f, 1.f ,1.f ,1.f}, "%s", buffer);
                 }
             }
 
@@ -568,22 +775,228 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
     }
 }
 
+void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+
+    if(p_open && !*p_open) return;
+
+    if(ImGui::Begin("SWC OP", p_open, window_flags)){
+        ImGui::NewLine();
+        auto id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
+        if(id > 0){
+            auto& swc = swc_resc->GetSelected().swc;
+            auto& pt = swc->GetNode(id);
+            ImGui::BulletText("Selected SWC Point ID: %d", id);
+            ImGui::BulletText("Parent ID: %d", pt.pid);
+            ImGui::BulletText("Pos: %.5f %.5f %.5f", pt.x, pt.y, pt.z);
+            ImGui::BulletText("Radius: %.5f", pt.radius);
+        }
+        else{
+            ImGui::BulletText("No Selected SWC Point");
+        }
+
+        ImGui::NewLine();
+
+        if(ImGui::BeginTabBar("SWC-OPs")){
+
+            if(ImGui::BeginTabItem("Point")){
+                swc_op = SWC_OP_Point;
+
+                swc_resc->SetSWCPointPickSize(1);
+
+                ImGui::NewLine();
+
+                static const char* PointOperations[] = {
+                  "UpdateR", "Delete"
+                };
+                static int pt_op_idx = 0;
+                constexpr int pt_op_cnt = sizeof(PointOperations) / sizeof(PointOperations[0]);
+                if(ImGui::BeginCombo("Operations", PointOperations[pt_op_idx])){
+
+                    for(int i = 0; i < pt_op_cnt; i++){
+                        bool select = i == pt_op_idx;
+                        if(ImGui::Selectable(PointOperations[i], select)){
+                            pt_op_idx = i;
+                        }
+                    }
+
+                    ImGui::EndCombo();
+                }
+
+                if(pt_op_idx == 0){
+                    //UpdateR
+
+                }
+                else if(pt_op_idx == 1){
+                    //Delete : delete point and connect two sides or delete subtree
+
+                }
+
+
+
+                ImGui::EndTabItem();
+            }
+            if(ImGui::BeginTabItem("Segment")){
+                swc_op = SWC_OP_Segment;
+
+                swc_resc->SetSWCPointPickSize(2);
+
+                ImGui::NewLine();
+
+                static const char* SegmentOperations[] = {
+                  "InterpR", "Delete"
+                };
+                static int seg_op_idx = 0;
+                constexpr int seg_op_cnt = sizeof(SegmentOperations) / sizeof(SegmentOperations[0]);
+                if(ImGui::BeginCombo("Operations", SegmentOperations[seg_op_idx])){
+
+                    for(int i = 0; i < seg_op_cnt; i++){
+                        bool select = i == seg_op_idx;
+                        if(ImGui::Selectable(SegmentOperations[i], select)){
+                            seg_op_idx = i;
+                        }
+                    }
+
+                    ImGui::EndCombo();
+                }
+                if(seg_op_idx == 0){
+
+                }
+                else if(seg_op_idx == 1){
+
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+    }
+
+    ImGui::End();
+}
+
 void VolAnnotaterGUI::show_editor_swc_tree_window(bool *p_open) {
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
 
     if(p_open && !*p_open) return;
 
     if(ImGui::Begin("SWC Tree View", p_open, window_flags)){
+        //todo use GetCursorScreenPos and GetContentRegionAvail
         auto [px, py] = ImGui::GetWindowPos();
         window_priv_data.swc_view_window_pos = vec2i(px, py);
         auto [x, y] = ImGui::GetWindowSize();
+        y -= 20;
         if(window_priv_data.swc_view_window_size != vec2i(x, y)){
             window_priv_data.swc_view_resize = true;
             window_priv_data.swc_view_window_size = vec2i(x, y);
             ImGui::End();
             return;
         }
+        static ImVec2 scrolling(0.0f, 0.0f);
+        static bool opt_enable_grid = true;
+        static bool opt_enable_context_menu = true;
+        ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
+        ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
+        ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
+        ImGui::InvisibleButton("swc-tree-view",
+                               ImVec2(x,y),
+                               ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+//        ImGui::SetItemUsingMouseWheel();
+        ImGuiIO& io = ImGui::GetIO();
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
+        draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(30, 30, 30, 255));
+//        draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
+
+        const bool is_hovered = ImGui::IsItemHovered(); // Hovered
+        const bool is_active = ImGui::IsItemActive();   // Held
+        const ImVec2 origin(canvas_p0.x + scrolling.x, canvas_p0.y + scrolling.y); // Lock scrolled origin
+        const ImVec2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
+
+
+        const float mouse_threshold_for_pan = opt_enable_context_menu ? -1.0f : 0.0f;
+        if (is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right, mouse_threshold_for_pan))
+        {
+            scrolling.x += io.MouseDelta.x;
+            scrolling.y += io.MouseDelta.y;
+        }
+        bool selecting = false;
+        if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
+            LOG_DEBUG("mouse left clicked: {} {}", io.MouseClickedPos[0].x, io.MouseClickedPos[0].y);
+            selecting = true;
+        }
+
+        draw_list->PushClipRect(canvas_p0, canvas_p1, true);
+
+        if (opt_enable_grid)
+        {
+            const float GRID_STEP = 64.0f;
+            for (float x = fmodf(scrolling.x, GRID_STEP); x < canvas_sz.x; x += GRID_STEP){
+                draw_list->AddLine(ImVec2(canvas_p0.x + x, canvas_p0.y), ImVec2(canvas_p0.x + x, canvas_p1.y), IM_COL32(200, 200, 200, 40));
+            }
+            for (float y = fmodf(scrolling.y, GRID_STEP); y < canvas_sz.y; y += GRID_STEP){
+                draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
+            }
+        }
+
+        const auto& draw_lines = swc_resc->swc_priv_data.swc_draw_tree.draw_lines;
+        static float scale = 10000.f;
+        static float level_height = 50.f;
+
+        if(is_hovered && io.MouseWheel != 0.f){
+            scale += io.MouseWheel < 0.f ? 1000.f : -1000.f;
+            scale = (std::max)(1000.f, scale);
+            scale = (std::min)(100000.f, scale);
+            level_height += io.MouseWheel < 0.f ? 5.f : -5.f;
+            level_height = (std::max)(5.f, level_height);
+            level_height = (std::min)(500.f, level_height);
+        }
+
+        for(const auto& line : draw_lines){
+            draw_list->AddLine(ImVec2(origin.x + line.first.x * scale, origin.y + line.first.y * level_height + canvas_sz.y * 0.5f),
+                               ImVec2(origin.x + line.second.x * scale, origin.y + line.second.y * level_height + canvas_sz.y * 0.5f),
+                               IM_COL32(255, 0, 0, 255),
+                               2.f);
+
+        }
+        const auto& draw_pts = swc_resc->swc_priv_data.swc_draw_tree.draw_points;
+
+        for(const auto& pt : draw_pts){
+            auto px = origin.x + pt.pos.x * scale;
+            auto py = origin.y + pt.pos.y * level_height + canvas_sz.y * 0.5f;
+            if(selecting && std::abs(px - io.MouseClickedPos[0].x) < 3 && std::abs(py - io.MouseClickedPos[0].y) < 3){
+                LOG_DEBUG("select swc pt : {}", pt.pt_id);
+                swc_resc->AddPickedSWCPoint(pt.pt_id);
+
+                if(swc_op == SWC_OP_Segment){
+                    swc_resc->UpdatePickedSWCSegmentPoints();
+
+                }
+            }
+            bool selected = pt.pt_id == swc_resc->swc_priv_data.picked_swc_pt_q.front()
+                || pt.pt_id == swc_resc->swc_priv_data.picked_swc_pt_q.back();
+
+            bool last_selected = pt.pt_id == swc_resc->swc_priv_data.picked_swc_pt_q.back();
+
+            if(swc_op == SWC_OP_Segment && !selected){
+                bool inside_seg = swc_resc->swc_priv_data.swc_draw_tree.PointInsideSeg(pt.pt_id);
+                draw_list->AddCircleFilled(ImVec2(px, py),
+                                           scale <= 3000.f ? 3.f : 5.f,
+                                           inside_seg ? IM_COL32(127, 127, 127, 255) : IM_COL32(255, 255, 255, 255));
+            }
+            else
+                draw_list->AddCircleFilled(ImVec2(px, py),
+                                       scale <= 3000.f ? 3.f : 5.f,
+                                       selected ? IM_COL32(255, 255, 0, 255) : IM_COL32(255, 255, 255, 255));
+            if(last_selected)
+                draw_list->AddCircle(ImVec2(px, py),
+                                           (scale <= 3000.f ? 3.f : 5.f) + 1.f,
+                                           IM_COL32(255, 0, 0, 255));
+
+        }
+
+        draw_list->PopClipRect();
     }
 
     ImGui::End();
@@ -783,13 +1196,23 @@ void VolAnnotaterGUI::frame_vol_render() {
 
     auto render_vol_frame = [&]()->bool{
         return viser_resc->vol_priv_data.volume.IsValid()
-               && (status_flags & VOL_CAMERA_CHANGED);
+               && ((status_flags & VOL_CAMERA_CHANGED) || (status_flags & VOL_RENDER_PARAMS_CHANGED))
+               && (status_flags & VOL_DRAW_VOLUME);
     };
     auto query_vol = [&]()->bool{
         return is_annotating() && vol_render_resc->vol_query_priv_data.clicked;
     };
+    auto pick_swc_pt = [&]()->bool{
+        if(!query_vol()) return false;
+
+        return pick_swc_point();
+    };
     if(render_vol_frame()) {
         render_volume();
+    }
+    else if(pick_swc_pt()){
+        // deal with picked swc point
+        process_picked_swc_point();
     }
     else if(query_vol()){
         if(query_volume()){
@@ -816,9 +1239,11 @@ void VolAnnotaterGUI::frame_vol_render() {
         render_swc();
     }
 
+    auto draw_list = ImGui::GetWindowDrawList();
 
-    ImGui::Image((void*)(intptr_t)(vol_swc_render_framebuffer.color.handle()),
-                 ImVec2(w, h));
+    draw_list->AddImage((void*)(intptr_t)(vol_swc_render_framebuffer.color.handle()),
+                 ImVec2(window_priv_data.vol_render_window_pos.x, window_priv_data.vol_render_window_pos.y),
+                 ImVec2(window_priv_data.vol_render_window_pos.x + w, window_priv_data.vol_render_window_pos.y + h));
 
 }
 
@@ -860,8 +1285,10 @@ void VolAnnotaterGUI::frame_mesh_render() {
 
         mesh_render_framebuffer.fbo.unbind();
 
-        ImGui::Image((void*)(intptr_t)(mesh_render_framebuffer.color.handle()),
-                     ImVec2(w, h));
+        auto draw_list = ImGui::GetWindowDrawList();
+        draw_list->AddImage((void*)(intptr_t)(mesh_render_framebuffer.color.handle()),
+                            ImVec2(window_priv_data.mesh_render_window_pos.x, window_priv_data.mesh_render_window_pos.y),
+                            ImVec2(window_priv_data.mesh_render_window_pos.x + w, window_priv_data.mesh_render_window_pos.y + h));
 
     }
 }
@@ -935,12 +1362,17 @@ void VolAnnotaterGUI::render_volume() {
     for(auto& block : blocks_info){
         if(!block.second.Missed()) continue;
         auto block_hd = viser_resc->host_block_pool_ref->GetBlock(block.first.ToUnifiedRescUID());
+        LOG_DEBUG("ok111 {}", block_hd.GetUID());
         if(block.first.IsSame(block_hd.GetUID())){
+            LOG_DEBUG("ok222");
             host_blocks[block.first] = std::move(block_hd);
+            LOG_DEBUG("okok222");
         }
         else{
+            LOG_DEBUG("ok333");
             block_hd.SetUID(block.first.ToUnifiedRescUID());
             missed_host_blocks[block.first] = std::move(block_hd);
+            LOG_DEBUG("okok333");
         }
     }
 
@@ -1052,6 +1484,8 @@ void VolAnnotaterGUI::load_volume(const std::string &filename) {
 
     status_flags |= VOL_CAMERA_CHANGED;
 
+    status_flags |= VOL_RENDER_PARAMS_CHANGED;
+
     status_flags |= VOL_DATA_LOADED;
 
     update_vol_camera_setting(true);
@@ -1137,6 +1571,8 @@ void VolAnnotaterGUI::create_vol_render_gl_framebuffer_resource() {
     vol_swc_render_framebuffer.rbo.destroy();
     vol_swc_render_framebuffer.color.destroy();
     vol_swc_render_framebuffer.depth.destroy();
+    vol_swc_render_framebuffer.hash_id.destroy();
+    vol_swc_render_framebuffer.m_hash_id.destroy();
 
     vol_swc_render_framebuffer.fbo.initialize_handle();
     vol_swc_render_framebuffer.rbo.initialize_handle();
@@ -1148,6 +1584,9 @@ void VolAnnotaterGUI::create_vol_render_gl_framebuffer_resource() {
     vol_swc_render_framebuffer.color.initialize_texture(1, GL_RGBA8, w, h);
     vol_swc_render_framebuffer.depth.initialize_handle();
     vol_swc_render_framebuffer.depth.initialize_texture(1, GL_R32F, w, h);
+    vol_swc_render_framebuffer.hash_id.initialize_handle();
+    vol_swc_render_framebuffer.hash_id.initialize_texture(1, GL_R32I, w, h);
+    vol_swc_render_framebuffer.m_hash_id.initialize(w, h, 0);
 }
 
 bool VolAnnotaterGUI::check_and_start_annotating() {
@@ -1172,6 +1611,8 @@ void VolAnnotaterGUI::check_and_add_swc_pt() {
     swc_pt.z = ret.at(2);
     swc_pt.radius = ret.at(3);
     swc_pt.tag = 1;
+    swc_pt.id = 0;
+    swc_pt.pid = 0;
 
     auto is_valid = [&]()->bool{
         if(swc_pt.radius == 0.f){
@@ -1202,10 +1643,14 @@ void VolAnnotaterGUI::render_swc() {
     GL_EXPR(glViewport(0, 0, vol_swc_render_framebuffer.frame_width, vol_swc_render_framebuffer.frame_height));
 
     vol_swc_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT0, vol_swc_render_framebuffer.color);
+    vol_swc_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT1, vol_swc_render_framebuffer.hash_id);
+
 
     if((status_flags & VOL_DRAW_VOLUME) == 0){
         vutil::gl::framebuffer_t::clear_buffer(GL_COLOR_BUFFER_BIT);
     }
+    GL_EXPR(glDrawBuffer(GL_COLOR_ATTACHMENT1));
+    vutil::gl::framebuffer_t::clear_buffer(GL_COLOR_BUFFER_BIT);
     vutil::gl::framebuffer_t::clear_buffer(GL_DEPTH_BUFFER_BIT);
 
     // blend with depth, transfer view depth to proj depth
@@ -1227,8 +1672,12 @@ void VolAnnotaterGUI::render_swc() {
         v2p_priv_data.v2p_shader.unbind();
     }
 
+    static GLenum vol_swc_draw_buffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    GL_EXPR(glDrawBuffers(2, vol_swc_draw_buffers));
 
-    swc_resc->swc_renderer->Draw(camera.get_view(), camera.get_proj());
+    swc_resc->swc_renderer->Draw(camera.get_view(), camera.get_proj(), status_flags & VOL_DRAW_SWC_TAG);
+
+    GL_EXPR(glDrawBuffer(GL_COLOR_ATTACHMENT0));
 
     vol_swc_render_framebuffer.fbo.unbind();
 
@@ -1409,18 +1858,34 @@ void VolAnnotaterGUI::update_vol_camera_setting(bool init) {
     camera.set_view_rotation_speed(vol_camera_view_ratation_speed);
 }
 
+bool VolAnnotaterGUI::pick_swc_point(){
+    auto w = vol_swc_render_framebuffer.frame_width;
+    auto h = vol_swc_render_framebuffer.frame_height;
+    GL_EXPR(glGetTextureImage(vol_swc_render_framebuffer.hash_id.handle(), 0, GL_RED_INTEGER, GL_INT,
+                      w * h * sizeof(int),
+                      vol_swc_render_framebuffer.m_hash_id.get_raw_data()));
+    GL_EXPR(glFinish());
+    auto [x, y] = vol_render_resc->vol_query_priv_data.query_pos;
+    x += 1;
+    y += 22;
+    auto id = vol_swc_render_framebuffer.m_hash_id.at(x, y);
+    if(id < 0) return false;
+    LOG_DEBUG("picked swc point id : {}", id);
+    swc_resc->AddPickedSWCPoint(id);
 
+    if(swc_op == SWC_OP_Segment){
+        swc_resc->UpdatePickedSWCSegmentPoints();
 
+    }
 
+    VISER_WHEN_DEBUG(
+    vutil::save_rgb_to_png_file("test.png",vol_swc_render_framebuffer.m_hash_id.map([](int x){
+        return color3b(x);
+    }).get_data());)
 
+    return true;
+}
 
+void VolAnnotaterGUI::process_picked_swc_point(){
 
-
-
-
-
-
-
-
-
-
+}
