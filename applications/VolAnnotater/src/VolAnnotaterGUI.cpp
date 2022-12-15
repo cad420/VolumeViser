@@ -44,7 +44,7 @@ void VolAnnotaterGUI::initialize() {
     io.Fonts->Build();
 
 //    Float3 default_pos = {4.1, 6.21, 7.f};
-    Float3 default_pos = {3.1, 3.21, 7.f};
+    Float3 default_pos = {2.1, 2.577f, 5.312f};
 
     camera.set_position(default_pos);
     camera.set_perspective(FOV, 0.001f, 10.f);
@@ -69,6 +69,8 @@ void VolAnnotaterGUI::initialize() {
     };
 
     viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context().set_ctx();
+
+    init_ui_func();
 }
 
 void VolAnnotaterGUI::frame() {
@@ -617,6 +619,18 @@ void VolAnnotaterGUI::show_editor_mesh_render_info_window(bool *p_open) {
             ImGui::TreePop();
         }
 
+        bool update = false;
+        update |= ImGui::SliderFloat("Light H Degree", &light_h_degree, 0.f, 360.f);
+        update |= ImGui::SliderFloat("Light V Degree", &light_v_degree, -90.f, 90.f);
+        update |= ImGui::ColorEdit3("Light Color", &light_color.x);
+        update |= ImGui::InputFloat("Light Intensity", &light_intensity);
+        if(update){
+            Float3 light_dir;
+            light_dir.y = std::sin(vutil::deg2rad(light_v_degree));
+            light_dir.x = std::cos(vutil::deg2rad(light_h_degree)) * std::cos(vutil::deg2rad(light_v_degree));
+            light_dir.z = std::sin(vutil::deg2rad(light_h_degree)) * std::cos(vutil::deg2rad(light_v_degree));
+            swc2mesh_resc->neuron_renderer->Set(light_dir, light_color * light_intensity);
+        }
     }
 
     ImGui::End();
@@ -782,17 +796,32 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
 
     if(ImGui::Begin("SWC OP", p_open, window_flags)){
         ImGui::NewLine();
-        auto id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
-        if(id > 0){
-            auto& swc = swc_resc->GetSelected().swc;
-            auto& pt = swc->GetNode(id);
-            ImGui::BulletText("Selected SWC Point ID: %d", id);
-            ImGui::BulletText("Parent ID: %d", pt.pid);
-            ImGui::BulletText("Pos: %.5f %.5f %.5f", pt.x, pt.y, pt.z);
-            ImGui::BulletText("Radius: %.5f", pt.radius);
+        auto draw_swc_pt_ui = [&](SWCPointKey id){
+            if(id > 0){
+                auto& swc = swc_resc->GetSelected().swc;
+                auto& pt = swc->GetNode(id);
+                ImGui::BulletText("Selected SWC Point ID: %d", id);
+                ImGui::BulletText("Parent ID: %d", pt.pid);
+                ImGui::BulletText("Pos: %.5f %.5f %.5f", pt.x, pt.y, pt.z);
+                ImGui::BulletText("Radius: %.5f", pt.radius);
+            }
+            else{
+                ImGui::BulletText("No Selected SWC Point");
+            }
+        };
+
+        if(swc_op == SWC_OP_Point){
+            auto id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
+            draw_swc_pt_ui(id);
         }
         else{
-            ImGui::BulletText("No Selected SWC Point");
+            if(!swc_resc->swc_priv_data.picked_swc_pt_q.empty()){
+                auto id1 = swc_resc->swc_priv_data.picked_swc_pt_q.back();
+                auto id2 = swc_resc->swc_priv_data.picked_swc_pt_q.front();
+                draw_swc_pt_ui(id1);
+                ImGui::NewLine();
+                draw_swc_pt_ui(id2);
+            }
         }
 
         ImGui::NewLine();
@@ -801,6 +830,10 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
 
             if(ImGui::BeginTabItem("Point")){
                 swc_op = SWC_OP_Point;
+
+                swc_resc->swc_renderer->ClearVertex();
+
+                swc_resc->ClearPickedSWCSegmentPoints();
 
                 swc_resc->SetSWCPointPickSize(1);
 
@@ -825,11 +858,11 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
 
                 if(pt_op_idx == 0){
                     //UpdateR
-
+                    swc_op_ui.at(SWC_OP_Point_UpdateR)();
                 }
                 else if(pt_op_idx == 1){
                     //Delete : delete point and connect two sides or delete subtree
-
+                    swc_op_ui.at(SWC_OP_Point_Delete)();
                 }
 
 
@@ -860,10 +893,10 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
                     ImGui::EndCombo();
                 }
                 if(seg_op_idx == 0){
-
+                    swc_op_ui.at(SWC_OP_Seg_InterpR)();
                 }
                 else if(seg_op_idx == 1){
-
+                    swc_op_ui.at(SWC_OP_Seg_Delete)();
                 }
 
                 ImGui::EndTabItem();
@@ -966,13 +999,19 @@ void VolAnnotaterGUI::show_editor_swc_tree_window(bool *p_open) {
             auto px = origin.x + pt.pos.x * scale;
             auto py = origin.y + pt.pos.y * level_height + canvas_sz.y * 0.5f;
             if(selecting && std::abs(px - io.MouseClickedPos[0].x) < 3 && std::abs(py - io.MouseClickedPos[0].y) < 3){
-                LOG_DEBUG("select swc pt : {}", pt.pt_id);
-                swc_resc->AddPickedSWCPoint(pt.pt_id);
 
-                if(swc_op == SWC_OP_Segment){
-                    swc_resc->UpdatePickedSWCSegmentPoints();
+               LOG_DEBUG("select swc pt : {}", pt.pt_id);
+               swc_resc->AddPickedSWCPoint(pt.pt_id);
 
-                }
+               if(swc_op == SWC_OP_Segment){
+                   swc_resc->UpdatePickedSWCSegmentPoints();
+
+                   swc_resc->AddPickedSWCSegPtsToRenderer();
+
+               }
+            }
+            if(std::abs(px - io.MousePos.x) < 3 && std::abs(py - io.MousePos.y) < 3){
+                ImGui::SetTooltip("ID %d, Radius %.5f", pt.pt_id, swc_resc->GetSelected().swc->GetNode(pt.pt_id).radius);
             }
             bool selected = pt.pt_id == swc_resc->swc_priv_data.picked_swc_pt_q.front()
                 || pt.pt_id == swc_resc->swc_priv_data.picked_swc_pt_q.back();
@@ -1200,10 +1239,10 @@ void VolAnnotaterGUI::frame_vol_render() {
                && (status_flags & VOL_DRAW_VOLUME);
     };
     auto query_vol = [&]()->bool{
-        return is_annotating() && vol_render_resc->vol_query_priv_data.clicked;
+        return render_vol_frame() && is_annotating() && vol_render_resc->vol_query_priv_data.clicked;
     };
     auto pick_swc_pt = [&]()->bool{
-        if(!query_vol()) return false;
+        if(!(is_annotating() && vol_render_resc->vol_query_priv_data.clicked)) return false;
 
         return pick_swc_point();
     };
@@ -1271,7 +1310,7 @@ void VolAnnotaterGUI::frame_mesh_render() {
 
         if(debug_priv_data.mesh_render_line_mode){ GL_EXPR(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)); }
 
-        swc2mesh_resc->neuron_renderer->Begin(view, proj);
+        swc2mesh_resc->neuron_renderer->Begin(view, proj, camera.get_position());
         if(swc2mesh_resc->mesh_status == SWC2MeshRescPack::Merged)
             swc2mesh_resc->neuron_renderer->Draw(swc2mesh_resc->loaded_mesh.at(swc2mesh_resc->selected_mesh_uid).mesh->GetUID());
         else
@@ -1650,7 +1689,8 @@ void VolAnnotaterGUI::render_swc() {
         vutil::gl::framebuffer_t::clear_buffer(GL_COLOR_BUFFER_BIT);
     }
     GL_EXPR(glDrawBuffer(GL_COLOR_ATTACHMENT1));
-    vutil::gl::framebuffer_t::clear_buffer(GL_COLOR_BUFFER_BIT);
+    static GLint clear_color[4] = {0, 0, 0, 0};
+    GL_EXPR(glClearBufferiv(GL_COLOR, 0, clear_color));
     vutil::gl::framebuffer_t::clear_buffer(GL_DEPTH_BUFFER_BIT);
 
     // blend with depth, transfer view depth to proj depth
@@ -1707,6 +1747,8 @@ void VolAnnotaterGUI::update_swc_influenced_blocks(bool all) {
     }
     swc2mesh_resc->MeshUpdated();
 
+    swc_resc->GetSelected().swc->Commit();
+
 }
 
 void VolAnnotaterGUI::generate_modified_mesh() {
@@ -1714,11 +1756,14 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     //有一个限制 数据块不能超过vtex的容量 不然需要分多次进行
     auto lines = swc_resc->GetSelected().swc->PackLines();
 
+    std::unordered_set<BlockUID> seg_blocks;
+
     //这部分数据块是 影响线段所涉及的
     std::vector<BoundingBox3D> block_boxes;
     auto block_length_space = vol_render_resc->render_vol.lod0_block_length_space;
     for(auto& [uid, block_mesh] : swc2mesh_resc->s2m_priv_data.patch_mesh_mp){
         if(block_mesh.status != SWC2MeshRescPack::Modified) continue;
+        seg_blocks.insert(uid);
         Float3 f_uid = Float3(uid.x, uid.y, uid.z);
         block_boxes.push_back({f_uid * block_length_space,
                                (f_uid + Float3(1)) * block_length_space});
@@ -1769,16 +1814,17 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         box |= Float3(f.x + f.w, f.y + f.w, f.z + f.w);
         return box;
     };
-    //重新生成真正涉及到的数据数据块
-    std::unordered_set<BlockUID> seg_blocks;
-    for(auto& seg : swc_segments){
-        auto box = gen_box(seg.first) | gen_box(seg.second);
-        std::vector<BlockUID> tmp;
-        ComputeIntersectedBlocksWithBoundingBox(tmp, vol_render_resc->render_vol.lod0_block_length_space,
-                                                vol_render_resc->render_vol.lod0_block_dim,
-                                                vol_render_resc->render_vol.volume_bound, box);
-        for(auto& b : tmp) seg_blocks.insert(b);
-    }
+    //重新生成真正涉及到的数据数据块 wrong!
+    //不需要了 已经拿到了受影响的swc segments和真正受影响的blocks 前者的涉及的blocks可能比后者要多
+
+//    for(auto& seg : swc_segments){
+//        auto box = gen_box(seg.first) | gen_box(seg.second);
+//        std::vector<BlockUID> tmp;
+//        ComputeIntersectedBlocksWithBoundingBox(tmp, vol_render_resc->render_vol.lod0_block_length_space,
+//                                                vol_render_resc->render_vol.lod0_block_dim,
+//                                                vol_render_resc->render_vol.volume_bound, box);
+//        for(auto& b : tmp) seg_blocks.insert(b);
+//    }
     //获取页表
     std::vector<BlockUID> seg_blocks_; seg_blocks_.reserve(seg_blocks.size());
     for(auto& b : seg_blocks){
@@ -1805,6 +1851,8 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     //voxelize过程中会标记真正受影响的block 需要获取 并且也会同步写入到gpu的pt
     viser_resc->gpu_pt_mgr_ref->GetPageTable(false).DownLoad();
     auto v_blocks = viser_resc->gpu_pt_mgr_ref->GetPageTable(false).GetKeys(TexCoordFlag_IsValid | TexCoordFlag_IsSWC | TexCoordFlag_IsSWCV);
+    //note: 这里不需要对所有写入的block重新进行mc 但是这个功能设计还是有用的
+    v_blocks = seg_blocks_;
 
     //对每一个真正体素化影响到的block进行mc
     //这里的pt在体素化的时候被更新了 添加了TexCoordFlag_IsSWCV 这个其实没啥用了
@@ -1859,6 +1907,7 @@ void VolAnnotaterGUI::update_vol_camera_setting(bool init) {
 }
 
 bool VolAnnotaterGUI::pick_swc_point(){
+    LOG_DEBUG("start pick swc point");
     auto w = vol_swc_render_framebuffer.frame_width;
     auto h = vol_swc_render_framebuffer.frame_height;
     GL_EXPR(glGetTextureImage(vol_swc_render_framebuffer.hash_id.handle(), 0, GL_RED_INTEGER, GL_INT,
@@ -1869,13 +1918,13 @@ bool VolAnnotaterGUI::pick_swc_point(){
     x += 1;
     y += 22;
     auto id = vol_swc_render_framebuffer.m_hash_id.at(x, y);
-    if(id < 0) return false;
+    if(id <= 0 || swc_resc->GetSelected().swc->QueryNode(id) == false) return false;
     LOG_DEBUG("picked swc point id : {}", id);
     swc_resc->AddPickedSWCPoint(id);
 
     if(swc_op == SWC_OP_Segment){
         swc_resc->UpdatePickedSWCSegmentPoints();
-
+        swc_resc->AddPickedSWCSegPtsToRenderer();
     }
 
     VISER_WHEN_DEBUG(
@@ -1887,5 +1936,110 @@ bool VolAnnotaterGUI::pick_swc_point(){
 }
 
 void VolAnnotaterGUI::process_picked_swc_point(){
+
+}
+void VolAnnotaterGUI::init_ui_func()
+{
+    auto picked_pt_in_vol_render_frame = [&]()->bool{
+        auto pos = vol_render_resc->vol_query_priv_data.clicked;
+        auto [x, y] = vol_render_resc->vol_query_priv_data.query_pos;
+        if(x < 0 || y < 0
+            || x >= window_priv_data.vol_render_window_size.x
+            || y >= window_priv_data.vol_render_window_size.y) return false;
+        return vol_swc_render_framebuffer.m_hash_id.at(x + 1, y + 22) == swc_resc->swc_priv_data.last_picked_swc_pt_id;
+    };
+    swc_op_ui[SWC_OP_Point_UpdateR] = [&, picked_pt_in_vol_render_frame = std::move(picked_pt_in_vol_render_frame)](){
+        if(!swc_resc->SelectedSWCPoint()) return;
+        auto& swc_pt = swc_resc->GetSelectedSWCPoint();
+        static float r = 0.f;// =  swc_pt.radius;
+        ImGui::NewLine();
+        ImGui::InputFloat("New Radius", &r, 0.f, 0.f, "%.5f");
+        bool update = false;
+        if(ImGui::Button("Update", ImVec2(100, 18))){
+            swc_resc->GetSelected().swc->UpdateRadius(swc_pt.id, r);
+            update = true;
+        }
+        ImGui::NewLine();
+
+        if(picked_pt_in_vol_render_frame() && ImGui::Button("Query-Update", ImVec2(150, 18))){
+            if(query_volume()){
+                auto& ret = vol_render_resc->vol_query_priv_data.query_info_view;
+                Float3 pos;
+                pos.x = ret.at(0);
+                pos.y = ret.at(1);
+                pos.z = ret.at(2);
+                auto nr = ret.at(3);
+                Float3 opos = {swc_pt.x, swc_pt.y, swc_pt.z};
+                if((pos - opos).length() > vol_render_resc->render_base_space * 16.f){
+                    LOG_ERROR("Query And Update SWC Point Radius: new query pos is not closed to old pos");
+                }
+                else{
+                    swc_resc->GetSelected().swc->UpdateRadius(swc_pt.id, nr);
+                    update = true;
+                }
+            }
+        }
+        if(update){
+            update_swc_influenced_blocks();
+        }
+    };
+
+    swc_op_ui[SWC_OP_Point_Delete] = [&](){
+
+    };
+
+    swc_op_ui[SWC_OP_Seg_InterpR] = [&](){
+        auto id1 = swc_resc->swc_priv_data.picked_swc_pt_q.back();
+        auto id2 = swc_resc->swc_priv_data.picked_swc_pt_q.front();
+        if(id1 <= 0 || id2 <= 0) return;
+        auto swc = swc_resc->GetSelected().swc;
+        if(!swc->IsRoot(id1, id2) && !swc->IsRoot(id2, id1)){
+            ImGui::BulletText("Not on the same axon");
+        }
+        else{
+            bool update = false;
+            ImGui::BulletText("Point1 ID: %d, Radius %.5f", id1, swc->GetNode(id1).radius);
+            ImGui::BulletText("Point2 ID: %d, Radius %.5f", id2, swc->GetNode(id2).radius);
+            if(ImGui::Button("Interp", ImVec2(120, 18))){
+                std::vector<SWCPointKey> ids;
+                if(swc->IsRoot(id2, id1)) std::swap(id1, id2);
+                assert(swc->IsRoot(id1, id2));
+                auto id = id2;
+                while(id != id1){
+                    ids.emplace_back(id);
+                    id = swc->GetNode(id).pid;
+                }
+                ids.emplace_back(id1);
+                auto r1 = swc->GetNode(id1).radius;
+                auto r2 = swc->GetNode(id2).radius;
+                int n = ids.size();
+                float total_length = 0.f;
+                for(int i = 1; i < n; i++){
+                    auto& prev_pt = swc->GetNode(ids[i - 1]);
+                    auto& cur_pt = swc->GetNode(ids[i]);
+                    total_length += Float3(prev_pt.x - cur_pt.x, prev_pt.y - cur_pt.y, prev_pt.z - cur_pt.z).length();
+                }
+                float dist = 0.f;
+                auto calc_interp_r = [&](float x){
+                    float u = x / total_length;
+                    return r1 * (1.f - u) + r2 * u;
+                };
+                for(int i = n - 2; i > 0; i--){
+                    auto& prev_pt = swc->GetNode(ids[i + 1]);
+                    auto& cur_pt = swc->GetNode(ids[i]);
+                    dist += Float3(prev_pt.x - cur_pt.x, prev_pt.y - cur_pt.y, prev_pt.z - cur_pt.z).length();
+                    swc->UpdateRadius(ids[i], calc_interp_r(dist));
+                }
+                update = true;
+            }
+            if(update){
+                update_swc_influenced_blocks();
+            }
+        }
+    };
+
+    swc_op_ui[SWC_OP_Seg_Delete] = [&](){
+
+    };
 
 }

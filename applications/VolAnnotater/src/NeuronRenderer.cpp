@@ -8,6 +8,9 @@ NeuronRenderer::NeuronRenderer(const NeuronRenderer::NeuronRendererCreateInfo &i
 
     tf_params_buffer.initialize_handle();
     tf_params_buffer.reinitialize_buffer_data(nullptr, GL_DYNAMIC_DRAW);
+
+    params_buffer.initialize_handle();
+    params_buffer.reinitialize_buffer_data(&params, GL_DYNAMIC_DRAW);
 }
 
 NeuronRenderer::~NeuronRenderer() {
@@ -46,12 +49,16 @@ void NeuronRenderer::DeleteNeuronMesh(PatchID patch_id) {
     patches.erase(patch_id);
 }
 
-void NeuronRenderer::Begin(const mat4 &view, const mat4 &proj){
+void NeuronRenderer::Begin(const mat4 &view, const mat4 &proj, const Float3& view_pos){
     shader.bind();
 
     tf_params.proj_view = proj * view;
     tf_params_buffer.set_buffer_data(&tf_params);
     tf_params_buffer.bind(0);
+
+    params.view_pos = view_pos;
+    params_buffer.set_buffer_data(&params);
+    params_buffer.bind(1);
 }
 
 void NeuronRenderer::Draw(PatchID patch_id) {
@@ -73,4 +80,11 @@ void NeuronRenderer::Draw(PatchID patch_id) {
 
 void NeuronRenderer::End(){
     shader.unbind();
+}
+
+void NeuronRenderer::Set(const Float3 &light_dir, const Float3 &light_radiance)
+{
+    params.light_dir = light_dir;
+    params.light_radiance = light_radiance;
+    params_buffer.set_buffer_data(&params);
 }

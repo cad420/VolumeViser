@@ -69,6 +69,8 @@ private:
     void create_mesh_render_gl_framebuffer_resource();
 
 private:
+    void init_ui_func();
+
     void frame_vol_render();
 
     // 大规模体绘制一帧
@@ -156,7 +158,15 @@ private:
         SWC_OP_Point,
         SWC_OP_Segment
     };
+    enum SWCOps : int{
+        SWC_OP_Point_UpdateR,
+        SWC_OP_Point_Delete,
+        SWC_OP_Seg_InterpR,
+        SWC_OP_Seg_Delete
+    };
     SWCOpStatus swc_op = SWC_OP_Point;
+
+    std::unordered_map<SWCOps, std::function<void()>> swc_op_ui;
 
     //体绘制 用于opengl cuda资源交互相关
     struct{
@@ -191,6 +201,13 @@ private:
         renderbuffer_t rbo;
         texture2d_t color;
     }mesh_render_framebuffer;
+
+    struct{
+        float light_h_degree = 90.f;
+        float light_v_degree = 0.f;
+        Float3 light_color = Float3(1.f);
+        float light_intensity = 1.f;
+    };
 
     vertex_array_t quad_vao;
 

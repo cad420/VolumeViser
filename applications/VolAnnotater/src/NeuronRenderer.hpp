@@ -23,11 +23,13 @@ public:
 
     void DeleteNeuronMesh(PatchID patch_id);
 
-    void Begin(const mat4& view, const mat4& proj);
+    void Begin(const mat4& view, const mat4& proj, const Float3& view_pos);
 
     void Draw(PatchID patch_id);
 
     void End();
+
+    void Set(const Float3& light_dir, const Float3& light_radiance);
 
 private:
     program_t shader;
@@ -37,6 +39,14 @@ private:
         mat4 proj_view;
     }tf_params;
     std140_uniform_block_buffer_t<Transform> tf_params_buffer;
+
+    struct alignas(16) Params{
+        Float3 light_dir = Float3(0.f, 1.f, 0.f); float pad0;
+        Float3 light_radiance = Float3(1.f); float pad1;
+        Float3 albedo = Float3(1.f); float pad2;
+        Float3 view_pos; float pad3;
+    }params;
+    std140_uniform_block_buffer_t<Params> params_buffer;
 
     struct DrawPatch{
         mat4 model = mat4::identity();

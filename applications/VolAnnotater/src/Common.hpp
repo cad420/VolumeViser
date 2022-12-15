@@ -139,6 +139,7 @@ public:
 using SWCUID = viser::UnifiedRescUID;
 using SWCNeuronID = size_t;
 using SWCPointKey = SWC::SWCPointKey;
+using SWCPoint = SWC::SWCPoint;
 
 using MeshUID = viser::UnifiedRescUID;
 
@@ -244,7 +245,11 @@ public:
 public:
     bool Selected() const { return CheckUnifiedRescUID(selected_swc_uid) && loaded_swc.count(selected_swc_uid); }
 
+    bool SelectedSWCPoint() const { return Selected() && swc_priv_data.last_picked_swc_pt_id != -1; }
+
     SWCInfo& GetSelected() { return loaded_swc.at(selected_swc_uid); }
+
+    SWCPoint& GetSelectedSWCPoint() { return GetSelected().swc->GetNode(swc_priv_data.last_picked_swc_pt_id); }
 
     /**
      * @brief 记录一个被选中的swc point id，自动保持最近2个被选中的
@@ -253,6 +258,10 @@ public:
     void AddPickedSWCPoint(SWCPointKey id);
 
     void UpdatePickedSWCSegmentPoints();
+
+    void ClearPickedSWCSegmentPoints() { swc_priv_data.swc_draw_tree.draw_segment_points.clear(); }
+
+    void AddPickedSWCSegPtsToRenderer();
 
     void SetSWCPointPickSize(int s);
 

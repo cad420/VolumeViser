@@ -99,6 +99,8 @@ public:
 
     void InsertNodeInternal(const SWCPoint& point, SWCPointKey kid) noexcept;
 
+    void UpdateRadius(SWCPointKey, float r) noexcept;
+
     bool QueryNode(SWCPointKey id) noexcept;
 
     SWCPoint& GetNode(SWCPointKey id) noexcept;

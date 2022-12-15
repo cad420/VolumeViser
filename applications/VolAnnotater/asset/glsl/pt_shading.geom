@@ -6,6 +6,8 @@ in VS_OUT{
     int id;
 }gs_in[];
 
+uniform int PickedID[2];
+
 layout(location = 0) out vec3 fColor;
 layout(location = 1) flat out int fID;
 

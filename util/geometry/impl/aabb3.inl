@@ -29,7 +29,7 @@ VUTIL_BEGIN
 
     template<typename T>
     bool taabb3<T>::intersect(const self_t &other) const noexcept {
-        return (*this | other).is_valid();
+        return (*this & other).is_valid();
     }
 
     template<typename T>

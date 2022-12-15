@@ -28,6 +28,26 @@ void SWCRenderer::Reset() {
 
 }
 
+void SWCRenderer::AddVertex(const std::vector<Vertex> &vertices)
+{
+    sel_tags.vao.destroy();
+    sel_tags.vbo.destroy();
+
+    sel_tags.loaded_vertices_count = vertices.size();
+    if(sel_tags.loaded_vertices_count == 0) return;
+    sel_tags.vao.initialize_handle();
+    sel_tags.vbo.initialize_handle();
+    sel_tags.vbo.reinitialize_buffer_data(nullptr, vertices.size(), GL_DYNAMIC_DRAW);
+    sel_tags.vao.bind_vertex_buffer_to_attrib(attrib_var_t<Vertex>(0), sel_tags.vbo, 0);
+    sel_tags.vao.enable_attrib(attrib_var_t<Vertex>(0));
+    sel_tags.vbo.set_buffer_data(vertices.data(), 0, vertices.size());
+}
+
+void SWCRenderer::ClearVertex()
+{
+    sel_tags.loaded_vertices_count = 0;
+}
+
 void SWCRenderer::InitLine(const std::vector<Vertex> &vertices, const std::vector<uint32_t> &indices, size_t patch_id, const mat4& model) {
     LOG_DEBUG("SWCRenderer InitLine with vertices count : {}, indices count : {}, patch_id : {}",
               vertices.size(), indices.size(), patch_id);
@@ -137,8 +157,17 @@ void SWCRenderer::Draw(const mat4 &view, const mat4& proj, bool tag) {
 
         draw_tag.vao.unbind();
     }
+    GL_EXPR(glDisable(GL_DEPTH_TEST));
+    pt_shader.set_uniform_var("Sel", 1);
+    if(sel_tags.loaded_vertices_count > 0){
+        sel_tags.vao.bind();
 
+        GL_EXPR(glDrawArrays(GL_POINTS, 0, sel_tags.loaded_vertices_count));
 
+        sel_tags.vao.unbind();
+    }
+    pt_shader.set_uniform_var("Sel", 0);
+    GL_EXPR(glEnable(GL_DEPTH_TEST));
     pt_shader.unbind();
 
 }
@@ -196,3 +225,4 @@ void SWCRenderer::Set(SWCPointKey a, SWCPointKey b)
 
     pt_shader.unbind();
 }
+

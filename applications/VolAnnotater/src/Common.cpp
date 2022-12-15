@@ -329,10 +329,10 @@ void SWCRescPack::LoadSWCFile(const std::string &filename) {
         CreateSWC(filename);
 
         for(auto& pt : swc_pts){
-            pt.x *= 0.001f;
-            pt.y *= 0.001f;
-            pt.z *= 0.001f;
-            pt.radius *= 0.001f;
+//            pt.x *= 0.001f;
+//            pt.y *= 0.001f;
+//            pt.z *= 0.001f;
+//            pt.radius *= 0.001f;
             InsertSWCPoint(pt);
         }
 
@@ -562,6 +562,19 @@ void SWCRescPack::SetSWCPointPickSize(int s)
 void SWCRescPack::UpdatePickedSWCSegmentPoints()
 {
     swc_priv_data.swc_draw_tree.SelSegPoints(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
+}
+void SWCRescPack::AddPickedSWCSegPtsToRenderer()
+{
+    auto id1 = swc_priv_data.picked_swc_pt_q.front();
+    auto id2 = swc_priv_data.picked_swc_pt_q.back();
+    auto swc = GetSelected().swc;
+    std::vector<Float4> vertices;
+    for(auto& id : swc_priv_data.swc_draw_tree.draw_segment_points){
+        if(id == id1 || id == id2) continue;
+        auto& pt = swc->GetNode(id);
+        vertices.push_back(Float4(pt.x, pt.y, pt.z, vutil::intBitsToFloat(pt.id)));
+    }
+    swc_renderer->AddVertex(vertices);
 }
 
 //============================================================================================

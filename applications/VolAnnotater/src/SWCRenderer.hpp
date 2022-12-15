@@ -30,7 +30,7 @@ public:
 
     void Set(SWCPointKey a, SWCPointKey b);
 
-    void AddVertex(Vertex& v);
+    void AddVertex(const std::vector<Vertex>& v);
 
     void ClearVertex();
 
@@ -60,6 +60,9 @@ private:
         uint32_t idx = 0;
     };
     std::unordered_map<size_t, Patch> patches;
+
+    DrawTag sel_tags;
+
     struct alignas(16) TransformParams{
         mat4 model;
         mat4 view;
