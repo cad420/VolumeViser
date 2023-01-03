@@ -79,7 +79,7 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
         std::string lod_path = j.at("lod" + std::to_string(lod));
         LOG_TRACE("Load LOD({}) : {}", lod, lod_path);
 
-        vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(RescAccess::Shared, std::make_shared<EBVolumeFile>(lod_path));
+        vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(RescAccess::Shared, CreateVolumeFileByFileName(lod_path));
     }
 
     vol_priv_data.volume = NewHandle<GridVolume>(RescAccess::Unique, vol_info);

@@ -2,6 +2,8 @@
 
 #include <VolumeUtils/Volume.hpp>
 
+#include <unordered_set>
+
 VISER_BEGIN
 
 class EBVolumeFilePrivate{
@@ -147,6 +149,17 @@ void viser::RawVolumeFile::ReadVolumeRegion(const viser::Int3 &beg_pos, const vi
 void viser::RawVolumeFile::WriteVolumeRegion(const viser::Int3 &beg_pos, const viser::Int3 &end_pos, const void *ptr)
 {
 
+}
+
+
+std::shared_ptr<VolumeIOInterface> CreateVolumeFileByFileName(const std::string& filename){
+    if(vutil::ends_with(filename, EBVolumeFile::FilenameExt)){
+        return std::make_shared<EBVolumeFile>(filename);
+    }
+    else if(vutil::ends_with(filename, RawVolumeFile::FilenameExt)){
+        return std::make_shared<RawVolumeFile>(filename);
+    }
+    return nullptr;
 }
 
 VISER_END

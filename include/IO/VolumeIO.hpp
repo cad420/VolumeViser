@@ -4,9 +4,14 @@
 
 VISER_BEGIN
 
+std::shared_ptr<VolumeIOInterface> CreateVolumeFileByFileName(const std::string& filename);
+
 class EBVolumeFilePrivate;
 class EBVolumeFile : public VolumeIOInterface{
 public:
+
+    inline static const char* FilenameExt = ".encoded_blocked.desc.json";
+
     /**
      * @param filename 体数据的desc文件 "*.encoded_blocked.desc.json"
      */
@@ -41,8 +46,11 @@ protected:
 class RawVolumeFilePrivate;
 class RawVolumeFile : public VolumeIOInterface{
   public:
+
+    inline static const char* FilenameExt = ".raw.desc.json";
+
     /**
-     * @param filename 体数据的desc文件 "*.encoded_blocked.desc.json"
+     * @param filename 体数据的desc文件 "*.raw.desc.json"
      */
     explicit RawVolumeFile(std::string_view filename);
 
