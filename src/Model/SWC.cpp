@@ -120,11 +120,10 @@ public:
         _->swc_point_mp[id] = point;
         assert(_->node_mp[pid].children.count(kid));
         _->node_mp[pid].children.erase(kid);
+        _->node_mp[pid].children.insert(id);
         _->node_mp[kid].parent = id;
         _->swc_point_mp[kid].pid = id;
         _->node_mp[id] = {id, pid, {kid}};
-
-
     }
 
     bool SWC::CheckConnection(SWC::SWCPointKey id0, SWC::SWCPointKey id1) noexcept {
@@ -353,6 +352,42 @@ public:
         if(!QueryNode(id)) return;
         _->swc_point_mp.at(id).radius = r;
         _->direct_influenced_pts[Old_UpdateR].push_back(_->swc_point_mp.at(id));
+    }
+    bool SWC::CheckUniquePath(SWC::SWCPointKey id0, SWC::SWCPointKey id1) noexcept
+    {
+        if(!QueryNode(id0) || !QueryNode(id1)) return false;
+        if(!IsRoot(id0, id1) && !IsRoot(id1, id0)) return false;
+        if(IsRoot(id1, id0)) std::swap(id0, id1);
+
+        auto id = _->swc_point_mp.at(id1).pid;
+        while(id != id0){
+            if(_->node_mp.at(id).children.size() != 1) return false;
+            id = _->swc_point_mp.at(id).pid;
+        }
+
+        return true;
+    }
+    void SWC::DeleteUniquePath(SWC::SWCPointKey id0, SWC::SWCPointKey id1) noexcept
+    {
+        if(!CheckUniquePath(id0, id1) && !CheckUniquePath(id1, id0)) return;
+        if(IsRoot(id1, id0)) std::swap(id0, id1);
+        auto id = _->swc_point_mp.at(id1).pid;
+        std::vector<SWCPointKey> ids;
+        SWCPointKey lst_key = -1;
+        _->updated = true;
+        while(id != id0){
+            ids.emplace_back(id);
+            auto pid = _->swc_point_mp.at(id).pid;
+            _->swc_point_mp.erase(id);
+            _->node_mp.erase(id);
+            lst_key = id;
+            _->direct_influenced_pts[Old_Del].emplace_back(id);
+            id = pid;
+        }
+        _->swc_point_mp.at(id1).pid = id0;
+        _->node_mp.at(id1).parent = id0;
+        _->node_mp.at(id0).children.erase(lst_key);
+        _->node_mp.at(id0).children.insert(id1);
     }
 
     VISER_END

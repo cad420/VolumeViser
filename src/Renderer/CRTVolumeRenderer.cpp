@@ -283,7 +283,9 @@ VISER_BEGIN
             float3 albedo = make_float3(color);
             float3 ambient = 0.05f * albedo;
             float3 diffuse = max(dot(N, -ray_dir), 0.f) * albedo;
-            return make_float4(ambient + diffuse, color.w);
+            float3 view_dir = normalize(params.cu_per_frame_params.cam_pos - pos);
+            float3 specular = powf(max(0.f, dot(N, view_dir)), 24.f) * make_float3(0.2f);
+            return make_float4(ambient + diffuse + specular, color.w);
         }
         struct RayCastResult2{
             float4 color;
@@ -323,7 +325,8 @@ VISER_BEGIN
             float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
 //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
 //            return ret;
-            float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
+//            float3 voxel = 1.f / (params.cu_volume.bound.high - params.cu_volume.bound.low);
+            float3 voxel = make_float3(1.f);
             while(ray_cast_dist < ray_max_cast_dist){
                 float3 sampling_pos = ray_cast_pos;// + 0.5f * dt * ray.d;
 
@@ -355,7 +358,7 @@ VISER_BEGIN
                     // always assert alpha = 0.f has no contribution
                     if(mapping_color.w > 0.f){
                         if(params.cu_per_frame_params.debug_mode != 4)
-                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, sampling_pos, ray.d, voxel * dt, cur_lod);
+                            mapping_color = CalcShadingColor(params, hash_table, mapping_color, ray_cast_pos, ray.d, voxel * dt, cur_lod);
                         // accumulate color radiance
                         ret.color += mapping_color * make_float4(make_float3(mapping_color.w), 1.f) * (1.f - ret.color.w);
                         if(ret.color.w > 0.99f){

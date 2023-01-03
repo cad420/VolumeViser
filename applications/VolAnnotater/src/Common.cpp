@@ -212,9 +212,9 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
     render_params.lod.leve_of_dist = lod;
     render_params.tf.updated = true;
 //    render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
-    render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 1.f, 0.5f, 0.f);
-    render_params.tf.tf_pts.pts[0.6f] = Float4(1.f, 0.5f, 0.f, 1.f);
-    render_params.tf.tf_pts.pts[0.96f] = Float4(1.f, 0.5f, 0.f, 1.f);
+    render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 0.1f, 0.2f, 0.f);
+    render_params.tf.tf_pts.pts[0.6f] = Float4(0.3f, 0.6f, 0.9f, 1.f);
+    render_params.tf.tf_pts.pts[0.96f] = Float4(0.f, 0.5f, 1.f, 1.f);
 //    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
     render_params.other.updated = true;
     render_params.other.ray_step = render_base_space * 0.5;
@@ -335,7 +335,15 @@ void SWCRescPack::LoadSWCFile(const std::string &filename) {
 //            pt.radius *= 0.001f;
             InsertSWCPoint(pt);
         }
-
+        double dist_sum = 0.f;
+        auto& swc = GetSelected().swc;
+        for(auto& pt : swc_pts){
+            auto& pnode = swc->GetNode(pt.pid);
+            Float3 ppos = Float3(pnode.x, pnode.y, pnode.z);
+            Float3 pos = Float3(pt.x, pt.y, pt.z);
+            dist_sum += (ppos - pos).length();
+        }
+        LOG_INFO("swc total dist sum : {}", dist_sum);
         swc_priv_data.swc_draw_tree.Build(GetSelected().swc);
     }
     catch (const ViserFileOpenError& err) {
@@ -354,6 +362,8 @@ void SWCRescPack::CreateSWC(const std::string& filename) {
     swc_info.filename = filename;
 
     SelectSWC(swc_uid);
+
+    swc_priv_data.swc_draw_tree.swc = GetSelected().swc;
 }
 
 void SWCRescPack::DeleteSelSWC() {
@@ -376,7 +386,7 @@ void SWCRescPack::SelectSWC(SWCUID swc_id) {
 
     swc_priv_data.Reset();
 
-    swc_renderer->Reset();
+
 
     auto& swc = loaded_swc.at(swc_id).swc;
 
@@ -397,17 +407,19 @@ void SWCRescPack::SelectSWC(SWCUID swc_id) {
         swc_priv_data.available_swc_pt_ids.erase(pt.id);
     }
 
-    auto lines = swc->PackLines();
-    for(auto& line : lines){
-        int n = line.size();
-        int root = swc->GetNodeRoot(line[0].id);
-        auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
-        for(int i = 1; i < n; i++){
-            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, vutil::intBitsToFloat(line[i - 1].id));
-            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, vutil::intBitsToFloat(line[i].id));
-            swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
-        }
-    }
+    ResetSWCRenderer();
+//    swc_renderer->Reset();
+//    auto lines = swc->PackLines();
+//    for(auto& line : lines){
+//        int n = line.size();
+//        int root = swc->GetNodeRoot(line[0].id);
+//        auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
+//        for(int i = 1; i < n; i++){
+//            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, vutil::intBitsToFloat(line[i - 1].id));
+//            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, vutil::intBitsToFloat(line[i].id));
+//            swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
+//        }
+//    }
 
     //如果有绑定mesh uid 那么调用切换函数
     if(swc_mesh_mp.count(selected_swc_uid))
@@ -466,6 +478,31 @@ void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
     //默认当成功插入一个点后 该点成为最新一次选中的点
 //    swc_priv_data.last_picked_swc_pt_id = pt.id;
     AddPickedSWCPoint(pt.id);
+}
+
+void SWCRescPack::InsertInternalSWCPoint(SWC::SWCPoint pt)
+{
+    auto id1 = swc_priv_data.picked_swc_pt_q.back();
+    auto id2 = swc_priv_data.picked_swc_pt_q.front();
+    auto swc = GetSelected().swc;
+    if(id1 <= 0 || id2 <= 0 || swc->GetNode(id1).pid != id2 && swc->GetNode(id2).pid != id1){
+        LOG_DEBUG("Insert internal swc point should select two neighborhood points");
+        return;
+    }
+    if(swc->GetNode(id1).pid == id2) std::swap(id1, id2);
+    pt.pid = id1;
+
+    SWCNeuronID id;
+    if(pt.id == 0)
+        id = *swc_priv_data.available_swc_pt_ids.begin();
+    else
+        id = pt.id;
+    swc_priv_data.available_swc_pt_ids.erase(id);
+    pt.id = id;
+
+    swc->InsertNodeInternal(pt, id2);
+
+    ResetSWCRenderer();
 }
 
 void SWCRescPack::SaveSWCToFile(){
@@ -575,6 +612,26 @@ void SWCRescPack::AddPickedSWCSegPtsToRenderer()
         vertices.push_back(Float4(pt.x, pt.y, pt.z, vutil::intBitsToFloat(pt.id)));
     }
     swc_renderer->AddVertex(vertices);
+}
+void SWCRescPack::ResetSWCRenderer(bool init)
+{
+    swc_renderer->Reset();
+    swc_renderer->ClearVertex();
+    if(init){
+        if(!Selected()) return;
+        auto swc = GetSelected().swc;
+        auto lines = swc->PackLines();
+        for(auto& line : lines){
+            int n = line.size();
+            int root = swc->GetNodeRoot(line[0].id);
+            auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
+            for(int i = 1; i < n; i++){
+                vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, vutil::intBitsToFloat(line[i - 1].id));
+                vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, vutil::intBitsToFloat(line[i].id));
+                swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
+            }
+        }
+    }
 }
 
 //============================================================================================

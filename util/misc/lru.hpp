@@ -52,19 +52,19 @@ VUTIL_BEGIN
         void emplace_back(const Key& key,Value value){
             auto it = pos.find(key);
             if(it != pos.end()){
-                LOG_DEBUG("find");
+//                LOG_DEBUG("find");
                 it->second->second = std::move(value);
                 move_to_head(it->second);
                 return;
             }
-            LOG_DEBUG("not exist");
+//            LOG_DEBUG("not exist");
             if(data.size() >= capacity){
                 pos.erase(data.back().first);//erase by key for unordered_map
                 data.pop_back();
             }
-            LOG_DEBUG("1111");
+//            LOG_DEBUG("1111");
             data.emplace_front(std::make_pair(key,std::move(value)));
-            LOG_DEBUG("2222");
+//            LOG_DEBUG("2222");
             pos[key] = data.begin();
         }
         float get_load_factor() const{

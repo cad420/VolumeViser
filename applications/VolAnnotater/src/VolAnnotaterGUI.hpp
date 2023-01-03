@@ -46,6 +46,8 @@ private:
 
     void show_smooth_mesh_window(bool* p_open);
 
+    void show_swc_load_window(bool* p_open);
+
     void show_debug_window(bool *p_open);
 private:
     void check_window_resize_event();
@@ -162,7 +164,8 @@ private:
         SWC_OP_Point_UpdateR,
         SWC_OP_Point_Delete,
         SWC_OP_Seg_InterpR,
-        SWC_OP_Seg_Delete
+        SWC_OP_Seg_Delete,
+        SWC_OP_Seg_Add
     };
     SWCOpStatus swc_op = SWC_OP_Point;
 
@@ -242,6 +245,8 @@ private:
         bool vol_render_swc_point_tag = false;
 
         bool vol_render_volume = true;
+
+        bool vol_render_save_frame = false;
     };
 
     struct{
@@ -256,5 +261,6 @@ private:
         bool swc_tree_window_open = true;
         bool neuron_mesh_window_open = true;
         bool smooth_mesh_window_open = false;
+        bool swc_load_window_open = false;
     };
 };

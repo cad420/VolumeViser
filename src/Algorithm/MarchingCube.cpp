@@ -867,27 +867,27 @@ VISER_BEGIN
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i];
                         cnt += 1;
-                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
-                               field[i], field[(i + 1) % 4],
-                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+//                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[(i + 1) % 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 4; i < 8; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4 + 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i];
                         cnt += 1;
-                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-                               field[i], field[(i + 1) % 4 + 4],
-                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+//                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[(i + 1) % 4 + 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 0; i < 4; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[i + 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i + 8];
                         cnt += 1;
-                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-                               field[i], field[i + 4],
-                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
+//                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
+//                               field[i], field[i + 4],
+//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 if(cnt)
@@ -922,23 +922,23 @@ VISER_BEGIN
                     params.vertex_pos.at(index) = vert_list[a];
                     params.vertex_pos.at(index + 1) = vert_list[b];
                     params.vertex_pos.at(index + 2) = vert_list[c];
-                    if(index == 10941 * 3) {
-                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
-                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
-                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
-                               m_case_idx, index,
-                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
-                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
-                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
-                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
-                        );
-                        for (int i = 0; i < 8; i++) {
-                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
-                        }
-                        for(int i = 0; i < 13; i++){
-                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
-                        }
-                    }
+//                    if(index == 10941 * 3) {
+//                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
+//                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
+//                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
+//                               m_case_idx, index,
+//                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
+//                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
+//                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
+//                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
+//                        );
+//                        for (int i = 0; i < 8; i++) {
+//                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
+//                        }
+//                        for(int i = 0; i < 13; i++){
+//                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
+//                        }
+//                    }
                 }
             }
 

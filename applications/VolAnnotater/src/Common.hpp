@@ -265,6 +265,10 @@ public:
 
     void SetSWCPointPickSize(int s);
 
+    void UpdateSWCDrawTree() { swc_priv_data.swc_draw_tree.Build(GetSelected().swc); }
+
+    void ResetSWCRenderer(bool init = true);
+
     void Initialize();
     /**
      * @brief 从swc文件中加载swc数据到内存模型中
@@ -304,6 +308,8 @@ public:
      * @note 传入的点不需要id和pid 内部会生成这两个
      */
     void InsertSWCPoint(SWC::SWCPoint pt);
+
+    void InsertInternalSWCPoint(SWC::SWCPoint pt);
 
     /**
      * @brief 将从文件中加载的swc写会文件 如果当前选择的swc没有设置过filename 那么直接返回

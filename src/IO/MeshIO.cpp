@@ -279,10 +279,10 @@ MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert
         for(auto f : vert_face_mp.at(vert_idx).faces){
             norm += get_normal(f);
         }
-        if(vert_face_mp.at(vert_idx).faces.size() == 1){
-            LOG_DEBUG("one face for vert : {}", vert_idx);
-            LOG_DEBUG("vert pos: {} {} {}", vert.x, vert.y, vert.z);
-        }
+//        if(vert_face_mp.at(vert_idx).faces.size() == 1){
+//            LOG_DEBUG("one face for vert : {}", vert_idx);
+//            LOG_DEBUG("vert pos: {} {} {}", vert.x, vert.y, vert.z);
+//        }
         unique_norm[i] = norm.normalized();
     }
 

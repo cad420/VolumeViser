@@ -124,13 +124,18 @@ public:
 
     std::vector<SWCPointKey> GetNodeKids(SWCPointKey id) noexcept;
 
-    void DeleteNode(SWCPointKey id, bool connect = false) noexcept;
+    void DeleteNode(SWCPointKey id, bool connect = true) noexcept;
 
     // id0 <-- id1
     void ConnectNode(SWCPointKey id0, SWCPointKey id1) noexcept;
 
     // 是否联通，即同一个祖先
     bool CheckConnection(SWCPointKey id0, SWCPointKey id1) noexcept;
+
+    // 两点之间只有一条唯一的路径，并且没有分支，不包括端点
+    bool CheckUniquePath(SWCPointKey id0, SWCPointKey id1) noexcept;
+
+    void DeleteUniquePath(SWCPointKey id0, SWCPointKey id1) noexcept;
 
     // 每次根据几何区域进行查询和删除前才更新重建BVH
     // 设置一个标志记录SWC是否被更改

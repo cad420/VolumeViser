@@ -100,6 +100,8 @@ void VolAnnotaterGUI::pre_render() {
     status_flags &= ~VOL_RENDER_PARAMS_CHANGED;
 
     vol_render_resc->vol_query_priv_data.clicked = false;
+
+    vol_render_save_frame = false;
 }
 
 void VolAnnotaterGUI::handle_events() {
@@ -132,7 +134,9 @@ void VolAnnotaterGUI::handle_events() {
     vol_camera_changed |= window_priv_data.vol_render_resize;
 
 
-    if(is_annotating() && mouse->is_pressed(mouse_button_t::Mouse_Button_Left)){
+    if(
+//        is_annotating() &&
+        mouse->is_pressed(mouse_button_t::Mouse_Button_Left)){
         auto [x, y] = ImGui::GetIO().MouseClickedPos[0];
         x = x - window_priv_data.vol_render_window_pos.x - 1;
         y = y - window_priv_data.vol_render_window_pos.y - 22;
@@ -143,6 +147,9 @@ void VolAnnotaterGUI::handle_events() {
     }
     if(vol_camera_changed)
         status_flags |= VOL_CAMERA_CHANGED;
+
+    if(keyboard->is_pressed('P'))
+        vol_render_save_frame = true;
 }
 
 void VolAnnotaterGUI::show_editor_ui() {
@@ -190,6 +197,9 @@ void VolAnnotaterGUI::show_editor_ui() {
     show_smooth_mesh_window(&smooth_mesh_window_open);
     timer.stop();
 //    timer.print_duration("smooth mesh window");
+
+    show_swc_load_window(&swc_load_window_open);
+
     timer.start();
     show_debug_window(nullptr);
     timer.stop();
@@ -717,7 +727,8 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
         }
 
         if(ImGui::Button("Load", ImVec2(120, 18))){
-            swc_file_dialog.Open();
+            swc_load_window_open = true;
+//            swc_file_dialog.Open();
         }
 
         ImGui::SameLine();
@@ -771,22 +782,22 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
 
     ImGui::End();
 
-    swc_file_dialog.Display();
-    if(swc_file_dialog.HasSelected()){
-        swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
-        //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
-        swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
-
-        std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
-                                  + "_neuron";
-        swc2mesh_resc->CreateMesh(neuron_name);
-
-        swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
-
-        update_swc_influenced_blocks();
-
-        swc_file_dialog.ClearSelected();
-    }
+//    swc_file_dialog.Display();
+//    if(swc_file_dialog.HasSelected()){
+//        swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
+//        //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
+//        swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
+//
+//        std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
+//                                  + "_neuron";
+//        swc2mesh_resc->CreateMesh(neuron_name);
+//
+//        swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
+//
+//        update_swc_influenced_blocks();
+//
+//        swc_file_dialog.ClearSelected();
+//    }
 }
 
 void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
@@ -877,7 +888,7 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
                 ImGui::NewLine();
 
                 static const char* SegmentOperations[] = {
-                  "InterpR", "Delete"
+                  "InterpR", "Delete", "Add"
                 };
                 static int seg_op_idx = 0;
                 constexpr int seg_op_cnt = sizeof(SegmentOperations) / sizeof(SegmentOperations[0]);
@@ -898,7 +909,9 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
                 else if(seg_op_idx == 1){
                     swc_op_ui.at(SWC_OP_Seg_Delete)();
                 }
-
+                else if(seg_op_idx == 2){
+                    swc_op_ui.at(SWC_OP_Seg_Add)();
+                }
                 ImGui::EndTabItem();
             }
 
@@ -1171,6 +1184,51 @@ void VolAnnotaterGUI::show_smooth_mesh_window(bool *p_open) {
     ImGui::End();
 }
 
+void VolAnnotaterGUI::show_swc_load_window(bool *p_open)
+{
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+
+    if(p_open && !*p_open) return;
+    static char swc_filename[256] = {'\0'};
+    if(ImGui::Begin("SWC Load", p_open, window_flags)){
+
+        ImGui::InputText("SWC File", swc_filename, 256);
+        static Float3 s = Float3(1.f);
+        ImGui::InputFloat3("Transform ratio", &s.x, "%.5f");
+        if(ImGui::Button("Select", ImVec2(120, 18))){
+            swc_file_dialog.Open();
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Load")){
+            swc_resc->LoadSWCFile(std::string(swc_filename));
+            //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
+            swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
+
+            std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
+                                      + "_neuron";
+            swc2mesh_resc->CreateMesh(neuron_name);
+
+            swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
+
+            update_swc_influenced_blocks();
+
+            swc_file_dialog.ClearSelected();
+
+            *p_open = false;
+        }
+    }
+    ImGui::End();
+
+    swc_file_dialog.Display();
+    if(swc_file_dialog.HasSelected()){
+//        swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
+
+        std::memcpy(swc_filename, swc_file_dialog.GetSelected().string().c_str(),
+                    swc_file_dialog.GetSelected().string().length());
+
+    }
+}
+
 void VolAnnotaterGUI::show_debug_window(bool *p_open) {
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
 
@@ -1239,10 +1297,11 @@ void VolAnnotaterGUI::frame_vol_render() {
                && (status_flags & VOL_DRAW_VOLUME);
     };
     auto query_vol = [&]()->bool{
-        return render_vol_frame() && is_annotating() && vol_render_resc->vol_query_priv_data.clicked;
+        return viser_resc->vol_priv_data.volume.IsValid()
+               && (status_flags & VOL_DRAW_VOLUME) && is_annotating() && vol_render_resc->vol_query_priv_data.clicked;
     };
     auto pick_swc_pt = [&]()->bool{
-        if(!(is_annotating() && vol_render_resc->vol_query_priv_data.clicked)) return false;
+        if(!(vol_render_resc->vol_query_priv_data.clicked)) return false;
 
         return pick_swc_point();
     };
@@ -1281,9 +1340,21 @@ void VolAnnotaterGUI::frame_vol_render() {
     auto draw_list = ImGui::GetWindowDrawList();
 
     draw_list->AddImage((void*)(intptr_t)(vol_swc_render_framebuffer.color.handle()),
-                 ImVec2(window_priv_data.vol_render_window_pos.x, window_priv_data.vol_render_window_pos.y),
-                 ImVec2(window_priv_data.vol_render_window_pos.x + w, window_priv_data.vol_render_window_pos.y + h));
+                 ImVec2(window_priv_data.vol_render_window_pos.x + 1, window_priv_data.vol_render_window_pos.y + 22),
+                 ImVec2(window_priv_data.vol_render_window_pos.x + w + 1, window_priv_data.vol_render_window_pos.y + h + 22));
 
+    if(vol_render_save_frame){
+        auto w = vol_swc_render_framebuffer.frame_width;
+        auto h = vol_swc_render_framebuffer.frame_height;
+        vutil::image2d_t<vutil::color4b> ret(w, h);
+        GL_EXPR(glGetTextureImage(vol_swc_render_framebuffer.color.handle(), 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                                  w * h * sizeof(vutil::color4b),
+                                  ret.get_raw_data()));
+        GL_EXPR(glFinish());
+        vutil::save_rgb_to_png_file("vol_render_snapshot.png", ret.get_data().map([](vutil::color4b c){
+            return vutil::color3b(c.r, c.g, c.b);
+        }));
+    }
 }
 
 void VolAnnotaterGUI::frame_mesh_render() {
@@ -1326,8 +1397,8 @@ void VolAnnotaterGUI::frame_mesh_render() {
 
         auto draw_list = ImGui::GetWindowDrawList();
         draw_list->AddImage((void*)(intptr_t)(mesh_render_framebuffer.color.handle()),
-                            ImVec2(window_priv_data.mesh_render_window_pos.x, window_priv_data.mesh_render_window_pos.y),
-                            ImVec2(window_priv_data.mesh_render_window_pos.x + w, window_priv_data.mesh_render_window_pos.y + h));
+                            ImVec2(window_priv_data.mesh_render_window_pos.x + 1, window_priv_data.mesh_render_window_pos.y + 22),
+                            ImVec2(window_priv_data.mesh_render_window_pos.x + w + 1, window_priv_data.mesh_render_window_pos.y + h + 22));
 
     }
 }
@@ -1432,9 +1503,9 @@ void VolAnnotaterGUI::render_volume() {
                         for(int i = 0; i < 1 << 24; i++){
                             table[v.at(i)]++;
                         }
-                        for(int i = 0; i < 256; i++)
-                            std::cout << "(" << i << "," << table[i] << ")  ";
-                        std::cout << std::endl;
+//                        for(int i = 0; i < 256; i++)
+//                            std::cout << "(" << i << "," << table[i] << ")  ";
+//                        std::cout << std::endl;
                     }
                     block_handle.SetUID(block.ToUnifiedRescUID());
                     this->vol_render_resc->vol_render_priv_data.host_blocks[block] = std::move(block_handle);
@@ -1665,8 +1736,10 @@ void VolAnnotaterGUI::check_and_add_swc_pt() {
         LOG_INFO("Query SWC Point Not Valid: {} {} {} {}", swc_pt.x, swc_pt.y, swc_pt.z, swc_pt.radius);
         return;
     }
-
-    swc_resc->InsertSWCPoint(swc_pt);
+    if(swc_op == SWC_OP_Point)
+        swc_resc->InsertSWCPoint(swc_pt);
+    else if(swc_op == SWC_OP_Segment)
+        swc_resc->InsertInternalSWCPoint(swc_pt);
 
     //更新受影响的block
     update_swc_influenced_blocks();
@@ -1754,7 +1827,7 @@ void VolAnnotaterGUI::update_swc_influenced_blocks(bool all) {
 void VolAnnotaterGUI::generate_modified_mesh() {
     //首先找到与受影响数据块相交的线段 然后遍历所有线段 如果与受影响区域相交 那么将其加入队列
     //有一个限制 数据块不能超过vtex的容量 不然需要分多次进行
-    auto lines = swc_resc->GetSelected().swc->PackLines();
+    auto pts = swc_resc->GetSelected().swc->PackAll();
 
     std::unordered_set<BlockUID> seg_blocks;
 
@@ -1768,11 +1841,11 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         block_boxes.push_back({f_uid * block_length_space,
                                (f_uid + Float3(1)) * block_length_space});
     }
-
+    LOG_DEBUG("seg_blocks count : {}", seg_blocks.size());
     std::vector<SWCSegment> swc_segments;
 
     std::unordered_map<SWC::SWCPointKey, SWC::SWCPoint> pt_mp;
-    for(auto& line : lines) for(auto &pt : line) pt_mp[pt.id] = pt;
+    for(auto& pt : pts) pt_mp[pt.id] = pt;
 
     auto get_box = [](const SWC::SWCPoint& pt){
         BoundingBox3D box;
@@ -1789,17 +1862,17 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         return false;
     };
 
-    for(auto& line : lines){
-        for(auto& pt : line){
-            if(pt_mp.count(pt.pid) == 0) continue;
-            auto& prev_pt = pt_mp.at(pt.pid);
-            auto box = get_box(prev_pt) | get_box(pt);
-            if(intersect(box)){
-                swc_segments.emplace_back(Float4(prev_pt.x, prev_pt.y, prev_pt.z, prev_pt.radius),
-                                          Float4(pt.x, pt.y, pt.z, pt.radius));
-            }
+
+    for(auto& pt : pts){
+        if(pt_mp.count(pt.pid) == 0) continue;
+        auto& prev_pt = pt_mp.at(pt.pid);
+        auto box = get_box(prev_pt) | get_box(pt);
+        if(intersect(box)){
+            swc_segments.emplace_back(Float4(prev_pt.x, prev_pt.y, prev_pt.z, prev_pt.radius),
+                                      Float4(pt.x, pt.y, pt.z, pt.radius));
         }
     }
+
 
     size_t count = swc_segments.size();
     if(count > MaxSegmentCount){
@@ -1915,9 +1988,12 @@ bool VolAnnotaterGUI::pick_swc_point(){
                       vol_swc_render_framebuffer.m_hash_id.get_raw_data()));
     GL_EXPR(glFinish());
     auto [x, y] = vol_render_resc->vol_query_priv_data.query_pos;
-    x += 1;
-    y += 22;
+//    x += 1;
+//    y += 22;
     auto id = vol_swc_render_framebuffer.m_hash_id.at(x, y);
+
+
+
     if(id <= 0 || swc_resc->GetSelected().swc->QueryNode(id) == false) return false;
     LOG_DEBUG("picked swc point id : {}", id);
     swc_resc->AddPickedSWCPoint(id);
@@ -1927,10 +2003,10 @@ bool VolAnnotaterGUI::pick_swc_point(){
         swc_resc->AddPickedSWCSegPtsToRenderer();
     }
 
-    VISER_WHEN_DEBUG(
-    vutil::save_rgb_to_png_file("test.png",vol_swc_render_framebuffer.m_hash_id.map([](int x){
-        return color3b(x);
-    }).get_data());)
+    //    VISER_WHEN_DEBUG(
+    //        vutil::save_rgb_to_png_file("test.png",vol_swc_render_framebuffer.m_hash_id.map([](int x){
+    //                                                                                        return color3b(x);
+    //                                                                                    }).get_data());)
 
     return true;
 }
@@ -1985,7 +2061,26 @@ void VolAnnotaterGUI::init_ui_func()
     };
 
     swc_op_ui[SWC_OP_Point_Delete] = [&](){
+        if(!swc_resc->SelectedSWCPoint()) return;
+        auto& swc_pt = swc_resc->GetSelectedSWCPoint();
+        ImGui::NewLine();
+        static bool connect = true;
+        ImGui::Checkbox("Connect after Delete", &connect);
+        bool update = false;
+        auto pid = swc_pt.pid;
+        if(ImGui::Button("Delete", ImVec2(120, 18))){
+            swc_resc->GetSelected().swc->DeleteNode(swc_pt.id, connect);
+            update = true;
+        }
+        if(update){
+            update_swc_influenced_blocks();
 
+            swc_resc->UpdateSWCDrawTree();//重新生成地铁图相关
+
+            swc_resc->ResetSWCRenderer();
+
+            swc_resc->AddPickedSWCPoint(pid);
+        }
     };
 
     swc_op_ui[SWC_OP_Seg_InterpR] = [&](){
@@ -2039,7 +2134,34 @@ void VolAnnotaterGUI::init_ui_func()
     };
 
     swc_op_ui[SWC_OP_Seg_Delete] = [&](){
+        auto id1 = swc_resc->swc_priv_data.picked_swc_pt_q.back();
+        auto id2 = swc_resc->swc_priv_data.picked_swc_pt_q.front();
+        if(id1 <= 0 || id2 <= 0) return;
+        auto swc = swc_resc->GetSelected().swc;
+        if(!swc->CheckUniquePath(id1, id2)){
+            ImGui::BulletText("Not unique path");
+            return;
+        }
+        ImGui::BulletText("Point1 ID: %d, Radius %.5f", id1, swc->GetNode(id1).radius);
+        ImGui::BulletText("Point2 ID: %d, Radius %.5f", id2, swc->GetNode(id2).radius);
+        if(ImGui::Button("Delete", ImVec2(120, 18))){
+            swc->DeleteUniquePath(id1, id2);
+            update_swc_influenced_blocks();
+            swc_resc->UpdateSWCDrawTree();
 
+            swc_resc->ResetSWCRenderer();
+
+        }
     };
-
+    swc_op_ui[SWC_OP_Seg_Add] = [&](){
+        auto id1 = swc_resc->swc_priv_data.picked_swc_pt_q.back();
+        auto id2 = swc_resc->swc_priv_data.picked_swc_pt_q.front();
+        if(id1 <= 0 || id2 <= 0) return;
+        auto swc = swc_resc->GetSelected().swc;
+        if(swc->GetNode(id1).pid != id2 && swc->GetNode(id2).pid != id1){
+            ImGui::BulletText("Error : Selected two swc points are not neighborhood");
+            return;
+        }
+    };
 }
+
