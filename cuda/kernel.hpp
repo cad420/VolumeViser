@@ -14,7 +14,7 @@ namespace detail{
 #else
         template<typename F>
         void kernel_impl(F func){
-
+            NOT_IMPL
         }
 #endif
 }
@@ -34,11 +34,11 @@ public:
     static cu_task pending(const cu_kernel_launch_info& info, F func){
         auto kernel = &detail::kernel_impl<F>;
         void* params[] = {&func};
-        auto task = [=](cu_stream& stream) mutable {
+        auto task = [=](const cu_stream& stream) mutable {
             CUB_CHECK(cuLaunchKernel((CUfunction)kernel,
                            info.grid_dim.x,info.grid_dim.y,info.grid_dim.z,
                            info.block_dim.x,info.block_dim.y,info.block_dim.z,
-                           info.shared_mem_bytes,stream.lock().get(),
+                           info.shared_mem_bytes,stream.get_handle(),
                            params, nullptr));
             CUB_WHEN_DEBUG(std::cout << "cu_kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
                                      << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
@@ -48,12 +48,12 @@ public:
 
     template<typename... Args>
     static cu_task pending(const cu_kernel_launch_info& info, void(*kernel)(Args...), void** params){
-        auto task = [=](cu_stream& stream) mutable {
-//            stream.get_context().set_ctx();
+        auto task = [=](const cu_stream& stream) mutable {
+            auto _ = stream.get_context()->temp_ctx();
             CUB_CHECK(cudaLaunchKernel((const void*)kernel,
                              info.grid_dim, info.block_dim,params,
-                                     info.shared_mem_bytes, stream.lock().get()));
-            CUB_WHEN_DEBUG(std::cout << "cu_kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
+                                     info.shared_mem_bytes, stream.get_handle()));
+            CUB_WHEN_DEBUG(std::cout << "cuda kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
                                      << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
         };
         return cu_task(task);

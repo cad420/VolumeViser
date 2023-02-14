@@ -9,8 +9,10 @@ file(GLOB_RECURSE
 add_library(culib ${CUDA_SRCS})
 
 target_link_libraries(culib
-        PUBLIC ${CUDA_CUDA_LIBRARY}
+        PUBLIC
+        ${CUDA_CUDA_LIBRARY}
         ${CUDA_LIBRARIES}
+        vutil_lib
         )
 
 target_include_directories(culib

@@ -22,7 +22,7 @@ CUB_BEGIN
             CUB_CPU_GPU T* data() {
                 return reinterpret_cast<T*>(this->ptr);
             }
-            cu_context get_context() const{
+            auto get_context() const{
                 return ctx;
             }
             bool is_device() const{
@@ -34,8 +34,8 @@ CUB_BEGIN
         protected:
             pitched_buffer_info pitched_info;
             void* ptr = nullptr;
-            memory_type type;
-            cu_context ctx;
+            cu_memory_type type;
+            cu_context_handle_t ctx;
             template<bool>
             friend class ::cub::cu_buffer;
         };
@@ -60,7 +60,7 @@ CUB_BEGIN
             return this->pitched_info.xsize;
         }
 
-        CUB_CPU_GPU auto sub_view(size_t origin, size_t len){
+        CUB_CPU_GPU auto sub_view(size_t origin, size_t len) const {
             auto view = *this;
             view->ptr = reinterpret_cast<unsigned char*>(this->ptr) + origin;
             view.pitched_info.xsize = len;
@@ -128,16 +128,15 @@ CUB_BEGIN
     template<bool Pitched>
     class cu_buffer;
 
-    //TODO move and copy construct
+
     template<>
-    class cu_buffer<false>{
+    class cu_buffer<false> : public vutil::no_copy_t, vutil::no_heap_t{
     public:
-        cu_buffer(size_t size, memory_type type, cu_context ctx)
+        cu_buffer(size_t size, cu_memory_type type, cu_context_handle_t ctx)
         :ctx(ctx), size(size), type(type)
         {
-            ctx.set_ctx();
-//            CUcontext t;
-//            CUB_CHECK(cuCtxGetCurrent(&t));
+            assert(ctx->is_valid());
+            auto _ = ctx->temp_ctx();
 
             if(type == e_cu_device){
                 CUB_CHECK(cuMemAlloc((CUdeviceptr*)(&ptr), size));
@@ -145,7 +144,6 @@ CUB_BEGIN
             else if(type == e_cu_host){
                 CUB_CHECK(cuMemAllocHost(&ptr, size));
                 std::memset(ptr, 0, size);
-//                CUB_CHECK(cuMemHostRegister(ptr, size, CU_MEMHOSTREGISTER_PORTABLE));
             }
         }
 
@@ -154,7 +152,6 @@ CUB_BEGIN
                 CUB_CHECK(cuMemFree((CUdeviceptr)ptr));
             }
             else if(type == e_cu_host){
-//                CUB_CHECK(cuMemHostUnregister(ptr));
                 CUB_CHECK(cuMemFreeHost(ptr));
             }
         }
@@ -186,11 +183,11 @@ CUB_BEGIN
             return view;
         }
 
-        cu_context get_context() const {
+        auto get_context() const {
             return ctx;
         }
 
-        memory_type get_type() const {
+        cu_memory_type get_type() const {
             return type;
         }
 
@@ -201,28 +198,33 @@ CUB_BEGIN
         void* get_data() const {
             return ptr;
         }
+
     private:
         void* ptr;
         size_t size;
-        cu_context ctx;
-        memory_type type;
+        cu_context_handle_t ctx;
+        cu_memory_type type;
     };
+
+    using cu_mem = cu_buffer<false>;
 
     // must be device
     template<>
-    class cu_buffer<true>{
+    class cu_buffer<true> : public vutil::no_copy_t, vutil::no_heap_t{
     public:
-        cu_buffer(size_t width, size_t height, uint32_t ele_size, cu_context ctx)
+        cu_buffer(size_t width, size_t height, uint32_t ele_size, cu_context_handle_t ctx)
         :ele_size(ele_size), ctx(ctx)
         {
-            ctx.set_ctx();
+            assert(ctx->is_valid());
+            auto _ = ctx->temp_ctx();
             CUB_CHECK(cuMemAllocPitch((CUdeviceptr*)(&ptr), &info.pitch, width * ele_size, height, ele_size));
             info.xsize = width;
             info.ysize = height;
         }
         ~cu_buffer(){
+            assert(ctx->is_valid());
+            ctx->temp_ctx();
             CUB_CHECK(cuMemFree((CUdeviceptr)ptr));
-
         }
 
         template<typename T>
@@ -266,23 +268,25 @@ CUB_BEGIN
             return view;
         }
 
-        memory_type get_type() const{
+        auto get_type() const{
           return e_cu_device;
         }
 
     private:
         pitched_buffer_info info;
         size_t ele_size;
-        cu_context ctx;
+        cu_context_handle_t ctx;
         void* ptr;
     };
 
-    inline cu_buffer<false> cu_context::alloc_buffer(size_t size, memory_type type) {
-        return cu_buffer<false>(size, type, *this);
+    using cu_pitched_mem = cu_buffer<true>;
+
+    inline cu_mem cu_context::alloc_buffer(size_t size, cu_memory_type type) {
+        return {size, type, this->ref_from_this()};
     }
 
-    inline cu_buffer<true> cu_context::alloc_pitched_buffer(size_t width_bytes, size_t height, uint32_t ele_size) {
-        return cu_buffer<true>(width_bytes, height, ele_size, *this);
+    inline cu_pitched_mem cu_context::alloc_pitched_buffer(size_t width_bytes, size_t height, uint32_t ele_size) {
+        return {width_bytes, height, ele_size, this->ref_from_this()};
     }
 
 

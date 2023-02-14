@@ -162,7 +162,7 @@ private:
         dirty = false;
     }
 private:
-    cub::cu_context ctx;
+    CUDAContext ctx;
     bool dirty = false;
     Handle<CUDAHostBuffer> hhpt;
     Handle<CUDABuffer> hash_page_table;

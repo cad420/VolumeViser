@@ -4,25 +4,6 @@
 
 CUB_BEGIN
 
-namespace detail {
-    struct cu_init {
-        cu_init(){
-            static auto _ = []{
-                try{
-                    CUB_CHECK(cuInit(0));
-                    CUB_WHEN_DEBUG(std::cout << "CUDA init successfully..." << std::endl)
-                }
-                catch (const std::exception& err) {
-                    std::cerr << err.what() << std::endl;
-                    exit(0);
-                }
-                return 0;
-            }();
-        }
-    };
-    inline cu_init _cu_init = cu_init();
-}
-
 class cu_physical_device{
 public:
     friend class cu_context;
@@ -42,8 +23,8 @@ public:
         return devices;
     }
 
-    cu_context create_context(uint32_t flags) const {
-        return cu_context(*this, flags);
+    cu_context_handle_t create_context(uint32_t flags) const {
+        return vutil::make_handle<cu_context>(*this, flags);
     }
 
     int get_device_id() const {
@@ -57,13 +38,14 @@ public:
     }
 
 private:
-    CUdevice device;
-    int device_id;
+    CUdevice device{0};
+    int device_id{-1};
 };
 
 inline cu_context::cu_context(cu_physical_device device, uint32_t flags) {
-    CUB_CHECK(cuCtxCreate(&_->ctx, flags, device.device));
+    CUB_CHECK(cuCtxCreate(&ctx, flags, device.device));
     set_ctx();
+    this->device_id = device.get_device_id();
 }
 
 CUB_END

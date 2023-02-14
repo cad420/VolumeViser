@@ -274,7 +274,7 @@ public:
      * @brief 从swc文件中加载swc数据到内存模型中
      * @note 完成后不会被切换到选中状态
      */
-    void LoadSWCFile(const std::string& filename);
+    void LoadSWCFile(const std::string& filename, Float3 ratio = Float3(1.f));
 
     /**
      * @brief 创建一个新的swc文件

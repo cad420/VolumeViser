@@ -649,7 +649,7 @@ VISER_BEGIN
     class CRTVolumeRendererPrivate{
     public:
 
-        cub::cu_stream render_stream;
+        CUDAStream render_stream;
 
         CTRVolumeRenderKernelParams kernel_params;
 
@@ -666,7 +666,7 @@ VISER_BEGIN
             CUDABufferView1D<float> view;
         }tag;
 
-        cub::cu_context ctx;
+        CUDAContext ctx;
 
         UnifiedRescUID uid;
 

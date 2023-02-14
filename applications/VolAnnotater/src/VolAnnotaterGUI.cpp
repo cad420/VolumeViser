@@ -45,7 +45,8 @@ void VolAnnotaterGUI::initialize() {
 
 //    Float3 default_pos = {4.1, 6.21, 7.f};
     Float3 default_pos = {2.1, 2.577f, 5.312f};
-
+//    Float3 default_pos = {5.025f, 3.028f, 6.334f};
+//    Float3 default_pos = {5.047, 5.859, 6.668};
     camera.set_position(default_pos);
     camera.set_perspective(FOV, 0.001f, 10.f);
     camera.set_direction(vutil::deg2rad(-90.f), 0.f);
@@ -68,7 +69,7 @@ void VolAnnotaterGUI::initialize() {
         swc2mesh_resc->Select(uid);
     };
 
-    viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context().set_ctx();
+//    viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context()->set_ctx();
 
     init_ui_func();
 }
@@ -1200,7 +1201,7 @@ void VolAnnotaterGUI::show_swc_load_window(bool *p_open)
         }
         ImGui::SameLine();
         if(ImGui::Button("Load")){
-            swc_resc->LoadSWCFile(std::string(swc_filename));
+            swc_resc->LoadSWCFile(std::string(swc_filename), s);
             //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
             swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
 
@@ -1825,6 +1826,7 @@ void VolAnnotaterGUI::update_swc_influenced_blocks(bool all) {
 }
 
 void VolAnnotaterGUI::generate_modified_mesh() {
+    AutoTimer timer("generate mesh");
     //首先找到与受影响数据块相交的线段 然后遍历所有线段 如果与受影响区域相交 那么将其加入队列
     //有一个限制 数据块不能超过vtex的容量 不然需要分多次进行
     auto pts = swc_resc->GetSelected().swc->PackAll();

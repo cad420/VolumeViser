@@ -94,16 +94,16 @@ UnifiedRescUID GridVolume::GetUID() const {
     return _->uid;
 }
 
-CUDAHostBuffer GridVolume::ReadBlock(const GridVolume::BlockUID &uid) {
-    NOT_IMPL
-    return viser::CUDAHostBuffer(0, cub::e_cu_device, cub::cu_context());
-}
+//CUDAHostBuffer GridVolume::ReadBlock(const GridVolume::BlockUID &uid) {
+//    NOT_IMPL
+//    return viser::CUDAHostBuffer(0, cub::e_cu_device, cub::cu_context());
+//}
 
 
-CUDAHostBuffer GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod) {
-    NOT_IMPL
-    return viser::CUDAHostBuffer(0, cub::e_cu_device, cub::cu_context());
-}
+//CUDAHostBuffer GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod) {
+//    NOT_IMPL
+//    return viser::CUDAHostBuffer(0, cub::e_cu_device, cub::cu_context());
+//}
 
 
 
@@ -139,15 +139,15 @@ void GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAHostBuffer &bu
     file->UnLock();
 }
 
-CUDAPitchedBuffer GridVolume::ReadBlockGPU(const GridVolume::BlockUID &uid) {
-    NOT_IMPL
-    return viser::CUDAPitchedBuffer(0, 0, 0, cub::cu_context());
-}
+//CUDAPitchedBuffer GridVolume::ReadBlockGPU(const GridVolume::BlockUID &uid) {
+//    NOT_IMPL
+//    return viser::CUDAPitchedBuffer(0, 0, 0, cub::cu_context());
+//}
 
-CUDAPitchedBuffer GridVolume::ReadRegionGPU(Int3 beg, Int3 end, uint32_t lod) {
-    NOT_IMPL
-    return viser::CUDAPitchedBuffer(0, 0, 0, cub::cu_context());
-}
+//CUDAPitchedBuffer GridVolume::ReadRegionGPU(Int3 beg, Int3 end, uint32_t lod) {
+//    NOT_IMPL
+//    return viser::CUDAPitchedBuffer(0, 0, 0, cub::cu_context());
+//}
 
 void GridVolume::ReadBlockGPU(const GridVolume::BlockUID &uid, CUDAPitchedBuffer &buffer) {
     NOT_IMPL

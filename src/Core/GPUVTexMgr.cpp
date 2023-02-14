@@ -27,9 +27,9 @@ public:
 
     std::unique_ptr<GPUPageTableMgr> pt_mgr;
 
-    cub::cu_context ctx;
+    CUDAContext ctx;
 
-    cub::cu_stream transfer_stream;
+    CUDAStream transfer_stream;
 
     cub::cu_submitted_tasks submitted_tasks;
     std::unordered_map<size_t, GPUPageTableMgr::TexCoord> submitted_items;

@@ -52,7 +52,7 @@ public:
 
     Ref<GPUVTexMgr> GetGPUVTexMgrRef(UnifiedRescUID uid);
 
-    cub::cu_context _get_cuda_context() const ;
+    CUDAContext _get_cuda_context() const ;
 
 protected:
     friend class GPUVTexMgr;

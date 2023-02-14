@@ -220,7 +220,7 @@ class VolAnnotaterApp : public gl_app_t{
 
         vol_tag_priv_data.query_info = NewGeneralHandle<CUDAHostBuffer>(RescAccess::Unique,
                                                           sizeof(float) * 8,
-                                                          cub::memory_type::e_cu_host,
+                                                          cub::cu_memory_type::e_cu_host,
                                                           render_gpu_mem_mgr_ref->_get_cuda_context());
         vol_tag_priv_data.query_info_view = vol_tag_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 

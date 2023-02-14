@@ -27,21 +27,21 @@ namespace detail {
     template<typename T>
     struct cu_buffer_transfer<T, 1> {
         static cu_task transfer(const buffer_view<T, 1> &src, const buffer_view<T, 1> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 auto src_p = reinterpret_cast<const unsigned char *>(src.data()) + info.src_x_bytes;
                 auto dst_p = reinterpret_cast<const unsigned char *>(dst.data()) + info.dst_x_bytes;
-                CUB_CHECK(cuMemcpyAsync((CUdeviceptr) dst_p, (CUdeviceptr) src_p, info.width_bytes, stream._->stream));
+                CUB_CHECK(cuMemcpyAsync((CUdeviceptr) dst_p, (CUdeviceptr) src_p, info.width_bytes, stream.get_handle()));
             }};
         }
 
         static cu_task transfer(const buffer_view<T, 1> &src, const cu_array<T, 1> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 auto src_p = reinterpret_cast<const unsigned char *>(src.data()) + info.src_x_bytes;
                 if (src.is_device()) {
                     CUB_CHECK(cuMemcpyDtoA(dst.get_handle(), info.dst_x_bytes, (CUdeviceptr) src_p, info.width_bytes));
                 } else {
                     CUB_CHECK(cuMemcpyHtoAAsync(dst.get_handle(), info.dst_x_bytes, src_p, info.width_bytes,
-                                                stream._->stream));
+                                                stream.get_handle()));
                 }
             }};
         }
@@ -50,7 +50,7 @@ namespace detail {
     template<typename T>
     struct cu_buffer_transfer<T, 2> {
         static cu_task transfer(const buffer_view<T, 2> &src, const buffer_view<T, 2> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY2D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -78,12 +78,12 @@ namespace detail {
                 m.WidthInBytes = info.width_bytes;
                 m.Height = info.height;
 
-                CUB_CHECK(cuMemcpy2DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy2DAsync(&m, stream.get_handle()));
             }};
         }
 
         static cu_task transfer(const buffer_view<T, 2> &src, const cu_array<T, 2> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY2D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -105,7 +105,7 @@ namespace detail {
                 m.WidthInBytes = info.width_bytes;
                 m.Height = info.height;
 
-                CUB_CHECK(cuMemcpy2DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy2DAsync(&m, stream.get_handle()));
             }};
         }
     };
@@ -113,7 +113,7 @@ namespace detail {
     template<typename T>
     struct cu_buffer_transfer<T, 3> {
         static cu_task transfer(const buffer_view<T, 3> &src, const buffer_view<T, 3> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY3D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -146,12 +146,12 @@ namespace detail {
                 m.Height = info.height;
                 m.Depth = info.depth;
 
-                CUB_CHECK(cuMemcpy3DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy3DAsync(&m, stream.get_handle()));
             }};
         }
 
         static cu_task transfer(const buffer_view<T, 3> &src, const cu_array<T, 3> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY3D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -177,7 +177,7 @@ namespace detail {
                 m.Height = info.height;
                 m.Depth = info.depth;
 
-                CUB_CHECK(cuMemcpy3DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy3DAsync(&m, stream.get_handle()));
             }};
         }
     };
@@ -188,19 +188,19 @@ namespace detail {
     template<typename T>
     struct cu_array_transfer<T, 1> {
         static cu_task transfer(const cu_array<T, 1> &src, const buffer_view<T, 1> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 auto dst_p = reinterpret_cast<unsigned char *>(dst.data()) + info.dst_x_bytes;
                 if (dst.is_device()) {
                     CUB_CHECK(cuMemcpyAtoD(dst_p, src.get_handle(), info.src_x_bytes, info.width_bytes));
                 } else {
                     CUB_CHECK(cuMemcpyAtoHAsync(dst_p, src.get_handle(), info.src_x_bytes, info.width_bytes,
-                                                stream._->stream));
+                                                stream.get_handle()));
                 }
             }};
         }
 
         static cu_task transfer(const cu_array<T, 1> &src, const cu_array<T, 1> &dst, const memory_transfer_info &info) {
-            return [=](cu_stream &stream) {
+            return [=](const cu_stream &stream) {
                 CUB_CHECK(cuMemcpyAtoA(dst.get_handle(), info.dst_x_bytes, src.get_handle(), info.src_x_bytes,
                                        info.width_bytes));
             };
@@ -210,7 +210,7 @@ namespace detail {
     template<typename T>
     struct cu_array_transfer<T, 2> {
         static cu_task transfer(const cu_array<T, 2> &src, const buffer_view<T, 2> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY2D m;
                 std::memset(&m, 0, sizeof(m));
 
@@ -233,12 +233,12 @@ namespace detail {
                 m.WidthInBytes = info.width_bytes;
                 m.Height = info.height;
 
-                CUB_CHECK(cuMemcpy2DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy2DAsync(&m, stream.get_handle()));
             }};
         }
 
         static cu_task transfer(const cu_array<T, 2> &src, const cu_array<T, 2> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY2D m;
                 std::memset(&m, 0, sizeof(m));
 
@@ -255,7 +255,7 @@ namespace detail {
                 m.WidthInBytes = info.width_bytes;
                 m.Height = info.height;
 
-                CUB_CHECK(cuMemcpy2DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy2DAsync(&m, stream.get_handle()));
             }};
         }
     };
@@ -282,12 +282,12 @@ namespace detail {
                 m.Height = info.height;
                 m.Depth = info.depth;
 
-                CUB_CHECK(cuMemcpy3DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy3DAsync(&m, stream.get_handle()));
             }};
         }
 
         static cu_task transfer(const cu_array<T, 3> &src, const cu_array<T, 3> &dst, const memory_transfer_info &info) {
-            return {[=](cu_stream &stream) {
+            return {[=](const cu_stream &stream) {
                 CUDA_MEMCPY3D m;
                 std::memset(&m, 0, sizeof(m));
                 m.srcMemoryType = CU_MEMORYTYPE_ARRAY;
@@ -313,7 +313,7 @@ namespace detail {
                 m.Height = info.height;
                 m.Depth = info.depth;
 
-                CUB_CHECK(cuMemcpy3DAsync(&m, stream._->stream));
+                CUB_CHECK(cuMemcpy3DAsync(&m, stream.get_handle()));
             }};
         }
     };
@@ -349,11 +349,11 @@ cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& d
 
 
 inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_wrap& dst, const memory_transfer_info& info){
-    if(src.get_type() == memory_type::e_cu_device){
+    if(src.get_type() == cu_memory_type::e_cu_device){
         CHECK_CTX_SAME(src, dst)
     }
     return cu_task{[info = info, src_ptr = src.get_data(), src_type = src.get_type(),
-                    dst = dst._get_array_handle()](cu_stream& stream){
+                    dst = dst._get_array_handle()](const cu_stream& stream){
         CUDA_MEMCPY3D m;
         std::memset(&m, 0, sizeof(m));
 
@@ -380,7 +380,7 @@ inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_
         m.Height = info.height;
         m.Depth = info.depth;
 
-        CUB_CHECK(cuMemcpy3DAsync(&m, stream.lock().get()));
+        CUB_CHECK(cuMemcpy3DAsync(&m, stream.get_handle()));
     }};
 }
 

@@ -9,7 +9,7 @@ public:
     size_t max_mem_bytes = 0;
 
     int gpu_index = -1;
-    cub::cu_context ctx;
+    CUDAContext ctx;
 
     std::unordered_map<UnifiedRescUID, std::unique_ptr<GPUVTexMgr>> vtex_mgr_mp;
 
@@ -70,7 +70,7 @@ Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access, size_t bytes) {
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
     }
-    return NewGeneralHandle<CUDABuffer>(access, bytes, cub::memory_type::e_cu_device, _->ctx);
+    return NewGeneralHandle<CUDABuffer>(access, bytes, cub::cu_memory_type::e_cu_device, _->ctx);
 }
 
 Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access, size_t width, size_t height, size_t ele_size) {
@@ -134,7 +134,7 @@ Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
     return {_->vtex_mgr_mp.at(uid).get()};
 }
 
-cub::cu_context GPUMemMgr::_get_cuda_context() const {
+CUDAContext GPUMemMgr::_get_cuda_context() const {
     return _->ctx;
 }
 

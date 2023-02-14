@@ -110,9 +110,9 @@ public:
     UnifiedRescUID GetUID() const override;
 
     // 读取数据块，内部完成解压
-    CUDAHostBuffer ReadBlock(const BlockUID& uid);
+//    CUDAHostBuffer ReadBlock(const BlockUID& uid);
 
-    CUDAHostBuffer ReadRegion(Int3 beg, Int3 end, uint32_t lod);
+//    CUDAHostBuffer ReadRegion(Int3 beg, Int3 end, uint32_t lod);
 
     // buffer的大小应该是正确的
     void ReadBlock(const BlockUID& uid, CUDAHostBuffer& buffer);
@@ -120,9 +120,9 @@ public:
     void ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAHostBuffer& buffer);
 
     // 隐藏cpu到gpu的传输过程，可能是内部解压后直接在gpu的，也可能是解压完传输到gpu的
-    CUDAPitchedBuffer ReadBlockGPU(const BlockUID& uid);
+//    CUDAPitchedBuffer ReadBlockGPU(const BlockUID& uid);
 
-    CUDAPitchedBuffer ReadRegionGPU(Int3 beg, Int3 end, uint32_t lod);
+//    CUDAPitchedBuffer ReadRegionGPU(Int3 beg, Int3 end, uint32_t lod);
 
     void ReadBlockGPU(const BlockUID& uid, CUDAPitchedBuffer& buffer);
 

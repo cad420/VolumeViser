@@ -116,7 +116,8 @@ struct cu_extent{
     size_t depth = 1;
 };
 
-enum memory_type{
+enum cu_memory_type
+{
     e_cu_host,
     e_cu_device
 };

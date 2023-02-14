@@ -275,9 +275,9 @@ VISER_BEGIN
 
     class SWCVoxelizerPrivate{
     public:
-        cub::cu_context ctx;
+        CUDAContext ctx;
 
-        cub::cu_stream compute_stream;
+        CUDAStream compute_stream;
 
         SWCVoxelizeKernelParams kernel_params;
 

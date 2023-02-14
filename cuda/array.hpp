@@ -40,7 +40,7 @@ CUB_BEGIN
         class cu_array_base{
         public:
 
-            cu_context get_context() const {
+            auto get_context() const {
                 return ctx;
             }
             auto get_handle() const {
@@ -48,21 +48,24 @@ CUB_BEGIN
             }
 
             virtual ~cu_array_base(){
+                auto _ = ctx->temp_ctx();
                 CUB_CHECK(cuArrayDestroy(array));
             }
         protected:
             CUarray array;
-            cu_context ctx;
+            cu_context_handle_t ctx;
         };
     }
 
     template<typename E>
     class cu_array<E, 1> : public detail::cu_array_base<E, 1>{
     public:
-        cu_array(cu_context ctx, size_t len)
+        cu_array(cu_context_handle_t ctx, size_t len)
         :l(len)
         {
+            assert(ctx->is_valid() && len);
             this->ctx = ctx;
+            auto _ = ctx->temp_ctx();
 
             CUDA_ARRAY_DESCRIPTOR desc;
             std::memset(&desc, 0, sizeof(desc));
@@ -82,10 +85,12 @@ CUB_BEGIN
     template<typename E>
     class cu_array<E, 2> : public detail::cu_array_base<E, 2>{
     public:
-        cu_array(cu_context ctx, size_t width, size_t height)
+        cu_array(cu_context_handle_t ctx, size_t width, size_t height)
         :w(width), h(height)
         {
+            assert(width && height);
             this->ctx = ctx;
+            auto _ = ctx->temp_ctx();
 
             CUDA_ARRAY_DESCRIPTOR desc;
             std::memset(&desc, 0, sizeof(desc));
@@ -95,12 +100,15 @@ CUB_BEGIN
             desc.NumChannels = detail::cu_array_format_traits<E>::num;
             CUB_CHECK(cuArrayCreate(&this->array, &desc));
         }
-        size_t width() const{
+
+        auto width() const{
             return w;
         }
-        size_t height() const{
+
+        auto height() const{
             return h;
         }
+
     private:
         size_t w, h;
     };
@@ -117,7 +125,9 @@ CUB_BEGIN
         cu_array(cu_context ctx, const cu_extent& extent, cu_array3d_type type = ARRAY3D)
         : extent(extent)
         {
+            assert(ctx.is_valid() && extent.width && extent.height && extent.depth);
             this->ctx = ctx;
+            auto _ = ctx.temp_ctx();
 
             CUDA_ARRAY3D_DESCRIPTOR desc;
             std::memset(&desc, 0, sizeof(desc));
@@ -132,16 +142,27 @@ CUB_BEGIN
                 desc.Flags = CUDA_ARRAY3D_CUBEMAP;
             CUB_CHECK(cuArray3DCreate(&this->array, &desc));
         }
-        cu_extent get_extent() const{
+
+        auto get_extent() const{
             return extent;
         }
+
     private:
         cu_extent extent;
     };
 
+    template <typename T>
+    using cu_array1d = cu_array<T, 1>;
+
+    template <typename T>
+    using cu_array2d = cu_array<T, 2>;
+
+    template <typename T>
+    using cu_array3d = cu_array<T, 3>;
+
     template<typename T, int N, typename... Args>
-    cu_array<T, N> cu_context::alloc_array(Args &&... args) const {
-        return cu_array<T, N>(*this, std::forward<Args>(args)...);
+    cu_array<T, N> cu_context::alloc_array(Args &&... args) {
+        return cu_array<T, N>(this->ref_from_this(), std::forward<Args>(args)...);
     }
 
 CUB_END

@@ -15,85 +15,59 @@ namespace detail{
 }
 
 class cu_stream{
-    struct Inner{
-        std::mutex mtx;
-        cu_context ctx;
-        CUstream stream = nullptr;
-    };
 public:
-    friend class cu_event;
-    friend class cu_kernel;
 
-    template<typename T, int N>
-    friend struct detail::cu_buffer_transfer;
-    template<typename T, int N>
-    friend struct detail::cu_array_transfer;
+    constexpr cu_stream() = default;
 
-    struct lock_t{
-        lock_t(Inner& inner):
-        lk(inner.mtx),
-        stream(inner.stream)
-        {}
-
-        auto get() {
-            return stream;
-        }
-
-        CUstream stream;
-        std::unique_lock<std::mutex> lk;
-    };
-
-    lock_t lock(){
-        return lock_t(*_);
-    }
-
-    cu_result wait(){
-        //todo
-//        _->ctx.set_ctx();
-        return cuStreamSynchronize(_->stream);
-    }
-
-    cu_stream(cu_context ctx)
+    cu_stream(cu_context_handle_t ctx)
     {
-        assert(ctx.is_valid());
-        ctx.set_ctx();
+        assert(ctx->is_valid());
+        this->ctx = ctx;
+        auto _ = ctx->temp_ctx();
         // todo CU_STREAM_NON_BLOCKING
-        CUB_CHECK(cuStreamCreate(&_->stream, CU_STREAM_DEFAULT));
-        _->ctx = ctx;
+        CUB_CHECK(cuStreamCreate(&stream, CU_STREAM_DEFAULT));
     }
 
-    static cu_stream null(cu_context ctx){
+    static cu_stream null(cu_context_handle_t ctx){
         return cu_stream(nullptr, ctx);
     }
 
-    cu_stream() = default;
-
-    bool is_valid() {
-        return _->ctx.is_valid();
+    cu_result wait() const {
+        auto _ = ctx->temp_ctx();
+        return cuStreamSynchronize(stream);
     }
 
-    cu_context get_context() const{
-        return _->ctx;
+
+    bool is_valid() const {
+        return stream;
     }
 
-    cu_context get_context(){
-        return _->ctx;
+    auto get_context() const {
+        return ctx;
     }
+
+    auto get_handle() const {
+        return stream;
+    }
+
 private:
-    cu_stream(std::nullptr_t, cu_context ctx)
+    cu_stream(std::nullptr_t, cu_context_handle_t ctx)
     {
-        assert(ctx.is_valid());
-        _->ctx = ctx;
+        assert(ctx->is_valid());
+        this->ctx = ctx;
     }
 
-
-protected:
-    std::shared_ptr<Inner> _ = std::make_shared<Inner>();
+    cu_context_handle_t ctx{nullptr};
+    CUstream stream{nullptr};
 };
 
 class cu_event{
 public:
-    cu_event(bool enable_blocking = true, bool enable_timing = true){
+    cu_event(cu_context_handle_t ctx, bool enable_blocking = true, bool enable_timing = true){
+        assert(ctx->is_valid());
+        this->ctx = ctx;
+        auto _ = ctx->temp_ctx();
+
         uint32_t flags = 0;
         if(enable_blocking)
             flags |= CU_EVENT_BLOCKING_SYNC;
@@ -102,15 +76,19 @@ public:
         CUB_CHECK(cuEventCreate(&event, flags));
     }
 
-    void record(cu_stream& stream) const{
-        CUB_CHECK(cuEventRecord(event, stream.lock().get()));
+    void record(const cu_stream& stream) const{
+        auto _ = ctx->temp_ctx();
+        CUB_CHECK(cuEventRecord(event, stream.get_handle()));
     }
 
     cu_result wait() const{
+        auto _ = ctx->temp_ctx();
         return cuEventSynchronize(event);
     }
 
     static float elapsed(const cu_event& a, const cu_event& b){
+        assert(a.ctx == b.ctx);
+        auto _ = a.ctx->temp_ctx();
         float t;
         CUB_CHECK(cuEventElapsedTime(&t, a.event, b.event));
         return t;
@@ -118,11 +96,12 @@ public:
 
 private:
     CUevent event;
+    cu_context_handle_t ctx;
 };
 
 class cu_task{
 public:
-    cu_task(std::function<void(cu_stream&)> func)
+    cu_task(std::function<void(const cu_stream&)> func)
     :task(std::move(func))
     {
 
@@ -132,13 +111,13 @@ public:
     :task(std::move(other.task))
     {}
 
-    cu_result launch(cu_stream stream){
+    cu_result launch(const cu_stream& stream){
         task(stream);
         return stream.wait();
     }
 
-    std::future<cu_result> launch_async(cu_stream stream){
-        cu_event start, stop;
+    std::future<cu_result> launch_async(const cu_stream& stream){
+        cu_event start(stream.get_context()), stop(stream.get_context());
         start.record(stream);
         task(stream);
         stop.record(stream);
@@ -151,7 +130,7 @@ public:
     }
     friend class cu_task_group;
 protected:
-    std::function<void(cu_stream&)> task;
+    std::function<void(const cu_stream&)> task;
 };
 
 class cu_task_group{
@@ -166,7 +145,7 @@ public:
     }
 
     std::future<cu_result> launch_async(cu_stream& stream){
-        cu_event start, stop;
+        cu_event start(stream.get_context()), stop(stream.get_context());
 
         start.record(stream);
         for(auto& task : tasks)

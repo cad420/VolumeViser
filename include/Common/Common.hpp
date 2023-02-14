@@ -15,6 +15,12 @@
 
 VISER_BEGIN
 
+using CUDAContext = cub::cu_context_handle_t;
+
+using CUDAStream = cub::cu_stream;
+
+using CUDAKernel = cub::cu_kernel;
+
 template<typename T, int N>
 using CUDAArray = cub::cu_array<T, N>;
 

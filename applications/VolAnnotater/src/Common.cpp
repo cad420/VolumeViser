@@ -168,7 +168,7 @@ void VolRenderRescPack::Initialize(ViserRescPack& _) {
 
     vol_query_priv_data.query_info = NewGeneralHandle<CUDAHostBuffer>(RescAccess::Unique,
                                                                     sizeof(float) * 8,
-                                                                    cub::memory_type::e_cu_host,
+                                                                    cub::cu_memory_type::e_cu_host,
                                                                     _.render_gpu_mem_mgr_ref->_get_cuda_context());
     vol_query_priv_data.query_info_view = vol_query_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 
@@ -317,7 +317,7 @@ void SWCRescPack::Initialize() {
 
 }
 
-void SWCRescPack::LoadSWCFile(const std::string &filename) {
+void SWCRescPack::LoadSWCFile(const std::string &filename, Float3 ratio) {
     if(filename.empty()) return;
     try {
         swc_file->Open(filename, SWCFile::Read);
@@ -328,11 +328,13 @@ void SWCRescPack::LoadSWCFile(const std::string &filename) {
 
         CreateSWC(filename);
 
+        float s = (std::min)({ratio.x, ratio.y, ratio.z});
+
         for(auto& pt : swc_pts){
-//            pt.x *= 0.001f;
-//            pt.y *= 0.001f;
-//            pt.z *= 0.001f;
-//            pt.radius *= 0.001f;
+            pt.x *= ratio.x;
+            pt.y *= ratio.y;
+            pt.z *= ratio.z;
+            pt.radius *= s;
             InsertSWCPoint(pt);
         }
         double dist_sum = 0.f;

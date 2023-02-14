@@ -8,7 +8,7 @@ public:
     size_t max_mem_bytes = 0;
 
     //只用于分配全局的pinned host memory
-    cub::cu_context ctx;
+    CUDAContext ctx;
 
     std::unordered_map<UnifiedRescUID, std::unique_ptr<FixedHostMemMgr>> fixed_host_mgr_mp;
 
@@ -69,7 +69,7 @@ Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinn
                     "No enough free memory for HostMemMgr to alloc pinned buffer with size: " + std::to_string(bytes));
         }
     }
-    return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::memory_type::e_cu_host, _->ctx);
+    return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::cu_memory_type::e_cu_host, _->ctx);
 }
 
 template<>
