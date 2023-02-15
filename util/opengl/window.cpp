@@ -266,11 +266,11 @@ VUTIL_GL_BEGIN
             }
         }
 
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,6);
-        glfwWindowHint(GLFW_RESIZABLE,desc.resizeable ? GLFW_TRUE : GLFW_FALSE);
-        glfwWindowHint(GLFW_MAXIMIZED,maximazed ? GLFW_TRUE : GLFW_FALSE);
-
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+        glfwWindowHint(GLFW_RESIZABLE, desc.resizeable ? GLFW_TRUE : GLFW_FALSE);
+        glfwWindowHint(GLFW_MAXIMIZED, maximazed ? GLFW_TRUE : GLFW_FALSE);
+        glfwWindowHint(GLFW_DECORATED, desc.decorate ? GLFW_TRUE : GLFW_FALSE);
         switch ( desc.depth_stencil_format ) {
             case window_desc_t::depth24_stencil8:
                 glfwWindowHint(GLFW_DEPTH_BITS,24);
@@ -295,6 +295,7 @@ VUTIL_GL_BEGIN
         if(!impl->glfw_window){
             throw std::runtime_error("failed to create glfw window");
         }
+        glfwSetWindowPos(impl->glfw_window, desc.pos.x, desc.pos.y);
 
         glfwMakeContextCurrent(impl->glfw_window);
         glfwFocusWindow(impl->glfw_window);

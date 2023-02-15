@@ -50,18 +50,45 @@ public:
 
 };
 
-//实时的体渲染，为了最大性能，数据块的计算由CPU完成
-// 或者可能的先在GPU一次性计算完
-// 切片是特殊的体渲染
+//封装
 class RTVolumeRendererPrivate;
 class RTVolumeRenderer: public Renderer{
 public:
+    struct RTVolumeRendererCreateInfo{
+        UnifiedRescUID host_mem_mgr_uid = 0;
+        UnifiedRescUID gpu_mem_mgr_uid = 0;
+        bool async = true;
+        bool use_shared_host_mem = false;
+        UnifiedRescUID shared_fixed_host_mem_mgr_uid = 0;
+    };
+
+    explicit RTVolumeRenderer(const RTVolumeRendererCreateInfo&);
+
+    ~RTVolumeRenderer() override;
+
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
+
+    void BindGridVolume(Handle<GridVolume>);
+
+    void SetVolume(const VolumeParams&) override { /* Use BindGridVolume instead */}
+
+    void SetRenderParams(const RenderParams&) override;
+
+    void SetPerFrameParams(const PerFrameParams&) override;
+
+    void SetRenderMode(bool async);
+
+    void Render(Handle<FrameBuffer> frame) override;
 
 protected:
     std::unique_ptr<RTVolumeRendererPrivate> _;
 };
 
-//分辨率可以动态调整
+//自定义
 class CRTVolumeRendererPrivate;
 class CRTVolumeRenderer : public Renderer{
 public:
@@ -102,11 +129,37 @@ protected:
 };
 
 
-
-//离线的真实感体渲染，数据块的计算放在着色器内，
-//因为考虑散射后，数据块无法提前计算，而且离线不考虑这一点的性能损失
+//离线的真实感体渲染，数据块的计算放在着色器内
+class PBVolumeRendererPrivate;
 class PBVolumeRenderer: public Renderer{
+  public:
+    struct PBVolumeRendererCreateInfo{
 
+    };
+    explicit PBVolumeRenderer(const PBVolumeRendererCreateInfo&);
+
+    ~PBVolumeRenderer() override;
+
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
+
+    void BindGridVolume(Handle<GridVolume>);
+
+    void SetVolume(const VolumeParams&) override { /* Use BindGridVolume instead */}
+
+    void SetRenderParams(const RenderParams&) override;
+
+    void SetPerFrameParams(const PerFrameParams&) override;
+
+    void Render(Handle<FrameBuffer> frame) override;
+
+
+
+  private:
+    std::unique_ptr<PBVolumeRendererPrivate> _;
 };
 
 VISER_END

@@ -77,6 +77,14 @@ struct RenderParams{
         TransferFunc tf_pts;
         int dim = 256;
     }tf;
+    struct{
+        float node_x_offset;
+        float node_y_offset;
+        int world_row_count;
+        int world_col_count;
+        int node_x_index;
+        int node_y_index;
+    }distrib;
     struct {
         bool updated = false;
         bool use_2d_tf = false;

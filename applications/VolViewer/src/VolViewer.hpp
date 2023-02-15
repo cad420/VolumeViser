@@ -2,18 +2,19 @@
 
 #include <memory>
 
-class VolViewerPrivate;
-class VolViewer{
-public:
-    struct VolViewerCreateInfo{
+struct VolViewerCreateInfo{
 
-    };
+};
+
+class VolViewerPrivate;
+class VolViewer final{
+public:
 
     explicit VolViewer(const VolViewerCreateInfo& info);
 
     ~VolViewer();
 
-
+    void run();
 
 private:
     std::unique_ptr<VolViewerPrivate> _;

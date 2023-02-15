@@ -50,7 +50,7 @@ public:
         UnifiedRescUID ToUnifiedRescUID() const{
             if(IsSWC())
                 return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
-                       (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::VoxelizeBlock) << 56);
+                       (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::GridVoxelizeBlock) << 56);
             else
                 return ((size_t)x) | (((size_t)y) << 16) | (((size_t)z) << 32) |
                        (((size_t)(w & 0xff)) << 48) | (((size_t)UnifiedRescType::GridVolumeBlock) << 56);

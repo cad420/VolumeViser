@@ -1,3 +1,1 @@
-//
-// Created by wyz on 2023/1/3.
-//
+#undef UTIL_ENABLE_OPENGL

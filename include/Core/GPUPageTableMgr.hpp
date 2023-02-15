@@ -60,6 +60,9 @@ public:
     //释放最近一次GetAndLock传入的keys
     void Release(const std::vector<Key>& keys);
 
+    //todo 清除所有页表项，否则哈希页表会爆满
+    void Clear();
+
     HashPageTable& GetPageTable(bool update = true);
 
     void Promote(const Key& key);

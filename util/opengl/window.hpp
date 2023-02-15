@@ -7,9 +7,11 @@
 VUTIL_GL_BEGIN
 
     struct window_desc_t{
+        vec2i pos{20, 20};
         vec2i size = {1280,720};
         std::string title = "OpenGL Window";
 
+        bool decorate = true;
         bool resizeable = true;
         bool fullscreen = false;
         bool vsync = true;

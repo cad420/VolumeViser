@@ -9,8 +9,41 @@
 
 VISER_BEGIN
 
-class DistributeMgr{
+class DistributeMgrPrivate;
+class DistributeMgr : public UnifiedRescBase{
+  public:
+    struct DistributeMgrCreateInfo{
+        int root_rank = 0;
 
+    };
+
+    explicit DistributeMgr(const DistributeMgrCreateInfo&);
+
+    ~DistributeMgr();
+
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
+
+    void RunTask(std::function<void()> task);
+
+    template<typename T>
+    void Bcast(std::function<void(T*, int, int)>);
+
+    void WaitForSync();
+
+    int GetWorldRank() const;
+
+    int GetWorldSize() const;
+
+    int GetRootRank() const;
+
+    bool IsRoot() const;
+
+  private:
+    std::unique_ptr<DistributeMgrPrivate> _;
 };
 
 

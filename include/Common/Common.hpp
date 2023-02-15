@@ -115,25 +115,27 @@ inline constexpr UnifiedRescUID INVALID_RESC_ID = 0ull;
 
 enum class UnifiedRescType : uint8_t{
     Unknown = 0,
-    RescMgr = 1,
-    HostMemMgr = 2 ,
-    GPUMemMgr = 3,
-    FixedHostMemMgr = 4,
-    VolumeIO = 5,
-    SWCIO = 6,
-    MeshIO = 7,
-    GridVolume = 8,
-    GridVolumeBlock = 9,
-    VoxelizeBlock = 10,
-    GPUPageTableMgr = 11,
-    GPUVTexMgr = 12,
-    CRTVolRenderer = 13,
-    General = 14,
-    MCAlgo = 15,
-    SWCVoxelizeAlgo = 16,
-    SWC = 17,
-    Mesh = 18,
-    MaxEnum = 19
+    RescMgr,
+    HostMemMgr,
+    GPUMemMgr,
+    FixedHostMemMgr,
+    GPUPageTableMgr,
+    GPUVTexMgr,
+    VolumeIO,
+    SWCIO,
+    MeshIO,
+    GridVolume,
+    GridVolumeBlock,
+    GridVoxelizeBlock,
+    CRTVolRenderer,
+    RTVolRenderer,
+    PBVolRenderer,
+    MCAlgo,
+    SWCVoxelizeAlgo,
+    SWC,
+    Mesh,
+    General,
+    MaxEnum = 255
 };
 
 //最高位8位代表资源类型，低56位代表一个全局唯一该类型资源的编号
@@ -176,30 +178,30 @@ public:
     virtual UnifiedRescUID GetUID() const = 0;
 };
 
-//除了包装引用之外，增加一些自动Lock、UnLock的操作
 template<typename T>
-class Ref : vutil::no_copy_t{
+class Ref : vutil::no_copy_t {
 public:
+
+
     Ref() = default;
 
-    Ref(T* p, bool lock = true)
-    :obj(p), locked(lock)
+    Ref(T* p, bool safe = true)
+    :obj(p), thread_safe(safe)
     {
-        if(lock)
-            obj->Lock();
+        assert(p);
     }
 
     ~Ref(){
         Release();
     }
 
-    Ref(Ref&& other)noexcept{
+    Ref(Ref&& other) noexcept {
         obj = other.obj;
-        locked = other.locked;
+        thread_safe = other.thread_safe;
         other.obj = nullptr;
     }
 
-    Ref& operator=(Ref&& other) noexcept{
+    Ref& operator=(Ref&& other) noexcept {
         Release();
         new(this) Ref(std::move(other));
         return *this;
@@ -210,42 +212,59 @@ public:
     }
 
     T* operator->(){
+        auto _ = AutoLock();
         assert(obj);
         return obj;
     }
 
     const T* operator->() const {
+        auto _ = AutoLock();
         assert(obj);
         return obj;
     }
 
     T& operator*(){
+        auto _ = AutoLock();
         return *obj;
     }
 
-    const T& operator*() const{
+    const T& operator*() const {
+        auto _ = AutoLock();
         return *obj;
     }
 
     //手动释放，之后不能再访问，否则触发assert
     void Release(){
-        if(locked && obj){
-            obj->UnLock();
+        if(obj)
             obj = nullptr;
-            locked = false;
+        else {
+            assert(false);
         }
     }
 
-    bool IsLocked() const{
-        return locked;
+    bool IsThreadSafe() const {
+        return thread_safe;
     }
 
-    bool IsValid() const{
+    bool IsValid() const {
         return obj;
     }
-
-private:
-    bool locked = false;
+  private:
+    auto AutoLock() const {
+        if constexpr(std::is_base_of_v<UnifiedRescBase, T>){
+            if(thread_safe){
+                obj->Lock();
+            }
+            return vutil::scope_bomb_t([this]{
+                if(thread_safe) obj->UnLock();
+            });
+        }
+        else{
+            return ;//vutil::scope_bomb_t([this]{});
+        }
+    }
+  private:
+    bool thread_safe = false;
     T* obj = nullptr;
 };
 
