@@ -60,7 +60,7 @@ UnifiedRescUID HostMemMgr::GetUID() const {
 }
 
 template<>
-Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(RescAccess access, size_t bytes, bool required){
+Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(ResourceType type, size_t bytes, bool required){
     if(!required){
         auto used = _->used_mem_bytes.fetch_add(bytes);
         if (used > _->max_mem_bytes) {
@@ -69,11 +69,11 @@ Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinn
                     "No enough free memory for HostMemMgr to alloc pinned buffer with size: " + std::to_string(bytes));
         }
     }
-    return NewGeneralHandle<CUDAHostBuffer>(access, bytes, cub::cu_memory_type::e_cu_host, _->ctx);
+    return NewHandle<CUDAHostBuffer>(type, bytes, cub::cu_memory_type::e_cu_host, _->ctx);
 }
 
 template<>
-Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescAccess access, size_t bytes, bool required){
+Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(ResourceType type, size_t bytes, bool required){
     if(!required){
         auto used = _->used_mem_bytes.fetch_add(bytes);
         if (used > _->max_mem_bytes) {
@@ -82,7 +82,7 @@ Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(RescA
                     "No enough free memory for HostMemMgr to alloc paged buffer with size: " + std::to_string(bytes));
         }
     }
-    return NewGeneralHandle<HostBuffer>(access, bytes);
+    return NewHandle<HostBuffer>(type, bytes);
 }
 
 UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {

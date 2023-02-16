@@ -105,9 +105,10 @@ public:
     ViserResourceCreateError(const std::string& msg) : std::exception(msg.c_str()){}
 };
 
-enum class RescAccess{
-    Unique,
-    Shared
+enum class ResourceType
+{
+    Object,
+    Buffer
 };
 
 using UnifiedRescUID = size_t;
@@ -121,6 +122,7 @@ enum class UnifiedRescType : uint8_t{
     FixedHostMemMgr,
     GPUPageTableMgr,
     GPUVTexMgr,
+    DistributeMgr,
     VolumeIO,
     SWCIO,
     MeshIO,
@@ -158,6 +160,12 @@ inline UnifiedRescUID GenGeneralUnifiedRescUID(){
     return GenUnifiedRescUID(uid, UnifiedRescType::General);
 }
 
+inline bool CheckGeneralUnifiedResc(UnifiedRescUID uid) {
+    if(uid == INVALID_RESC_ID) return false;
+    uint8_t type = uid >> 56;
+    return static_cast<UnifiedRescType>(type) == UnifiedRescType::General;
+}
+
 //检查uid的type是否是UnifiedRescType中的，是否等于INVALID_RESC_ID，以及资源编号是否为0
 inline bool CheckUnifiedRescUID(UnifiedRescUID uid){
     if(uid == INVALID_RESC_ID) return false;
@@ -179,13 +187,13 @@ public:
 };
 
 template<typename T>
-class Ref : vutil::no_copy_t {
+class Ref {
 public:
 
 
     Ref() = default;
 
-    Ref(T* p, bool safe = true)
+    Ref(T* p, bool safe = false)
     :obj(p), thread_safe(safe)
     {
         assert(p);
@@ -193,18 +201,6 @@ public:
 
     ~Ref(){
         Release();
-    }
-
-    Ref(Ref&& other) noexcept {
-        obj = other.obj;
-        thread_safe = other.thread_safe;
-        other.obj = nullptr;
-    }
-
-    Ref& operator=(Ref&& other) noexcept {
-        Release();
-        new(this) Ref(std::move(other));
-        return *this;
     }
 
     T* _get_ptr() {
@@ -225,12 +221,19 @@ public:
 
     T& operator*(){
         auto _ = AutoLock();
+        assert(obj);
         return *obj;
     }
 
     const T& operator*() const {
         auto _ = AutoLock();
+        assert(obj);
         return *obj;
+    }
+
+    Ref<T>& LockRef() {
+        thread_safe = true;
+        return *this;
     }
 
     //手动释放，之后不能再访问，否则触发assert
@@ -268,237 +271,141 @@ public:
     T* obj = nullptr;
 };
 
-// 当释放资源的时候，应该让资源分配池知道
-// 对于Unique资源，只能移动拷贝不能赋值拷贝
-// 对于Shared资源，需要在所有资源都释放完后通知资源池
-// Unique资源总是能加锁成功，而Shared则不一定
 enum class AccessType{
     Read,
     Write
 };
 
+
 template<typename T>
 class Handle{
 public:
-    struct AccessLocker{
-        AccessLocker(std::function<void()> f)
-        :s(std::move(f))
-        {}
-
-        ~AccessLocker(){
-            UnLock();
-        }
-
-        void UnLock(){
-            s.call();
-        }
-
-    private:
-        vutil::scope_bomb_t<std::function<void()>> s;
-    };
-
-    AccessLocker AccessLock(AccessType type){
-        if(_->access == RescAccess::Unique){
-            // always success
-            return {nullptr};
-        }
-        else if(_->access == RescAccess::Shared){
-            if(type == AccessType::Read){
-                _->rw_lk.lock_read();
-                return AccessLocker([&](){
-                   _->rw_lk.unlock_read();
-                });
-            }
-            else if(type == AccessType::Write){
-                _->rw_lk.lock_write();
-                return AccessLocker([&](){
-                    _->rw_lk.unlock_write();
-                });
-            }
-            else{
-                assert(false);
-                return {nullptr};
-            }
-        }
-        else{
-            assert(false);
-            return {nullptr};
-        }
-    }
-
-
-    UnifiedRescUID GetUID() const{
-        return _->uid;
-    }
-
-    void SetUID(UnifiedRescUID uid){
-//        assert(IsValid());
-        _->uid = uid;
-    }
-
-    RescAccess GetRescAccess() const{
-        return _->access;
-    }
-
-    T* operator->(){
-        return _->resc.get();
-    }
-
-    const T* operator->() const{
-        return _->resc.get();
-    }
-
-    T& operator*(){
-        return *_->resc;
-    }
-
-    const T& operator*() const {
-        return *_->resc;
-    }
-
-    Handle(UnifiedRescUID uid, RescAccess access, std::shared_ptr<T> resc)
-            :_(std::make_shared<Inner>())
-    {
-        _->access = access;
-        _->uid = uid;
-        _->resc = std::move(resc);
-    }
-
-    Handle(RescAccess access, std::shared_ptr<T> resc)
-    :_(std::make_shared<Inner>())
-    {
-        if constexpr(IsGeneralResc<T>){
-            _->access = access;
-            _->uid = GenGeneralUnifiedRescUID();
-            _->resc = std::move(resc);
-        }
-        else{
-            static_assert(std::is_base_of_v<UnifiedRescBase, T>, "");
-            _->access = access;
-            _->uid = resc->GetUID();
-            _->resc = std::move(resc);
-        }
-
-    }
-
     Handle() = default;
 
-    ~Handle(){
-
-    }
-
-    Handle(const Handle& other){
-        if(_){
-            if (_->access == RescAccess::Unique) {
-                assert(false);
-            } else if (_->access == RescAccess::Shared) {
-                _ = other._;
-            } else
-                assert(false);
-        }
-        else{
-            _ = other._;
+    Handle(ResourceType type, std::shared_ptr<T> resc)
+    :type(type), resc(std::move(resc)), rw_lk(std::make_shared<vutil::rw_spinlock_t>())
+    {
+        if(type == ResourceType::Buffer){
+            uid = GenGeneralUnifiedRescUID();
         }
     }
+
+    ~Handle() = default;
+
+    Handle(const Handle& other) = default;
 
     Handle& operator=(const Handle& other){
-        if(_){
-            if (_->access == RescAccess::Unique) {
-                assert(false);
-            } else if (_->access == RescAccess::Shared) {
-                Destroy();
-                new(this) Handle(other);
-                return *this;
-            } else
-                assert(false);
-        }
-        else{
-            Destroy();
-            _ = other._;
-        }
+        Destroy();
+        new(this) Handle(other);
         return *this;
     }
 
     Handle(Handle&& other) noexcept{
-        _ = std::move(other._);
+        this->rw_lk = std::move(other.rw_lk);
+        this->resc = std::move(other.resc);
+        this->uid = other.uid;
+        this->type = other.type;
     }
 
     Handle& operator=(Handle&& other) noexcept{
+        Destroy();
         new(this) Handle(std::move(other));
         return *this;
     }
 
-    Handle& SetCallback(std::function<void(UnifiedRescUID)> callback){
-        _->callback = std::move(callback);
-        return *this;
-    }
-
-    //统一销毁资源，不管是Unique还是Shared的
-    //应该在没有被锁住的情况下调用
-    void Destroy(){
-        if(_){
-            if(_->callback)
-                _->callback(_->uid);
-            _->resc.reset();
-            _.reset();
+    //加互斥锁
+    auto AutoLocker() const {
+        if constexpr(std::is_base_of_v<UnifiedRescBase,T>){
+            resc->Lock();
+            return vutil::scope_bomb_t([this]{
+                resc->UnLock();
+            });
+        }
+        else{
+            rw_lk->lock_write();
+            return vutil::scope_bomb_t([this]{
+               rw_lk->unlock_write();
+            });
         }
     }
 
+    UnifiedRescUID GetUID() const{
+        return uid;
+    }
+
+    void SetUID(UnifiedRescUID uid) {
+        this->uid = uid;
+    }
+
+    T* operator->(){
+        return resc.get();
+    }
+
+    const T* operator->() const{
+        return resc.get();
+    }
+
+    T& operator*(){
+        return *resc;
+    }
+
+    const T& operator*() const {
+        return *resc;
+    }
+
+    void Destroy(){
+        rw_lk.reset();
+        resc.reset();
+    }
+
     bool IsValid() const{
-        return _ && _->resc && CheckUnifiedRescUID(_->uid);
+        return resc.get();
+    }
+
+    bool IsLocked(){
+        return IsReadLocked() || IsWriteLocked();
     }
 
     bool IsReadLocked(){
-        return _->rw_lk.is_read_locked();
+        return rw_lk->is_read_locked();
     }
     bool IsWriteLocked(){
-        return _->rw_lk.is_write_locked();
+        return rw_lk->is_write_locked();
     }
 
     void AddReadLock(){
-        _->rw_lk.lock_read();
+        rw_lk->lock_read();
     }
 
     void AddWriteLock(){
-        _->rw_lk.lock_write();
+        rw_lk->lock_write();
     }
 
     void ReleaseReadLock(){
-        _->rw_lk.unlock_read();
+        rw_lk->unlock_read();
     }
 
     void ReleaseWriteLock(){
-        _->rw_lk.unlock_write();
+        rw_lk->unlock_write();
     }
 
     void ConvertWriteToReadLock(){
-        _->rw_lk.converse_write_to_read();
+        rw_lk->converse_write_to_read();
     }
-
+    auto GetResourceType() const {
+        return type;
+    }
 private:
-    struct Inner{
-        vutil::rw_spinlock_t rw_lk;
-        RescAccess access = RescAccess::Shared;
-        std::shared_ptr<T> resc;
-        UnifiedRescUID uid = INVALID_RESC_ID;
-        std::function<void(UnifiedRescUID)> callback;
-    };
+    using ReadWriteLock = std::shared_ptr<vutil::rw_spinlock_t>;
+    ReadWriteLock rw_lk;
+    ResourceType type;
+    std::shared_ptr<T> resc;
+    UnifiedRescUID uid = INVALID_RESC_ID;
 
-    std::shared_ptr<Inner> _;
 };
 
 template<typename T, typename... Args>
-auto NewHandle(RescAccess access, Args&&... args){
-    return Handle<T>(access, std::make_shared<T>(std::forward<Args>(args)...));
-}
-
-template<typename T, typename... Args>
-auto NewHandle(UnifiedRescUID uid, RescAccess access, Args&&... args){
-    return Handle<T>(uid, access, std::make_shared<T>(std::forward<Args>(args)...));
-}
-
-template<typename T, typename... Args>
-auto NewGeneralHandle(RescAccess access, Args&&... args){
+auto NewHandle(ResourceType access, Args&&... args){
     return Handle<T>(access, std::make_shared<T>(std::forward<Args>(args)...));
 }
 

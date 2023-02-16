@@ -1009,12 +1009,12 @@ VISER_BEGIN
         _->max_voxel_num = info.max_voxel_num;
         _->max_vert_num = info.max_voxel_num / 8;
 
-        _->vol_mc_code = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
-        _->vol_mc_scanned = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
-        _->vol_vert_num = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_mc_code = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_mc_scanned = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_vert_num = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
 
-        _->vol_gen_host_vert = info.host_mem_mgr->AllocPinnedHostMem(RescAccess::Unique, info.max_voxel_num / 8 * sizeof(Float3), false);
-        _->vol_vert_pos = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, info.max_voxel_num / 8 * sizeof(Float3));
+        _->vol_gen_host_vert = info.host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3), false);
+        _->vol_vert_pos = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3));
 
         _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
         _->params.max_vert_num = _->max_vert_num;

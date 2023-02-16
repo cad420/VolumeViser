@@ -106,7 +106,7 @@ void Mesh::Clear() {
 }
 
 Handle<Mesh> Mesh::Merge(const std::vector<Handle<Mesh>> &meshes) {
-    auto ret = NewHandle<Mesh>(RescAccess::Shared);
+    auto ret = NewHandle<Mesh>(ResourceType::Object);
     std::vector<MeshData0> datas;
     for(auto mesh : meshes){
         datas.emplace_back(mesh->GetPackedMeshData());

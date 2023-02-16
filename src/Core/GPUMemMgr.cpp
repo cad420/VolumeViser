@@ -64,37 +64,37 @@ UnifiedRescUID GPUMemMgr::GetUID() const {
     return _->uid;
 }
 
-Handle<CUDABuffer> GPUMemMgr::AllocBuffer(RescAccess access, size_t bytes) {
+Handle<CUDABuffer> GPUMemMgr::AllocBuffer(ResourceType type, size_t bytes) {
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
     }
-    return NewGeneralHandle<CUDABuffer>(access, bytes, cub::cu_memory_type::e_cu_device, _->ctx);
+    return NewHandle<CUDABuffer>(type, bytes, cub::cu_memory_type::e_cu_device, _->ctx);
 }
 
-Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(RescAccess access, size_t width, size_t height, size_t ele_size) {
+Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_t width, size_t height, size_t ele_size) {
     auto bytes = width * height * ele_size;
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
     }
-    return NewGeneralHandle<CUDAPitchedBuffer>(access, width, height, ele_size, _->ctx);
+    return NewHandle<CUDAPitchedBuffer>(type, width, height, ele_size, _->ctx);
 }
 
-Handle<CUDATexture> GPUMemMgr::AllocTexture(RescAccess access, const TextureCreateInfo& info) {
+Handle<CUDATexture> GPUMemMgr::AllocTexture(ResourceType type, const TextureCreateInfo& info) {
     auto bytes = info.resc_info.alloc_bytes();
     auto used = _->used_mem_bytes.fetch_add(bytes);
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
     }
-    return NewGeneralHandle<CUDATexture>(access, info.resc_info, info.view_info, _->ctx);
+    return NewHandle<CUDATexture>(type, info.resc_info, info.view_info, _->ctx);
 }
 
-Handle<CUDATexture> GPUMemMgr::_AllocTexture(RescAccess access, const TextureCreateInfo& info) {
-    return NewGeneralHandle<CUDATexture>(access, info.resc_info, info.view_info, _->ctx);
+Handle<CUDATexture> GPUMemMgr::_AllocTexture(ResourceType type, const TextureCreateInfo& info) {
+    return NewHandle<CUDATexture>(type, info.resc_info, info.view_info, _->ctx);
 }
 
 UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {

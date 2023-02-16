@@ -30,7 +30,7 @@ FixedHostMemMgr::FixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
     _->lru =  std::make_unique<FixedHostMemMgrPrivate::LRUCache>(info.fixed_block_num);
 
     for(int i = 0; i < info.fixed_block_num; i++){
-        auto handle = info.host_mem_mgr->AllocPinnedHostMem(RescAccess::Shared, info.fixed_block_size, true);
+        auto handle = info.host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, info.fixed_block_size, true);
         assert(CheckUnifiedRescUID(handle.GetUID()));
         _->freed.push(std::move(handle));
     }

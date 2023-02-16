@@ -113,7 +113,7 @@ void GridVolume::ReadBlock(const GridVolume::BlockUID &uid, CUDAHostBuffer &buff
 
     auto lod = uid.GetLOD();
     auto& file = _->lod_vol_file_io.at(lod);
-    auto lk = file.AccessLock(AccessType::Read);
+
     //因为文件读取是串行的，因此需要再加个锁，即多个一起读也是不可以的
     file->Lock();
 
@@ -130,7 +130,7 @@ void GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAHostBuffer &bu
     assert(_->lod_vol_file_io.count(lod));
 
     auto& file = _->lod_vol_file_io.at(lod);
-    auto lk = file.AccessLock(AccessType::Read);
+
     //因为文件读取是串行的，因此需要再加个锁，即多个一起读也是不可以的
     file->Lock();
 

@@ -1,8 +1,12 @@
-//
-// Created by wyz on 2023/2/15.
-//
+#pragma once
 
-#ifndef VOLUMEVISER_NEURONRENDERER_HPP
-#define VOLUMEVISER_NEURONRENDERER_HPP
 
-#endif // VOLUMEVISER_NEURONRENDERER_HPP
+
+
+class NeuronRenderer{
+  public:
+
+
+  private:
+
+};

@@ -19,8 +19,8 @@ public:
 
     HashPageTable(Ref<GPUMemMgr> gpu_mem_mgr, Ref<HostMemMgr> host_mem_mgr){
         ctx = gpu_mem_mgr->_get_cuda_context();
-        hash_page_table = gpu_mem_mgr->AllocBuffer(RescAccess::Shared, HashTableSize * sizeof(HashTableItem));
-        hhpt = host_mem_mgr->AllocPinnedHostMem(RescAccess::Shared, HashTableSize * sizeof(HashTableItem), false);
+        hash_page_table = gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, HashTableSize * sizeof(HashTableItem));
+        hhpt = host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, HashTableSize * sizeof(HashTableItem), false);
         Clear();
         dirty = false;
     }

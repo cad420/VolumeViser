@@ -20,6 +20,7 @@ file(GLOB_RECURSE
 set_source_files_properties(
         ${PROJECT_SOURCE_DIR}/src/Renderer/CRTVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Renderer/RTVolumeRenderer.cpp
+        ${PROJECT_SOURCE_DIR}/src/Renderer/PBVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/MarchingCube.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/Voxelization.cpp
         PROPERTIES LANGUAGE CUDA
@@ -37,13 +38,14 @@ set_target_properties(
 target_include_directories(
         VolumeViserLib PUBLIC
         ${PROJECT_SOURCE_DIR}/include
+        ${MPI_INCLUDE_DIR}
 )
 
 target_link_libraries(VolumeViserLib PUBLIC
-        culib vutil_lib)
+        culib vutil_lib VolumeUtils
+        ${MPI_LIBS}
+        )
 
-target_link_libraries(VolumeViserLib PUBLIC
-        VolumeUtils)
 
 
 add_subdirectory(applications/VolViewer)

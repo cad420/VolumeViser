@@ -689,17 +689,17 @@ VISER_BEGIN
             cu_2d_tf_tex.Destroy();
 
             size_t bytes_1d = sizeof(typename TransferFunc::Value) * dim;
-            tf1d = NewHandle<CUDAHostBuffer>(RescAccess::Unique, bytes_1d, cub::e_cu_host, ctx);
+            tf1d = NewHandle<CUDAHostBuffer>(ResourceType::Buffer, bytes_1d, cub::e_cu_host, ctx);
 
             size_t bytes_2d = sizeof(typename TransferFunc::Value) * dim * dim;
-            tf2d = NewHandle<CUDAHostBuffer>(RescAccess::Unique, bytes_2d, cub::e_cu_host, ctx);
+            tf2d = NewHandle<CUDAHostBuffer>(ResourceType::Buffer, bytes_2d, cub::e_cu_host, ctx);
 
             cub::texture_resc_info resc_info{cub::e_float, 4, {256, 1, 1}};
             cub::texture_view_info view_info; view_info.read = cub::e_raw;
-            cu_tf_tex = NewHandle<CUDATexture>(RescAccess::Unique, resc_info, view_info, ctx);
+            cu_tf_tex = NewHandle<CUDATexture>(ResourceType::Buffer, resc_info, view_info, ctx);
 
             resc_info.extent = {256, 256, 1};
-            cu_2d_tf_tex = NewHandle<CUDATexture>(RescAccess::Unique, resc_info, view_info, ctx);
+            cu_2d_tf_tex = NewHandle<CUDATexture>(ResourceType::Buffer, resc_info, view_info, ctx);
         }
     };
 
@@ -711,7 +711,7 @@ VISER_BEGIN
 
         _->uid = _->GenRescUID();
 
-        _->tag.info = NewGeneralHandle<CUDABuffer>(RescAccess::Unique, sizeof(float) * 8, cub::e_cu_device, _->ctx);
+        _->tag.info = NewHandle<CUDABuffer>(ResourceType::Buffer, sizeof(float) * 8, cub::e_cu_device, _->ctx);
         _->tag.view = _->tag.info->view_1d<float>(sizeof(float) * 8);
         _->kernel_params.cu_tag.info = _->tag.view;
     }

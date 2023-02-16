@@ -78,6 +78,7 @@ struct RenderParams{
         int dim = 256;
     }tf;
     struct{
+        bool updated = false;
         float node_x_offset;
         float node_y_offset;
         int world_row_count;

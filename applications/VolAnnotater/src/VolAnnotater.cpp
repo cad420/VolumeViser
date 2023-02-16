@@ -34,9 +34,9 @@ class VolAnnotaterApp : public gl_app_t{
         for(uint32_t lod = 0; lod < levels; lod++){
             std::string lod_path = j.at("lod" + std::to_string(lod));
             LOG_DEBUG("Load LOD({}) : {}", lod, lod_path);
-            vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(RescAccess::Shared, std::make_shared<EBVolumeFile>(lod_path));
+            vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(ResourceType::Object, std::make_shared<EBVolumeFile>(lod_path));
         }
-        volume = NewHandle<GridVolume>(RescAccess::Unique, vol_info);
+        volume = NewHandle<GridVolume>(ResourceType::Object, vol_info);
         LOG_DEBUG("Load LOD Volume({}) successfully", volume->GetDesc().volume_name);
         VISER_WHEN_DEBUG(std::cout << volume->GetDesc() << std::endl)
     }
@@ -178,7 +178,7 @@ class VolAnnotaterApp : public gl_app_t{
             .gpu_mem_mgr = Ref<GPUMemMgr>(render_gpu_mem_mgr_ref._get_ptr(), false),
             .host_mem_mgr = Ref<HostMemMgr>(host_mem_mgr_ref._get_ptr(), false)
         };
-        crt_vol_renderer = NewHandle<CRTVolumeRenderer>(RescAccess::Unique, renderer_info);
+        crt_vol_renderer = NewHandle<CRTVolumeRenderer>(ResourceType::Object, renderer_info);
 
 
 //        ComputeUpBoundLOD(lod, render_base_space, offscreen.frame_width, offscreen.frame_height,
@@ -218,7 +218,7 @@ class VolAnnotaterApp : public gl_app_t{
             crt_vol_renderer->BindVTexture(handle, unit);
         }
 
-        vol_tag_priv_data.query_info = NewGeneralHandle<CUDAHostBuffer>(RescAccess::Unique,
+        vol_tag_priv_data.query_info = NewHandle<CUDAHostBuffer>(ResourceType::Buffer,
                                                           sizeof(float) * 8,
                                                           cub::cu_memory_type::e_cu_host,
                                                           render_gpu_mem_mgr_ref->_get_cuda_context());
@@ -275,7 +275,7 @@ public:
         GL_EXPR(glEnable(GL_DEPTH_TEST));
 
         //todo resize event
-        framebuffer = NewGeneralHandle<FrameBuffer>(RescAccess::Unique);
+        framebuffer = NewHandle<FrameBuffer>(ResourceType::Buffer);
         framebuffer->frame_width = offscreen.frame_width;
         framebuffer->frame_height = offscreen.frame_height;
 

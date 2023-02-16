@@ -309,11 +309,11 @@ VISER_BEGIN
         //暂时使用null流
         _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
 
-        _->cu_ptrs = NewGeneralHandle<CUDABuffer>(RescAccess::Unique, info.max_segment_count * sizeof(SWCSegment), cub::e_cu_device, _->ctx);
+        _->cu_ptrs = NewHandle<CUDABuffer>(ResourceType::Buffer, info.max_segment_count * sizeof(SWCSegment), cub::e_cu_device, _->ctx);
         _->cu_ptrs_view = _->cu_ptrs->view_1d<SWCSegment>(info.max_segment_count);
         _->kernel_params.cu_segments = _->cu_ptrs_view;
 
-        _->cu_glk = NewGeneralHandle<CUDABuffer>(RescAccess::Unique, sizeof(viser::Lock), cub::e_cu_device, _->ctx);
+        _->cu_glk = NewHandle<CUDABuffer>(ResourceType::Buffer, sizeof(viser::Lock), cub::e_cu_device, _->ctx);
         _->kernel_params.g_lk = _->cu_glk->view_1d<viser::Lock>(1);
     }
 

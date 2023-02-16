@@ -59,7 +59,7 @@ int main(int argc, char** argv){
 
     // volume
     GridVolume::GridVolumeCreateInfo volume_info{};
-    auto volume = NewHandle<GridVolume>(RescAccess::Shared, volume_info);
+    auto volume = NewHandle<GridVolume>(ResourceType::Object, volume_info);
 
     FixedHostMemMgr::FixedHostMemMgrCreateInfo block_pool_info{};
     auto block_pool_uid = resc_ins.GetHostRef(host_resc_uid)->RegisterFixedHostMemMgr(block_pool_info);

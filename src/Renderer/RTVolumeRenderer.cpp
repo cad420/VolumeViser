@@ -6,6 +6,8 @@ VISER_BEGIN
 
 using BlockUID = GridVolume::BlockUID;
 
+static Int3 DefaultVTexShape{1024, 1024, 1024};
+
 namespace{
 
 }

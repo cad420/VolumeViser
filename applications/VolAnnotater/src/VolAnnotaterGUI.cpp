@@ -1948,7 +1948,7 @@ void VolAnnotaterGUI::generate_modified_mesh() {
 
         //从mc_params.gen_host_vertices_ret中拷贝结果 并且生成normal 即转换为MeshData0
 
-        auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+        auto mesh = NewHandle<Mesh>(ResourceType::Object);
         auto view = mc_params.gen_host_vertices_ret;
         mesh->Insert(MeshData0(tri_num, [&](int vert_idx)->const Float3&{
             return view.at(vert_idx);

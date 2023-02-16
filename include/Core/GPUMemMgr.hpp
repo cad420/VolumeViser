@@ -37,15 +37,15 @@ public:
     // 如果是Shared的资源，提供加锁操作，Unique资源总是能加锁成功，而Shared则不一定
     // 通过Alloc得到的资源，不会被记录在内部，需要调用者自己保管，无论是Shared还是Unique
     // 当可用内存不足时，会抛出异常
-    Handle<CUDABuffer> AllocBuffer(RescAccess access, size_t bytes);
+    Handle<CUDABuffer> AllocBuffer(ResourceType access, size_t bytes);
 
-    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(RescAccess access, size_t width, size_t height, size_t ele_size);
+    Handle<CUDAPitchedBuffer> AllocPitchedBuffer(ResourceType access, size_t width, size_t height, size_t ele_size);
 
     struct TextureCreateInfo{
         cub::texture_resc_info resc_info;
         cub::texture_view_info view_info;
     };
-    Handle<CUDATexture> AllocTexture(RescAccess access, const TextureCreateInfo& info);
+    Handle<CUDATexture> AllocTexture(ResourceType access, const TextureCreateInfo& info);
 
     using GPUVTexMgrCreateInfo = GPUVTexMgr::GPUVTexMgrCreateInfo;
     UnifiedRescUID RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo& info);
@@ -59,7 +59,7 @@ protected:
     friend class CRTVolumeRenderer;
     friend class HashPageTable;
     //不再更新使用内存
-    Handle<CUDATexture> _AllocTexture(RescAccess access, const TextureCreateInfo& info);
+    Handle<CUDATexture> _AllocTexture(ResourceType access, const TextureCreateInfo& info);
 
 
 

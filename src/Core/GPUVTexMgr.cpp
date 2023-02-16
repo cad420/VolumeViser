@@ -102,7 +102,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         }
     };
     for(int i = 0; i < info.vtex_count; i++){
-        auto tex_handle = info.gpu_mem_mgr->_AllocTexture(RescAccess::Shared, tex_info);
+        auto tex_handle = info.gpu_mem_mgr->_AllocTexture(ResourceType::Buffer, tex_info);
         auto tex_uid = i;
         assert(_->tex_mp.count(tex_uid) == 0);
         _->tex_mp[tex_uid] = std::move(tex_handle);
@@ -124,7 +124,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     _->vtex_block_dim = info.vtex_shape / info.vtex_block_length;
     _->vtex_block_size_bytes = (size_t)_->vtex_ele_size * _->vtex_block_length * _->vtex_block_length * _->vtex_block_length;
 
-    _->cu_black_buffer = info.gpu_mem_mgr->AllocBuffer(RescAccess::Unique, _->vtex_block_size_bytes);
+    _->cu_black_buffer = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, _->vtex_block_size_bytes);
     CUB_CHECK(cudaMemset(_->cu_black_buffer->get_data(), 0, _->vtex_block_size_bytes));
 
     _->uid = _->GenRescUID();

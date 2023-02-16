@@ -31,15 +31,15 @@ public:
     UnifiedRescUID GetUID() const;
 
     template<typename T, RescType type>
-    Handle<T> AllocHostMem(RescAccess access, size_t bytes, bool required = false) = delete;
+    Handle<T> AllocHostMem(ResourceType access, size_t bytes, bool required = false) = delete;
 
     template<>
-    Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(RescAccess access, size_t bytes, bool required);
+    Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(ResourceType access, size_t bytes, bool required);
 
 #define AllocPinnedHostMem(access, bytes, required) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes,required)
 
     template<>
-    Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(RescAccess access, size_t bytes, bool required);
+    Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(ResourceType access, size_t bytes, bool required);
 
 #define AllocPagedHostMem(access, bytes, required) AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>(access,bytes,required)
 

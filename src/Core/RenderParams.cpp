@@ -72,13 +72,13 @@ std::vector<Value> TransferFuncT<Key, Value>::Gen2DTF(const std::vector<Value>& 
 
 template<typename Key, typename Value>
 void TransferFuncT<Key, Value>::Gen1DTF(Handle<CUDAHostBuffer> &buffer, int dim) const {
-    auto lk = buffer.AccessLock(AccessType::Write);
+    auto lk = buffer.AutoLocker();
     Gen1DTFImpl(*this, reinterpret_cast<Value*>(buffer->get_data()), dim);
 }
 
 template<typename Key, typename Value>
 void TransferFuncT<Key, Value>::Gen2DTF(Handle<CUDAHostBuffer> & tf1d, Handle<CUDAHostBuffer> &buffer, int dim) const {
-    auto lk = buffer.AccessLock(AccessType::Write);
+    auto lk = buffer.AutoLocker();
     Gen2DTFImpl(*this, reinterpret_cast<const Value*>(tf1d->get_data()), reinterpret_cast<Value*>(buffer->get_data()), dim);
 }
 

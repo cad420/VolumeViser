@@ -79,10 +79,10 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
         std::string lod_path = j.at("lod" + std::to_string(lod));
         LOG_TRACE("Load LOD({}) : {}", lod, lod_path);
 
-        vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(RescAccess::Shared, CreateVolumeFileByFileName(lod_path));
+        vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(ResourceType::Object, CreateVolumeFileByFileName(lod_path));
     }
 
-    vol_priv_data.volume = NewHandle<GridVolume>(RescAccess::Unique, vol_info);
+    vol_priv_data.volume = NewHandle<GridVolume>(ResourceType::Object, vol_info);
 
     vol_priv_data.max_lod = levels - 1;
 
@@ -161,12 +161,12 @@ void VolRenderRescPack::Initialize(ViserRescPack& _) {
             .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
             .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
     };
-    crt_vol_renderer = NewHandle<CRTVolumeRenderer>(RescAccess::Unique, renderer_info);
+    crt_vol_renderer = NewHandle<CRTVolumeRenderer>(ResourceType::Object, renderer_info);
 
-    framebuffer = NewGeneralHandle<FrameBuffer>(RescAccess::Unique);
+    framebuffer = NewHandle<FrameBuffer>(ResourceType::Buffer);
 
 
-    vol_query_priv_data.query_info = NewGeneralHandle<CUDAHostBuffer>(RescAccess::Unique,
+    vol_query_priv_data.query_info = NewHandle<CUDAHostBuffer>(ResourceType::Buffer,
                                                                     sizeof(float) * 8,
                                                                     cub::cu_memory_type::e_cu_host,
                                                                     _.render_gpu_mem_mgr_ref->_get_cuda_context());
@@ -310,7 +310,7 @@ std::vector<BlockUID> VolRenderRescPack::ComputeIntersectBlocks(const std::vecto
 //============================================================================================
 
 void SWCRescPack::Initialize() {
-    swc_file = NewHandle<SWCFile>(viser::RescAccess::Unique);
+    swc_file = NewHandle<SWCFile>(viser::ResourceType::Object);
 
     swc_renderer = std::make_unique<SWCRenderer>(SWCRenderer::SWCRendererCreateInfo{});
 
@@ -355,7 +355,7 @@ void SWCRescPack::LoadSWCFile(const std::string &filename, Float3 ratio) {
 
 void SWCRescPack::CreateSWC(const std::string& filename) {
     static int swc_count = 0;
-    auto swc = NewHandle<SWC>(viser::RescAccess::Shared);
+    auto swc = NewHandle<SWC>(viser::ResourceType::Object);
     auto swc_uid = swc->GetUID();
     assert(CheckUnifiedRescUID(swc_uid));
     auto& swc_info = loaded_swc[swc_uid];
@@ -639,9 +639,9 @@ void SWCRescPack::ResetSWCRenderer(bool init)
 //============================================================================================
 
 void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
-    mesh_file = NewHandle<MeshFile>(RescAccess::Unique);
+    mesh_file = NewHandle<MeshFile>(ResourceType::Object);
 
-    s2m_priv_data.segment_buffer = _.host_mem_mgr_ref->AllocPinnedHostMem(RescAccess::Shared,
+    s2m_priv_data.segment_buffer = _.host_mem_mgr_ref->AllocPinnedHostMem(ResourceType::Buffer,
                                                                           MaxSegmentCount * sizeof(SWCSegment),
                                                                           false);
 
@@ -649,20 +649,20 @@ void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
             .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
             .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
     };
-    swc_voxelizer = NewHandle<SWCVoxelizer>(RescAccess::Unique, v_info);
+    swc_voxelizer = NewHandle<SWCVoxelizer>(ResourceType::Object, v_info);
 
     MarchingCubeAlgo::MarchingCubeAlgoCreateInfo mc_info{
             .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
             .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
     };
-    mc_algo = NewHandle<MarchingCubeAlgo>(RescAccess::Unique, mc_info);
+    mc_algo = NewHandle<MarchingCubeAlgo>(ResourceType::Object, mc_info);
 
     neuron_renderer = std::make_unique<NeuronRenderer>(NeuronRenderer::NeuronRendererCreateInfo{});
 }
 
 void SWC2MeshRescPack::CreateBlockMesh(const BlockUID &uid) {
     s2m_priv_data.patch_mesh_mp[uid].status = Empty;
-    s2m_priv_data.patch_mesh_mp[uid].mesh = NewHandle<Mesh>(RescAccess::Shared);
+    s2m_priv_data.patch_mesh_mp[uid].mesh = NewHandle<Mesh>(ResourceType::Object);
 }
 
 void SWC2MeshRescPack::UpdateBlockMesh(const BlockUID &uid, Handle<Mesh> mesh) {
@@ -740,7 +740,7 @@ void SWC2MeshRescPack::LoadMeshFile(const std::string &filename) {
 
         CreateMesh("", filename);
 
-        auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+        auto mesh = NewHandle<Mesh>(ResourceType::Object);
 
         int idx = 0;
         for(auto& shape : mesh_data){
@@ -758,7 +758,7 @@ void SWC2MeshRescPack::LoadMeshFile(const std::string &filename) {
 void SWC2MeshRescPack::CreateMesh(const std::string& name, const std::string &filename) {
     static int mesh_count = 0;
     mesh_count += 1;
-    auto mesh = NewHandle<Mesh>(RescAccess::Shared);
+    auto mesh = NewHandle<Mesh>(ResourceType::Object);
     auto mesh_uid = mesh->GetUID();
     auto& mesh_info = loaded_mesh[mesh_uid];
     mesh_info.mesh = std::move(mesh);

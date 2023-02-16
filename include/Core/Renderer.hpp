@@ -55,11 +55,11 @@ class RTVolumeRendererPrivate;
 class RTVolumeRenderer: public Renderer{
 public:
     struct RTVolumeRendererCreateInfo{
-        UnifiedRescUID host_mem_mgr_uid = 0;
-        UnifiedRescUID gpu_mem_mgr_uid = 0;
+        Ref<HostMemMgr> host_mem_mgr;
+        Ref<GPUMemMgr> gpu_mem_mgr;
         bool async = true;
         bool use_shared_host_mem = false;
-        UnifiedRescUID shared_fixed_host_mem_mgr_uid = 0;
+        Ref<FixedHostMemMgr> shared_fixed_host_mem_mgr_ref;
     };
 
     explicit RTVolumeRenderer(const RTVolumeRendererCreateInfo&);

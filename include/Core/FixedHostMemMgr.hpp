@@ -30,6 +30,7 @@ public:
     UnifiedRescUID GetUID() const override;
 
     //如果uid存在，返回Handle，调用者负责检查锁的状态，以及决定加读锁还是写锁，内部只是一个简单的缓存机制
+    //一定会返回一个有效的句柄
     Handle<CUDAHostBuffer> GetBlock(UnifiedRescUID uid);
 
     //GetBlockAsync不需要，因为异步的需求在调用者层次处理
