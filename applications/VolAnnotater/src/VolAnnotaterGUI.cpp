@@ -1474,7 +1474,8 @@ void VolAnnotaterGUI::render_volume() {
         if(!block.second.Missed()) continue;
         auto block_hd = viser_resc->host_block_pool_ref->GetBlock(block.first.ToUnifiedRescUID());
         LOG_DEBUG("ok111 {}", block_hd.GetUID());
-        if(block.first.IsSame(block_hd.GetUID())){
+        assert(block_hd.IsLocked());
+        if(block_hd.IsReadLocked()){
             LOG_DEBUG("ok222");
             host_blocks[block.first] = std::move(block_hd);
             LOG_DEBUG("okok222");
@@ -1509,6 +1510,7 @@ void VolAnnotaterGUI::render_volume() {
 //                        std::cout << std::endl;
                     }
                     block_handle.SetUID(block.ToUnifiedRescUID());
+                    block_handle.ConvertWriteToReadLock();
                     this->vol_render_resc->vol_render_priv_data.host_blocks[block] = std::move(block_handle);
                     LOG_DEBUG("finish lod {} block ({}, {}, {}) loading...",
                               block.GetLOD(), block.x, block.y, block.z);
@@ -1541,7 +1543,8 @@ void VolAnnotaterGUI::render_volume() {
     //同步，等待所有解压任务完成
     viser_resc->thread_group.wait_idle();
 
-
+    static size_t t_cnt = 0;
+    START_TIMER
     //将数据块上传到虚拟纹理
     for(auto& missed_block : blocks_info){
         if(!missed_block.second.Missed()) continue;
@@ -1552,6 +1555,13 @@ void VolAnnotaterGUI::render_volume() {
 
     viser_resc->gpu_vtex_mgr_ref->Flush();
 
+    for(auto& [_, handle] : host_blocks){
+        handle.ReleaseReadLock();
+    }
+
+    STOP_TIMER("flush")
+    t_cnt += __t.count();
+    std::cerr << "t cnt : " << t_cnt << std::endl;
 
     vol_render_resc->crt_vol_renderer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable().GetHandle());
 

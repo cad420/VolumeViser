@@ -130,7 +130,7 @@ void ViserRescPack::InitializeVolumeResc() {
     };
 
     auto host_pool_uid = host_mem_mgr_ref->RegisterFixedHostMemMgr(host_pool_info);
-    host_block_pool_ref = host_mem_mgr_ref->GetFixedHostMemMgrRef(host_pool_uid);
+    host_block_pool_ref = host_mem_mgr_ref->GetFixedHostMemMgrRef(host_pool_uid).LockRef();
     LOG_TRACE("Successfully Create FixedHostMemMgr...");
 
     GPUMemMgr::GPUVTexMgrCreateInfo vtex_info{

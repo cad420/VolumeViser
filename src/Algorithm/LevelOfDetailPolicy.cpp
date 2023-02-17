@@ -26,6 +26,7 @@ VISER_BEGIN
         idx_end.y = std::min(idx_end.y, block_dim.y);
         idx_end.z = std::min(idx_end.z, block_dim.z);
         std::vector<std::pair<GridVolume::BlockUID, BoundingBox3D>> lod0_blocks;
+        //todo use parallel for
         for(auto z = idx_beg.z; z < idx_end.z; z++){
             for(auto y = idx_beg.y; y < idx_end.y; y++){
                 for(auto x = idx_beg.x; x < idx_end.x; x++){

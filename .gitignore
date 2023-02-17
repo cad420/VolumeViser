@@ -2,6 +2,6 @@
 .idea
 .vscode
 .vs
-bin
+./bin
 *data*
 *binary*
