@@ -79,8 +79,8 @@ struct RenderParams{
     }tf;
     struct{
         bool updated = false;
-        float node_x_offset;
-        float node_y_offset;
+        int node_x_offset;//in pixels
+        int node_y_offset;
         int world_row_count;
         int world_col_count;
         int node_x_index;
@@ -107,8 +107,5 @@ struct PerFrameParams{
     float frame_w_over_h;
     int debug_mode = 0;
 };
-
-
-
 
 VISER_END

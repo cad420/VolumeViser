@@ -1974,6 +1974,11 @@ void VolAnnotaterGUI::generate_modified_mesh() {
 
     //跑完mc后再释放pt
     viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);
+
+    viser_resc->gpu_pt_mgr_ref->ClearWithOption([](const BlockUID& uid){
+        return uid.IsSWC();
+    });
+
     //清除体素化写入的vtex
     for(auto& [uid, tex] : blocks_info){
         viser_resc->gpu_vtex_mgr_ref->Clear(uid.ToUnifiedRescUID(), tex);

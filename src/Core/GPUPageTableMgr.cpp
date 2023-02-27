@@ -9,11 +9,14 @@ public:
         UInt3 coord;
     };
     using BlockUID = GridVolume::BlockUID;
+    using ReadWriteLock = vutil::rw_spinlock_t;
+
     struct BlockInfo{
-        vutil::rw_spinlock_t rw_lk;
+        ReadWriteLock rw_lk;
+        BlockUID block_uid;
     };
 
-//    std::unordered_map<uint32_t, vutil::read_indepwrite_locker> tex_rw;
+
 
     std::unordered_map<uint32_t, std::unordered_map<UInt3, BlockInfo>> tex_table;
 
@@ -22,6 +25,8 @@ public:
     std::unique_ptr<vutil::lru_t<BlockUID, TexCoordIndex>> lru;
 
     //被cache机制淘汰的才会被erase
+    //应该是记录加了读写锁的项目
+    //这里被记录的都是实际存在显存当中的
     std::unordered_map<BlockUID, TexCoordIndex> record_block_mp;
 
     std::unique_ptr<HashPageTable> hpt;
@@ -36,6 +41,11 @@ public:
 
     UnifiedRescUID uid;
     std::mutex g_mtx;
+
+    struct{
+        int vtex_count;
+        Int3 vtex_block_dim;
+    };
 };
 
 GPUPageTableMgr::GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info) {
@@ -57,6 +67,8 @@ GPUPageTableMgr::GPUPageTableMgr(const GPUPageTableMgrCreateInfo& info) {
             }
         }
     }
+    _->vtex_count = info.vtex_count;
+    _->vtex_block_dim = info.vtex_block_dim;
 
     _->uid = _->GenRescUID();
 }
@@ -85,6 +97,8 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
             if (auto value = _->lru->get_value(key); value.has_value()) {
                 auto [tid, coord] = value.value();
                 _->tex_table[tid][coord].rw_lk.lock_read();
+                //可能被Clear过
+                _->record_block_mp[key] = {tid, coord};
 
                 items.push_back({key, {.sx = coord.x,
                         .sy = coord.y,
@@ -163,7 +177,38 @@ void GPUPageTableMgr::Promote(const Key &key) {
     //暂时不更新缓存优先级
 
 }
+bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableMgr::Value &value)
+{
+    return false;
+}
+void GPUPageTableMgr::Reset()
+{
+    _->record_block_mp.clear();
+    _->lru->clear();
 
+    while(!_->freed.empty()) _->freed.pop();
 
+    for(uint32_t tid = 0; tid < _->vtex_count; ++tid){
+        for(uint32_t ix = 0; ix < _->vtex_block_dim.x; ++ix){
+            for(uint32_t iy = 0; iy < _->vtex_block_dim.y; ++iy){
+                for(uint32_t iz = 0; iz < _->vtex_block_dim.z; ++iz){
+                    _->freed.emplace(GPUPageTableMgrPrivate::TexCoordIndex{tid,{ix, iy, iz}});
+                }
+            }
+        }
+    }
+
+    _->hpt->Clear();
+}
+void GPUPageTableMgr::ClearWithOption(std::function<bool(const Key& key)> ok)
+{
+    for(auto it = _->record_block_mp.begin(); it != _->record_block_mp.end();){
+        if(ok(it->first)){
+            _->record_block_mp.erase(it++);
+        }
+        else
+            it++;
+    }
+}
 
 VISER_END

@@ -155,7 +155,14 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     //因为可能渲染启动的时候，拷贝没有完成，内部也会做一些同步，比如读之前必须等待写完成
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
     cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
-    _->pt_mgr->GetPageTable().Update({GridVolume::BlockUID(src.GetUID()), dst});
+    //还是要检查上传的数据是否仍需要 是否有效
+    auto block_uid = GridVolume::BlockUID(src.GetUID());
+    if(_->pt_mgr->Check(block_uid, dst)){
+        _->pt_mgr->GetPageTable().Update({block_uid, dst});
+    }
+    else{
+        LOG_DEBUG("block upload to vtex but not needed any more");
+    }
 }
 
 void GPUVTexMgr::UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, GPUVTexMgr::TexCoord dst) {

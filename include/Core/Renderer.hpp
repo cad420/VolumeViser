@@ -17,23 +17,16 @@ struct FrameBuffer{
 //都在标注应用部分编写代码，而不作为核心库里的功能。
 //体绘制用CUDA实现
 
-    using VTextureHandle = Handle<CUDATexture>;
-    using TextureUnit = int;
-    using PTBufferHandle = Handle<CUDABuffer>;
+using VTextureHandle = Handle<CUDATexture>;
+using TextureUnit = int;
+using PTBufferHandle = Handle<CUDABuffer>;
 
 //渲染器本身也是一种资源，它是CPU和GPU资源的结合，因此同一时刻只能有一个调用者
 class Renderer : public UnifiedRescBase{
 public:
-
-    enum Type{
-        RealTime,
-        PhysicalBased
-    };
-
-
-    using RendererUID = size_t;
-
     virtual ~Renderer() = default;
+
+    virtual void BindGridVolume(Handle<GridVolume>) = 0;
 
     virtual void SetVolume(const VolumeParams&) = 0;
 
@@ -43,11 +36,23 @@ public:
 
     virtual void Render(Handle<FrameBuffer> frame) = 0;
 
-//    using RenderResult = cub::cu_result;
-//    virtual std::future<RenderResult> RenderAsync(FrameBuffer& frame) = 0;
+};
+
+//传统大规模体数据渲染器
+class LVolumeRendererPrivate;
+class LVolumeRenderer: public Renderer{
+  public:
+    struct LVolumeRendererCreateInfo{
+
+    };
+
+    explicit LVolumeRenderer(const LVolumeRendererCreateInfo&);
+
+    ~LVolumeRenderer() override;
 
 
-
+  private:
+    std::unique_ptr<LVolumeRendererPrivate> _;
 };
 
 //封装
@@ -60,6 +65,12 @@ public:
         bool async = true;
         bool use_shared_host_mem = false;
         Ref<FixedHostMemMgr> shared_fixed_host_mem_mgr_ref;
+
+        float render_space_ratio = 1.f;
+
+        size_t fixed_host_mem_bytes = 16ull << 30;
+        size_t vtex_cnt = 16;
+        Int3 vtex_shape{1024, 1024, 1024};
     };
 
     explicit RTVolumeRenderer(const RTVolumeRendererCreateInfo&);
@@ -72,7 +83,7 @@ public:
 
     UnifiedRescUID GetUID() const override;
 
-    void BindGridVolume(Handle<GridVolume>);
+    void BindGridVolume(Handle<GridVolume>) override;
 
     void SetVolume(const VolumeParams&) override { /* Use BindGridVolume instead */}
 
@@ -107,6 +118,8 @@ public:
     void UnLock() override;
 
     UnifiedRescUID GetUID() const override;
+
+    void BindGridVolume(Handle<GridVolume>) override {}
 
     void SetVolume(const VolumeParams&) override;
 
@@ -146,7 +159,7 @@ class PBVolumeRenderer: public Renderer{
 
     UnifiedRescUID GetUID() const override;
 
-    void BindGridVolume(Handle<GridVolume>);
+    void BindGridVolume(Handle<GridVolume>) override;
 
     void SetVolume(const VolumeParams&) override { /* Use BindGridVolume instead */}
 
@@ -156,7 +169,10 @@ class PBVolumeRenderer: public Renderer{
 
     void Render(Handle<FrameBuffer> frame) override;
 
+    struct PBParams{
 
+    };
+    void SetPBParams(const PBParams&);
 
   private:
     std::unique_ptr<PBVolumeRendererPrivate> _;

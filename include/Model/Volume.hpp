@@ -74,6 +74,11 @@ public:
         bool IsSWC() const{
             return (w >> LodBits) & VolumeBlock_IsSWC;
         }
+
+        bool operator&(uint32_t flags) const {
+            return (w >> LodBits) & flags;
+        }
+
         BlockUID& SetSWC() {
             w |= VolumeBlock_IsSWC << LodBits;
             return *this;

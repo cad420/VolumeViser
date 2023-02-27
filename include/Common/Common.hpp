@@ -236,13 +236,9 @@ public:
         return *this;
     }
 
-    //手动释放，之后不能再访问，否则触发assert
     void Release(){
         if(obj)
             obj = nullptr;
-        else {
-            assert(false);
-        }
     }
 
     bool IsThreadSafe() const {

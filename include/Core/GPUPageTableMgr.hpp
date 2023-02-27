@@ -35,6 +35,7 @@ public:
 #define TexCoordFlag_IsSparse VolumeBlock_IsSparse //代表数据块本身是否为稀疏的
 #define TexCoordFlag_IsSWC    VolumeBlock_IsSWC //代表数据块本身是否为SWC体素化使用
 #define TexCoordFlag_IsSWCV   16u // 代表数据块在体素化算法过程中被更新了
+
     struct TexCoord{
         uint32_t sx, sy, sz;//一块纹理内部的偏移坐标
         uint16_t tid;//纹理索引
@@ -61,11 +62,16 @@ public:
     void Release(const std::vector<Key>& keys);
 
     //todo 清除所有页表项，否则哈希页表会爆满
-    void Clear();
+    void Reset();
+
+    void ClearWithOption(std::function<bool(const Key& key)>);
 
     HashPageTable& GetPageTable(bool update = true);
 
     void Promote(const Key& key);
+
+    //是否是一对有效的键值
+    bool Check(const Key& key, const Value& value);
 
 protected:
     friend class GPUVTexMgr;

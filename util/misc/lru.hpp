@@ -19,6 +19,11 @@ VUTIL_BEGIN
         :capacity(cap)
         {}
 
+        void clear(){
+            data.clear();
+            pos.clear();
+        }
+
         Value* get_value_ptr(const Key& key){
             auto it = pos.find(key);
             if(it == pos.end())

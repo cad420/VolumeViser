@@ -21,6 +21,7 @@ set_source_files_properties(
         ${PROJECT_SOURCE_DIR}/src/Renderer/CRTVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Renderer/RTVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Renderer/PBVolumeRenderer.cpp
+        ${PROJECT_SOURCE_DIR}/src/Renderer/LVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/MarchingCube.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/Voxelization.cpp
         PROPERTIES LANGUAGE CUDA

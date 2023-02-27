@@ -26,7 +26,8 @@ VISER_BEGIN
 
         //...
         //体数据的包围盒可以是经过线性变换的，这里就用AABB，即只考虑平移和缩放，旋转由相机得到
-        struct CUDAVolume{
+        struct CUDAVolumeParams
+        {
             AABB bound;
             float3 voxel_dim;
             float3 voxel_space;
@@ -74,8 +75,9 @@ VISER_BEGIN
             // pos is offset in volume aabb
             CUDABufferView1D<float> info;// 8
         };
-        struct CTRVolumeRenderKernelParams{
-            CUDAVolume cu_volume;
+        struct CRTVolumeRenderKernelParams
+        {
+            CUDAVolumeParams cu_volume;
             CUDARenderParams cu_render_params;
             CUDAPerFrameParams cu_per_frame_params;
             CUDAPageTable cu_page_table;
@@ -137,13 +139,13 @@ VISER_BEGIN
          * @param pos world space coord
          * @return offset coord in volume aabb
          */
-        CUB_GPU inline float3 CalcVirtualSamplingPos(const CTRVolumeRenderKernelParams& params, const float3& pos){
+        CUB_GPU inline float3 CalcVirtualSamplingPos(const CRTVolumeRenderKernelParams & params, const float3& pos){
             return (pos - params.cu_volume.bound.low)/(params.cu_volume.bound.high - params.cu_volume.bound.low);
         }
         /**
          * @param offset_in_volume 采样点在AABB中的offset, 0 ~ 1
          */
-        CUB_GPU VirtualSamplingResult VirtualSampling(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU VirtualSamplingResult VirtualSampling(const CRTVolumeRenderKernelParams & params,
                                                       uint4 hash_table[][2],
                                                       float3 offset_in_volume, uint32_t sampling_lod){
             //to voxel coord
@@ -183,7 +185,7 @@ VISER_BEGIN
         /**
          * @brief 总是使用lod0的block进行计算
          */
-        CUB_GPU float CalcDistToNearestBlockCenter(const CTRVolumeRenderKernelParams& params, const float3& pos){
+        CUB_GPU float CalcDistToNearestBlockCenter(const CRTVolumeRenderKernelParams & params, const float3& pos){
             float3 offset_in_volume = CalcVirtualSamplingPos(params, pos);
             offset_in_volume *= params.cu_volume.voxel_dim;
             uint3 voxel_coord = make_uint3(offset_in_volume.x, offset_in_volume.y, offset_in_volume.z);
@@ -196,7 +198,7 @@ VISER_BEGIN
         /**
          * @param pos world space coord
          */
-        CUB_GPU uint32_t ComputeLod(const CTRVolumeRenderKernelParams& params, const float3& pos){
+        CUB_GPU uint32_t ComputeLod(const CRTVolumeRenderKernelParams & params, const float3& pos){
             float dist = CalcDistToNearestBlockCenter(params, pos);
             for(uint32_t i = 0; i < MaxLodLevels; ++i){
                 if(dist < params.cu_render_params.lod_policy[i])
@@ -205,7 +207,7 @@ VISER_BEGIN
             return MaxLodLevels - 1;
         }
 
-        CUB_GPU float3 CalcSkipPos(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU float3 CalcSkipPos(const CRTVolumeRenderKernelParams & params,
                                    const float3& pos, const float3& d, uint32_t lod){
             float3 low;
             float3 high;
@@ -214,7 +216,7 @@ VISER_BEGIN
             exit_t *= 1.f + 2.f * gamma(3);
             return pos + exit_t * d;
         }
-        CUB_GPU float4 ScalarToRGBA(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU float4 ScalarToRGBA(const CRTVolumeRenderKernelParams & params,
                                     float scalar, uint32_t lod){
 //            if(scalar > 0.3f){
 //                return make_float4(1.f,0.5f,0.25f,0.6f);
@@ -230,7 +232,7 @@ VISER_BEGIN
 //            }
             return color;
         }
-        CUB_GPU float4 CalcShadingColor(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU float4 CalcShadingColor(const CRTVolumeRenderKernelParams & params,
                                         uint4 hash_table[][2],
                                         const float4& color, const float3& pos,
                                         const float3& ray_dir,
@@ -292,7 +294,7 @@ VISER_BEGIN
             float radius;
             float3 pos;
         };
-        CUB_GPU RayCastResult2 RayCastVolume2(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU RayCastResult2 RayCastVolume2(const CRTVolumeRenderKernelParams & params,
                                             uint4 hash_table[][2],
                                             Ray ray){
             // default color is black and depth is 1.0
@@ -439,7 +441,7 @@ VISER_BEGIN
 
             return ret;
         }
-        CUB_GPU RayCastResult RayCastVolume(const CTRVolumeRenderKernelParams& params,
+        CUB_GPU RayCastResult RayCastVolume(const CRTVolumeRenderKernelParams & params,
                                             uint4 hash_table[][2],
                                             Ray ray){
             // default color is black and depth is 1.0
@@ -539,7 +541,7 @@ VISER_BEGIN
             ret.z = pow(color.z, 1.f / 2.2f);
             return ret;
         }
-        CUB_KERNEL void CRTVolumeQueryKernel(CTRVolumeRenderKernelParams params){
+        CUB_KERNEL void CRTVolumeQueryKernel(CRTVolumeRenderKernelParams params){
             const int x = blockIdx.x * blockDim.x + threadIdx.x;
             int y = blockIdx.y * blockDim.y + threadIdx.y;
             if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
@@ -587,7 +589,7 @@ VISER_BEGIN
             params.cu_tag.info.at(6) = color.z;
             params.cu_tag.info.at(7) = color.w;
         }
-        CUB_KERNEL void CRTVolumeRenderKernel(CTRVolumeRenderKernelParams params){
+        CUB_KERNEL void CRTVolumeRenderKernel(CRTVolumeRenderKernelParams params){
             const int x = blockIdx.x * blockDim.x + threadIdx.x;
             int y = blockIdx.y * blockDim.y + threadIdx.y;
             if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
@@ -651,7 +653,7 @@ VISER_BEGIN
 
         CUDAStream render_stream;
 
-        CTRVolumeRenderKernelParams kernel_params;
+        CRTVolumeRenderKernelParams kernel_params;
 
         struct{
             Handle<CUDAHostBuffer> tf1d;

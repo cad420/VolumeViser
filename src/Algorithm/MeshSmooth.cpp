@@ -15,8 +15,6 @@ namespace {
         Node *next = nullptr;
     };
 
-
-
     void gaussian_smooth(std::vector<Vertex>& vertices, float c, const std::vector<Node*> neighborhood,
                          std::vector<Float3>& delta_p_list,
                          vutil::thread_group_t& thread_group){
@@ -74,6 +72,7 @@ namespace {
         });
     }
 }
+
 void MeshSmoothing(MeshData0& mesh, float lambda, float mu, int iterations, int worker_count){
     vutil::thread_group_t thread_group;
     thread_group.start(vutil::actual_worker_count(worker_count));
@@ -112,6 +111,5 @@ void MeshSmoothing(MeshData0& mesh, float lambda, float mu, int iterations, vuti
     regenerate_normal(mesh.vertices, neighborhood, threads);
     LOG_INFO("Finish Mesh Smoothing...");
 }
-
 
 VISER_END
