@@ -12,8 +12,8 @@ struct VolViewerCreateInfo{
     std::string resource_path;
     std::vector<std::array<int,4>> window_infos;
 
-    size_t MaxHostMemGB = 0;
-    size_t MaxGPUMemGB = 0;
+    size_t MaxHostMemGB = 16;
+    size_t MaxGPUMemGB = 16;
 };
 
 class VolViewerPrivate;

@@ -56,6 +56,6 @@ int main(int argc, char** argv){
     }
     catch (const std::exception& err)
     {
-        std::cerr << "Process exited with: " << std::endl;
+        std::cerr << "Process exited with: " << err.what() << std::endl;
     }
 }

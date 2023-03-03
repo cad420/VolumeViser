@@ -650,10 +650,13 @@ void RTVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
         std::pair<bool,bool> ret = {false, false};
         if(!_->gpu_vtex_mgr_ref.IsValid())
             ret.second = true;
-        auto desc0 = _->volume->GetDesc();
-        auto desc1 = volume->GetDesc();
-        if(desc0.block_length + desc0.padding != desc1.block_length + desc1.padding)
-            ret = {true, true};
+        if(_->volume.IsValid()){
+            auto desc0 = _->volume->GetDesc();
+            auto desc1 = volume->GetDesc();
+            if (desc0.block_length + desc0.padding != desc1.block_length + desc1.padding)
+                ret = {true, true};
+        }
+        else ret = {true, true};
         if(_->use_shared_host_mem) ret.first = false;
         else if(!_->fixed_host_mem_mgr_ref.IsValid()) ret.first = true;
         return ret;
