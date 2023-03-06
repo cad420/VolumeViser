@@ -17,6 +17,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL2)
 
 target_include_directories(VolViewer PRIVATE ${SDL_INCLUDE_DIR})
 
-target_link_libraries(VolViewer PRIVATE ${SDL_LIBS})
-message(STATUS ${SDL_BIN})
+target_link_libraries(VolViewer PRIVATE ${SDL_LIBS} glfw)
+
 file(COPY ${SDL_BIN} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+set(DX11_LIBS d3d11.lib dxgi.lib d3dcompiler.lib dxguid.lib)
+
+target_link_libraries(VolViewer PRIVATE ${DX11_LIBS})
