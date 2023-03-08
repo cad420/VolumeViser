@@ -12,6 +12,10 @@ struct FrameBuffer{
 
     CUDABufferView2D<uint32_t> color;
     CUDABufferView2D<float> depth;
+
+    // second choice
+    Handle<CUDASurface> _color;
+    Handle<CUDASurface> _depth;
 };
 //暂时只考虑体渲染，网格渲染的需求只有标注系统，因此网格渲染的部分完全
 //都在标注应用部分编写代码，而不作为核心库里的功能。

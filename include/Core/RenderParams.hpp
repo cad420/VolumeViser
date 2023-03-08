@@ -65,6 +65,13 @@ struct VolumeParams{
     Float3 space;
 };
 struct RenderParams{
+    void Reset(){
+        light.updated   = false;
+        lod.updated     = false;
+        tf.updated      = false;
+        distrib.updated = false;
+        other.updated   = false;
+    }
     struct {
         bool updated = false;
     }light;
@@ -79,16 +86,18 @@ struct RenderParams{
     }tf;
     struct{
         bool updated = false;
-        int node_x_offset;//in pixels
-        int node_y_offset;
-        int world_row_count;
-        int world_col_count;
-        int node_x_index;
-        int node_y_index;
+        int node_x_offset = 0;//in pixels
+        int node_y_offset = 0;
+        int world_row_count = 1;
+        int world_col_count = 1;
+        int node_x_index = 0;
+        int node_y_index = 0;
     }distrib;
     struct {
         bool updated = false;
         bool use_2d_tf = false;
+        bool gamma_correct = true;
+        bool output_depth = true;
         float ray_step = 0.f;
         float max_ray_dist = 0.f;
         Float3 inv_tex_shape;

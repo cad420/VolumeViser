@@ -3,7 +3,7 @@
 #include <Core/Renderer.hpp>
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <unordered_set>
-
+#include <Core/HashPageTable.hpp>
 #include "Common.hpp"
 #include "../Common/helper_math.h"
 
@@ -48,6 +48,8 @@ namespace{
         float3 inv_tex_shape;
         bool use_2d_tf;
         int2 mpi_node_offset;
+        bool gamma_correction;
+        bool output_depth;
     };
 
     struct CUDAPerFrameParams{
@@ -69,6 +71,8 @@ namespace{
     struct CUDAFrameBuffer{
         CUDABufferView2D<uint32_t> color;
         CUDABufferView2D<float> depth;
+        cudaSurfaceObject_t _color;
+        cudaSurfaceObject_t _depth;
     };
 
     struct RTVolumeRenderKernelParams{
@@ -365,7 +369,6 @@ namespace{
         if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
             return;
 
-
         const unsigned int thread_count = blockDim.x * blockDim.y;
         const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
         const unsigned int load_count = (HashTableSize + thread_count - 1) / thread_count;
@@ -383,7 +386,11 @@ namespace{
         }
 
         __syncthreads();
-
+//        {
+//            float4 color = {1.f, 0.f, 0.f, 1.f};
+//            surf2Dwrite(Float4ToUInt(color), params.framebuffer._color, x * sizeof(uint32_t), y);
+//            return;
+//        }
         Ray ray;
         ray.o = params.cu_per_frame_params.cam_pos;
         float scale = tanf(0.5f * params.cu_per_frame_params.fov);
@@ -395,12 +402,25 @@ namespace{
 
         auto [color, depth] = RayCastVolume(params, hash_table, ray);
 
-        color = make_float4(PostProcessing(color), color.w);
-        // exposure gamma color-grading tone-mapping...
+        if(params.cu_render_params.gamma_correction){
+            color = make_float4(PostProcessing(color), color.w);
+            // exposure gamma color-grading tone-mapping...
+        }
         //            y = params.cu_per_frame_params.frame_height - 1 - y;
-        params.framebuffer.color.at(x, y) = Float4ToUInt(color);
-        params.framebuffer.depth.at(x, y) = depth;
+        if(params.framebuffer.color.data())
+            params.framebuffer.color.at(x, y) = Float4ToUInt(color);
+        else{
 
+            surf2Dwrite(Float4ToUInt(color), params.framebuffer._color, x * sizeof(uint32_t), y);
+//            printf("using surface to output color\n");
+        }
+
+        if(params.cu_render_params.output_depth){
+            if(params.framebuffer.depth.data())
+                params.framebuffer.depth.at(x, y) = depth;
+            else
+                surf2Dwrite(depth, params.framebuffer._depth, x, y);
+        }
     }
 
 }
@@ -546,6 +566,11 @@ class RTVolumeRendererPrivate{
 
         // wait all transfer tasks finished
         aq.async_transfer_queue.wait_idle();
+
+        //update page table
+        kernel_params.cu_page_table.table = gpu_pt_mgr_ref->GetPageTable().
+                                            GetHandle()->view_1d<HashTableItem>(HashTableSize * sizeof(HashTableItem));
+
     }
 
     void AQ_Wait(){
@@ -558,6 +583,7 @@ class RTVolumeRendererPrivate{
         auto block_uid = BlockUID(buffer.GetUID());
         auto lod = block_uid.GetLOD();
         aq.tasks[lod].emplace_back([this, block_uid = block_uid, buffer = std::move(buffer)]() mutable {
+           //CPU decoding
             volume->ReadBlock(block_uid, *buffer);
             buffer.SetUID(block_uid.ToUnifiedRescUID());
             buffer.ConvertWriteToReadLock();
@@ -605,6 +631,12 @@ RTVolumeRenderer::RTVolumeRenderer(const RTVolumeRenderer::RTVolumeRendererCreat
     _->host_mem_mgr_ref = info.host_mem_mgr;
     _->gpu_mem_mgr_ref = info.gpu_mem_mgr;
     _->async = info.async;
+
+    _->ctx = _->gpu_mem_mgr_ref->_get_cuda_context();
+    _->stream = cub::cu_stream::null(_->ctx);
+
+    _->uid = _->GenRescUID();
+
     if(info.use_shared_host_mem)
         _->fixed_host_mem_mgr_ref = info.shared_fixed_host_mem_mgr_ref;
     else{
@@ -705,6 +737,13 @@ void RTVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
             _->kernel_params.cu_vtex[unit] = tex->_get_tex_handle();
         }
 
+        // set here?
+        _->kernel_params.cu_render_params.inv_tex_shape = float3{
+            1.f / _->vtex_shape.x,
+            1.f / _->vtex_shape.y,
+            1.f / _->vtex_shape.z
+        };
+
         //bind volume params
         _->kernel_params.cu_volume.block_length = desc.block_length;
         _->kernel_params.cu_volume.padding = desc.padding;
@@ -758,12 +797,15 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
     if(render_params.other.updated){
         _->kernel_params.cu_render_params.ray_step = render_params.other.ray_step;
         _->kernel_params.cu_render_params.max_ray_dist = render_params.other.max_ray_dist;
-        _->kernel_params.cu_render_params.inv_tex_shape = float3{
-            render_params.other.inv_tex_shape.x,
-            render_params.other.inv_tex_shape.y,
-            render_params.other.inv_tex_shape.z
-        };
+        //todo
+//        _->kernel_params.cu_render_params.inv_tex_shape = float3{
+//            render_params.other.inv_tex_shape.x,
+//            render_params.other.inv_tex_shape.y,
+//            render_params.other.inv_tex_shape.z
+//        };
         _->kernel_params.cu_render_params.use_2d_tf = render_params.other.use_2d_tf;
+        _->kernel_params.cu_render_params.gamma_correction = render_params.other.gamma_correct;
+        _->kernel_params.cu_render_params.output_depth = render_params.other.output_depth;
     }
 }
 
@@ -830,6 +872,9 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
         const dim3 tile = {16u, 16u, 1u};
         _->kernel_params.framebuffer.color = frame->color;
         _->kernel_params.framebuffer.depth = frame->depth;
+        _->kernel_params.framebuffer._color = frame->_color->_get_handle();
+        if(_->kernel_params.cu_render_params.output_depth)
+            _->kernel_params.framebuffer._depth = frame->_depth->_get_handle();
 
         cub::cu_kernel_launch_info launch_info;
         launch_info.shared_mem_bytes = 0;//CRTVolumeRendererPrivate::shared_mem_size;

@@ -50,6 +50,8 @@ using CUDATex = cub::cu_texture;
 using CUDATexture = cub::cu_texture_wrap;
 constexpr int MaxCUDATextureCountPerGPU = 32;
 
+using CUDASurface = cub::cu_surface;
+
 template<typename T>
 struct GeneralRescTraits{
     static constexpr bool value = false;
@@ -60,6 +62,7 @@ struct FrameBuffer;
 template<> struct GeneralRescTraits<CUDABuffer>       { static constexpr bool value = true; };
 template<> struct GeneralRescTraits<CUDAPitchedBuffer>{ static constexpr bool value = true; };
 template<> struct GeneralRescTraits<CUDATexture>      { static constexpr bool value = true; };
+template<> struct GeneralRescTraits<CUDASurface>      { static constexpr bool value = true; };
 template<> struct GeneralRescTraits<HostBuffer>       { static constexpr bool value = true; };
 template<> struct GeneralRescTraits<FrameBuffer>      { static constexpr bool value = true; };
 

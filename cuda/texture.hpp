@@ -186,6 +186,27 @@ inline cu_texture_wrap cu_context::alloc_texture(const texture_resc_info &resc_i
     return cu_texture_wrap(resc_info, view_info, this->ref_from_this());
 }
 
+class cu_surface{
+  public:
+    cu_surface(cudaArray_t array)
+    {
+        cudaResourceDesc desc;
+        desc.resType = cudaResourceTypeArray;
+        desc.res.array.array = array;
+        CUB_CHECK(cudaCreateSurfaceObject(&surface, &desc));
+    }
+
+    ~cu_surface(){
+        CUB_CHECK(cudaDestroySurfaceObject(surface));
+    }
+
+    auto _get_handle() const noexcept {
+        return surface;
+    }
+  private:
+    cudaSurfaceObject_t surface;
+};
+
 class [[deprecated]] cu_texture{
 public:
     template<typename E, int N>
