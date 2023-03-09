@@ -93,6 +93,11 @@ struct RenderParams{
         int node_x_index = 0;
         int node_y_index = 0;
     }distrib;
+    struct{
+        float ray_step = 0.f;
+        float max_ray_dist = 0.f;
+        float render_space = 1.f;
+    }raycast;
     struct {
         bool updated = false;
         bool use_2d_tf = false;
@@ -115,6 +120,7 @@ struct PerFrameParams{
     Float3 cam_up;
     float frame_w_over_h;
     int debug_mode = 0;
+    Mat4 proj_view;
 };
 
 VISER_END

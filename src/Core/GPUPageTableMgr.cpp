@@ -96,7 +96,16 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
         for (auto key: keys) {
             if (auto value = _->lru->get_value(key); value.has_value()) {
                 auto [tid, coord] = value.value();
-                _->tex_table[tid][coord].rw_lk.lock_read();
+                auto& lk = _->tex_table[tid][coord].rw_lk;
+                uint32_t flags = 0;
+                if(lk.is_write_locked()){
+                    //如果已经被加了写锁 那么不用等待 直接返回
+                }
+                else{
+                    lk.lock_read();
+                    flags |= TexCoordFlag_IsValid;
+                }
+
                 //可能被Clear过
                 _->record_block_mp[key] = {tid, coord};
 
@@ -104,7 +113,7 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                         .sy = coord.y,
                         .sz = coord.z,
                         .tid = static_cast<uint16_t>(tid),
-                        .flag = static_cast<uint16_t>(0u | TexCoordFlag_IsValid)}});
+                        .flag = static_cast<uint16_t>(flags)}});
             } else {
                 if (_->freed.empty()) {
                     auto [block_uid, tex_coord] = _->lru->back();
@@ -179,7 +188,10 @@ void GPUPageTableMgr::Promote(const Key &key) {
 }
 bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableMgr::Value &value)
 {
-    return false;
+    if(_->record_block_mp.count(key) == 0) return false;
+    auto& record_val = _->record_block_mp.at(key);
+    if(record_val.tid != value.tid || record_val.coord != UInt3{value.sx, value.sy, value.sz}) return false;
+    return true;
 }
 void GPUPageTableMgr::Reset()
 {

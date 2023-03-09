@@ -158,6 +158,7 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     //还是要检查上传的数据是否仍需要 是否有效
     auto block_uid = GridVolume::BlockUID(src.GetUID());
     if(_->pt_mgr->Check(block_uid, dst)){
+        _->pt_mgr->Promote(block_uid);
         _->pt_mgr->GetPageTable().Update({block_uid, dst});
     }
     else{

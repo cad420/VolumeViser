@@ -586,6 +586,9 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     _->g_render_params.other.max_ray_dist = 6.f;
     _->g_render_params.other.output_depth = false;
 
+    _->g_render_params.distrib.world_row_count = info.global_window_rows;
+    _->g_render_params.distrib.world_col_count = info.global_window_cols;
+
     // create renderer
     for(int i = 0; i < _->node_window_count; i++){
         auto gpu_mem_mgr_uid = ResourceMgr::GetInstance().RegisterResourceMgr({
@@ -609,10 +612,10 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
 
 
         RTVolumeRenderer::RTVolumeRendererCreateInfo rt_info{
-            .host_mem_mgr = host_mem_mgr_ref,
+            .host_mem_mgr = host_mem_mgr_ref.LockRef(),
             .gpu_mem_mgr = gpu_mem_mgr_ref,
             .use_shared_host_mem = true,
-            .shared_fixed_host_mem_mgr_ref = fixed_host_mem_mgr_ref
+            .shared_fixed_host_mem_mgr_ref = fixed_host_mem_mgr_ref.LockRef()
         };
         auto renderer = NewHandle<RTVolumeRenderer>(ResourceType::Object, rt_info);
 
@@ -624,6 +627,8 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
         float oy = (window_info.window_index_y - (info.global_window_rows * 0.5f - 0.5f)) * info.node_frame_height;
         _->g_render_params.distrib.node_x_offset = ox;
         _->g_render_params.distrib.node_y_offset = oy;
+        _->g_render_params.distrib.node_x_index = window_info.window_index_x;
+        _->g_render_params.distrib.node_y_index = window_info.window_index_y;
 
         renderer->SetRenderParams(_->g_render_params);
 
@@ -640,7 +645,7 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     _->camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     _->camera.set_move_speed(0.01);
     _->camera.set_view_rotation_speed(0.001f);
-    //todo
+    //global camera for get proj view
     _->camera.set_w_over_h((float)info.global_frame_width / info.global_frame_height);
 
 }
@@ -710,6 +715,7 @@ void VolViewer::run()
         static Float3 WorldUp = {0.f, 1.f, 0.f};
         params.cam_right = vutil::cross(_->camera.get_xyz_direction(), WorldUp).normalized();
         params.cam_up = vutil::cross(params.cam_right, params.cam_dir);
+        params.proj_view = _->camera.get_view_proj();
 
         for(auto& [idx, resc] : _->window_resc_mp){
             auto& window = resc.window;
@@ -717,9 +723,20 @@ void VolViewer::run()
         }
     };
 
+    KeyCallback = [&](GLFWwindow* glfw_window,int key,int scancode,int action,int mods){
+        if(key == GLFW_KEY_W){
+            _->camera.update({.front = true});
+        }
+        else if(key == GLFW_KEY_S){
+            _->camera.update({.back = true});
+        }
+    };
+
     auto process_input = [this, &exit, &update_per_frame_params]{
 
         glfwPollEvents();
+
+        _->camera.recalculate_matrics();
 
         update_per_frame_params();
 

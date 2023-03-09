@@ -156,6 +156,10 @@ void GridVolume::ReadBlockGPU(const GridVolume::BlockUID &uid, CUDAPitchedBuffer
 void GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAPitchedBuffer &buffer) {
     NOT_IMPL
 }
+int GridVolume::GetMaxLOD() const noexcept
+{
+    return _->lod_vol_file_io.size();
+}
 
 bool GridVolume::BlockUID::IsValid() const {
     return *this != GridVolume::INVALID_BLOCK_UID;

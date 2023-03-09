@@ -64,9 +64,10 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
         } else {
             if (_->freed.empty()) {
                 // wait for unlock
-                auto& t = _->lru->back().second;
-                while(t.IsLocked());
-                _->lru->emplace_back(uid, std::move(t));
+                auto& t = _->lru->back();
+                while(t.second.IsLocked());
+                t.first = uid;
+                _->lru->get_value(uid);
                 LOG_DEBUG("222 {}", uid);
             } else {
                 _->lru->emplace_back(uid, std::move(_->freed.front()));

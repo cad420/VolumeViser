@@ -133,6 +133,7 @@ public:
 
     void ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAPitchedBuffer& buffer);
 
+    int GetMaxLOD() const noexcept;
 protected:
     std::unique_ptr<GridVolumePrivate> _;
 };

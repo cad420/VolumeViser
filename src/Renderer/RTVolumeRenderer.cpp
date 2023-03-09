@@ -482,6 +482,19 @@ class RTVolumeRendererPrivate{
         Int3 vtex_shape;
     };
 
+    struct{
+        Float3 lod0_block_length_space;
+        UInt3 lod0_block_dim;
+        BoundingBox3D volume_bound;
+        int max_lod;
+        Float3 camera_pos;
+        LevelOfDist lod;
+        Mat4 proj_view;
+        int world_rows;
+        int world_cols;
+        int node_x_idx;
+        int node_y_idx;
+    };
     // data sts for loading blocks
     struct{
         bool async;
@@ -494,6 +507,8 @@ class RTVolumeRendererPrivate{
         vutil::thread_group_t async_loading_queue;
         vutil::thread_group_t async_decoding_queue;
         vutil::thread_group_t async_transfer_queue;
+        std::mutex decoding_queue_mtx;
+        std::mutex transfer_queue_mtx;
 //        std::vector<Handle<CUDAHostBuffer>> cached_host_blocks;
 //        std::vector<Handle<CUDAHostBuffer>> missed_host_blocks;
 //        std::unordered_set<BlockUID> cur_blocks_st;
@@ -509,17 +524,22 @@ class RTVolumeRendererPrivate{
 
     void AQ_Update(const std::vector<GPUPageTableMgr::PageTableItem>& cur_intersect_blocks){
         static std::vector<BlockUID> missed_blocks; missed_blocks.clear();
-        aq.cur_block_infos_mp.clear();
+//        aq.cur_block_infos_mp.clear();
+        auto dummy = aq.cur_block_infos_mp;
         for(auto& [block_uid, tex_coord] : cur_intersect_blocks){
             if(!tex_coord.Missed()) continue;
-            missed_blocks.emplace_back(block_uid);
-            aq.cur_block_infos_mp[block_uid] = {block_uid, tex_coord};
+            dummy[block_uid] = {block_uid, tex_coord};
+            if(aq.cur_block_infos_mp.count(block_uid) == 0){
+                missed_blocks.emplace_back(block_uid);
+            }
         }
+        aq.cur_block_infos_mp = std::move(dummy);
 
         auto task = aq.async_loading_queue.create_task([&]{
             std::vector<Handle<CUDAHostBuffer>> buffers;
             for(auto& block_uid : missed_blocks){
-                buffers.emplace_back(fixed_host_mem_mgr_ref->GetBlock(block_uid.ToUnifiedRescUID()));
+                buffers.emplace_back(fixed_host_mem_mgr_ref->GetBlock(block_uid.ToUnifiedRescUID())
+                                     .SetUID(block_uid.ToUnifiedRescUID()));
             }
             _AQ_AppendTask(buffers);
         });
@@ -528,6 +548,7 @@ class RTVolumeRendererPrivate{
 
 
     void _AQ_AppendTask(std::vector<Handle<CUDAHostBuffer>> buffers){
+        // just consider cpu decoding now
         // if read lock, then transfer
         // if write lock, then loading and transfer
         for(auto& buffer : buffers){
@@ -555,6 +576,7 @@ class RTVolumeRendererPrivate{
               }
               task_groups[lod] = std::move(task_group);
         }
+        aq.tasks.clear();
         int lod_count = lods.size();
         for(int lod = 0; lod < lod_count - 1; ++lod){
             int first = lods[lod], second = lods[lod + 1];
@@ -582,16 +604,19 @@ class RTVolumeRendererPrivate{
     void _AQ_AppendDecodingTask(Handle<CUDAHostBuffer> buffer){
         auto block_uid = BlockUID(buffer.GetUID());
         auto lod = block_uid.GetLOD();
+        std::lock_guard<std::mutex> lk(aq.decoding_queue_mtx);
         aq.tasks[lod].emplace_back([this, block_uid = block_uid, buffer = std::move(buffer)]() mutable {
            //CPU decoding
             volume->ReadBlock(block_uid, *buffer);
             buffer.SetUID(block_uid.ToUnifiedRescUID());
             buffer.ConvertWriteToReadLock();
+            LOG_DEBUG("decoding finish, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
             _AQ_AppendTransferTask(std::move(buffer));
         });
     }
 
     void _AQ_AppendTransferTask(Handle<CUDAHostBuffer> buffer){
+        std::lock_guard<std::mutex> lk(aq.transfer_queue_mtx);
         auto t = aq.async_transfer_queue.create_task([this, buffer = std::move(buffer)]() mutable {
             auto block_uid = BlockUID(buffer.GetUID());
             if(aq.cur_block_infos_mp.count(block_uid)){
@@ -599,19 +624,10 @@ class RTVolumeRendererPrivate{
             }
             //上传到显存后，不会再使用，释放读锁
             buffer.ReleaseReadLock();
+            LOG_DEBUG("transfer finish, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
         });
         aq.async_transfer_queue.submit(t);
     }
-
-    struct{
-        Float3 lod0_block_length_space;
-        UInt3 lod0_block_dim;
-        BoundingBox3D volume_bound;
-        int max_lod;
-        Mat4 camera_proj_view;
-        Float3 camera_pos;
-        LevelOfDist lod;
-    };
 
     UnifiedRescUID uid;
 
@@ -648,6 +664,7 @@ RTVolumeRenderer::RTVolumeRenderer(const RTVolumeRenderer::RTVolumeRendererCreat
         _->fixed_host_mem_bytes = info.fixed_host_mem_bytes;
         _->vtex_cnt = info.vtex_cnt;
         _->vtex_shape = info.vtex_shape;
+        //todo move to RenderParams
         _->render_space_ratio = info.render_space_ratio;
         _->use_shared_host_mem = info.use_shared_host_mem;
     }
@@ -745,8 +762,11 @@ void RTVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
         };
 
         //bind volume params
+        _->volume = std::move(volume);
+
         _->kernel_params.cu_volume.block_length = desc.block_length;
         _->kernel_params.cu_volume.padding = desc.padding;
+        _->kernel_params.cu_volume.block_size = desc.block_length + desc.padding * 2;
         _->kernel_params.cu_volume.voxel_dim = {(float)desc.shape.x,
                                                 (float)desc.shape.y,
                                                 (float)desc.shape.z};
@@ -756,6 +776,18 @@ void RTVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
         _->kernel_params.cu_volume.bound = {
             {0.f, 0.f, 0.f},
             _->kernel_params.cu_volume.voxel_space * _->kernel_params.cu_volume.voxel_dim};
+
+        {
+            _->lod0_block_dim = desc.blocked_dim;
+            _->lod0_block_length_space = (float)desc.block_length * desc.voxel_space;
+            _->volume_bound = {
+                Float3(0.f),
+                Float3(desc.shape.x * desc.voxel_space.x,
+                       desc.shape.y * desc.voxel_space.y,
+                       desc.shape.z * desc.voxel_space.z)
+            };
+            _->max_lod = _->volume->GetMaxLOD();
+        }
     }
 }
 
@@ -766,6 +798,7 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
     }
     if(render_params.lod.updated){
         std::memcpy(_->kernel_params.cu_render_params.lod_policy, render_params.lod.leve_of_dist.LOD, sizeof(float) * MaxLodLevels);
+        _->lod = render_params.lod.leve_of_dist;
     }
     if(render_params.tf.updated){
         _->GenTFTex(render_params.tf.dim);
@@ -793,6 +826,10 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
     if(render_params.distrib.updated){
         _->kernel_params.cu_render_params.mpi_node_offset = {render_params.distrib.node_x_offset,
                                                               render_params.distrib.node_y_offset};
+        _->world_rows = render_params.distrib.world_row_count;
+        _->world_cols = render_params.distrib.world_col_count;
+        _->node_x_idx = render_params.distrib.node_x_index;
+        _->node_y_idx = render_params.distrib.node_y_index;
     }
     if(render_params.other.updated){
         _->kernel_params.cu_render_params.ray_step = render_params.other.ray_step;
@@ -820,6 +857,9 @@ void RTVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
     _->kernel_params.cu_per_frame_params.cam_up = { Transform(per_frame_params.cam_up) };
     _->kernel_params.cu_per_frame_params.frame_w_over_h = per_frame_params.frame_w_over_h;
     _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
+
+    _->camera_pos = per_frame_params.cam_pos;
+    _->proj_view = per_frame_params.proj_view;
 }
 
 void RTVolumeRenderer::SetRenderMode(bool async)
@@ -832,6 +872,27 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
     // get camera view frustum from per-frame-params
 
     Frustum camera_view_frustum;
+    {
+        // calc world camera corners
+        ExtractFrustumFromMatrix(_->proj_view, camera_view_frustum);
+        auto _calc = [](const Float3& a, const Float3& b, int n, int i){
+            std::pair<Float3, Float3> ret;
+            ret.first = a + (b - a) * static_cast<float>(i) / static_cast<float>(n);
+            ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
+            return ret;
+        };
+        auto& o_corners = camera_view_frustum.frustum_corners;
+        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
+        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
+        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
+        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
+        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
+        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
+        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
+        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
+        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
+        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
+    }
 
     // compute current intersect blocks
     auto& intersect_blocks = _->intersect_blocks; intersect_blocks.clear();

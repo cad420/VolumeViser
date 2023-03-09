@@ -93,6 +93,29 @@ VUTIL_BEGIN
         }
     }
 
+    template<typename T>
+    inline void extract_frustum_from_corners(const std::array<tvec3<T>, 8>& corners, frustum_ext_t<T>& frustum_ext){
+        for(int i = 0; i < 8; i++) frustum_ext.frustum_corners[i] = corners[i];
+
+        auto calc_plane = [&](int A, int B, int C){
+            plane_t<T> plane;
+            const auto& a = corners[A];
+            const auto& b = corners[B];
+            const auto& c = corners[C];
+
+            plane.normal = vutil::cross(b - a, c - a).normalized();
+            plane.D = - (plane.normal.x * a.x + plane.normal.y * a.y + plane.normal.z * a.z);
+
+            return plane;
+        };
+        frustum_ext.left_plane = calc_plane(0, 2, 4);
+        frustum_ext.right_plane = calc_plane(1, 5, 3);
+        frustum_ext.bottom_plane = calc_plane(0, 4, 1);
+        frustum_ext.top_plane = calc_plane(2, 3, 6);
+        frustum_ext.near_plane = calc_plane(0, 1, 2);
+        frustum_ext.far_plane = calc_plane(4, 6, 5);
+    }
+
     template <typename T>
     inline BoxVisibility get_box_visibility_against_plane(const plane_t<T>& plane, const taabb3<T>& box){
         const auto& normal = plane.normal;

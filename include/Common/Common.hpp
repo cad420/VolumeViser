@@ -339,8 +339,9 @@ public:
         return _->uid;
     }
 
-    void SetUID(UnifiedRescUID uid) {
+    Handle<T>& SetUID(UnifiedRescUID uid) {
         _->uid = uid;
+        return *this;
     }
 
     T* operator->(){
