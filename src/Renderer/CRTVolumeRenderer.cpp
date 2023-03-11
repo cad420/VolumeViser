@@ -10,7 +10,7 @@ VISER_BEGIN
 
     namespace {
         using HashTableItem = GPUPageTableMgr::PageTableItem;
-        static constexpr int HashTableSize = 1024;
+        static constexpr int HashTableSize = G_HashTableSize;
         static constexpr int MaxLodLevels = LevelOfDist::MaxLevelCount;
         static constexpr float MachineEpsilon = std::numeric_limits<float>::epsilon() * 0.5f;
 

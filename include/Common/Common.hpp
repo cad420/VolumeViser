@@ -97,6 +97,8 @@ class GPUVTexMgr;
 class Renderer;
 class DistributeMgr;
 
+//todo
+#define G_HashTableSize  1024;
 
 class ViserFileOpenError : public std::exception{
 public:

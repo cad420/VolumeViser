@@ -19,9 +19,11 @@ namespace{
     using namespace cuda;
 
     using HashTableItem = GPUPageTableMgr::PageTableItem;
-    static constexpr int HashTableSize = 1024;
+    static constexpr int HashTableSize = G_HashTableSize;
     static constexpr int MaxLodLevels = LevelOfDist::MaxLevelCount;
     static constexpr float MachineEpsilon = std::numeric_limits<float>::epsilon() * 0.5f;
+//#define INVALID_HASH_TABLE_KEY uint4{0xffffu, 0xffffu, 0xffffu, 0xffu}
+
 
     CUB_GPU float gamma(int n) {
         return (n * MachineEpsilon) / (1 - n * MachineEpsilon);
@@ -111,6 +113,7 @@ namespace{
         auto pos = hash_v % HashTableSize;
         int i = 0;
         bool positive = false;
+        static constexpr uint4 INVALID_HASH_TABLE_KEY = uint4{0xffffu, 0xffffu, 0xffffu, 0xffu};
         while(i < HashTableSize){
             int ii = i * i;
             pos += positive ? ii : -ii;
@@ -118,6 +121,14 @@ namespace{
             if(hash_table[pos][0] == key){
                 return hash_table[pos][1];
             }
+            if(hash_table[pos][0].w == 0xffu){
+                return INVALID_VALUE;
+            }
+//            if(i > 0){
+//                printf("multi times query: %d\n", i * 2 + positive);
+//            }
+//            printf("key not find: %d %d %d %d, i : %d, positive : %d\n", key.x, key.y, key.z, key.w,
+//                   i, int(positive));
             if(positive)
                 ++i;
             positive = !positive;
@@ -180,9 +191,9 @@ namespace{
             ret.flag = tex_coord.w & 0xffff;
         }
         else{
-            if(params.cu_per_frame_params.debug_mode == 1)
-                printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
-                       tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
+//            if(params.cu_per_frame_params.debug_mode == 1)
+//                printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
+//                       tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
         }
         return ret;
     }
@@ -525,7 +536,7 @@ class RTVolumeRendererPrivate{
     void AQ_Update(const std::vector<GPUPageTableMgr::PageTableItem>& cur_intersect_blocks){
         static std::vector<BlockUID> missed_blocks; missed_blocks.clear();
 //        aq.cur_block_infos_mp.clear();
-        auto dummy = aq.cur_block_infos_mp;
+        std::unordered_map<BlockUID, GPUPageTableMgr::PageTableItem> dummy;
         for(auto& [block_uid, tex_coord] : cur_intersect_blocks){
             if(!tex_coord.Missed()) continue;
             dummy[block_uid] = {block_uid, tex_coord};
@@ -608,7 +619,7 @@ class RTVolumeRendererPrivate{
         aq.tasks[lod].emplace_back([this, block_uid = block_uid, buffer = std::move(buffer)]() mutable {
            //CPU decoding
             volume->ReadBlock(block_uid, *buffer);
-            buffer.SetUID(block_uid.ToUnifiedRescUID());
+//            buffer.SetUID(block_uid.ToUnifiedRescUID());
             buffer.ConvertWriteToReadLock();
             LOG_DEBUG("decoding finish, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
             _AQ_AppendTransferTask(std::move(buffer));
@@ -624,6 +635,8 @@ class RTVolumeRendererPrivate{
             }
             //上传到显存后，不会再使用，释放读锁
             buffer.ReleaseReadLock();
+            //todo
+            gpu_pt_mgr_ref->Release({block_uid});
             LOG_DEBUG("transfer finish, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
         });
         aq.async_transfer_queue.submit(t);
@@ -875,23 +888,23 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
     {
         // calc world camera corners
         ExtractFrustumFromMatrix(_->proj_view, camera_view_frustum);
-        auto _calc = [](const Float3& a, const Float3& b, int n, int i){
-            std::pair<Float3, Float3> ret;
-            ret.first = a + (b - a) * static_cast<float>(i) / static_cast<float>(n);
-            ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
-            return ret;
-        };
-        auto& o_corners = camera_view_frustum.frustum_corners;
-        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
-        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
-        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
-        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
-        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
-        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
-        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
-        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
-        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
-        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
+//        auto _calc = [](const Float3& a, const Float3& b, int n, int i){
+//            std::pair<Float3, Float3> ret;
+//            ret.first = a + (b - a) * static_cast<float>(i) / static_cast<float>(n);
+//            ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
+//            return ret;
+//        };
+//        auto& o_corners = camera_view_frustum.frustum_corners;
+//        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
+//        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
+//        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
+//        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
+//        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
+//        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
+//        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
+//        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
+//        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
+//        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
     }
 
     // compute current intersect blocks

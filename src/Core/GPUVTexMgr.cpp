@@ -159,7 +159,7 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     auto block_uid = GridVolume::BlockUID(src.GetUID());
     if(_->pt_mgr->Check(block_uid, dst)){
         _->pt_mgr->Promote(block_uid);
-        _->pt_mgr->GetPageTable().Update({block_uid, dst});
+//        _->pt_mgr->GetPageTable().Update({block_uid, dst});
     }
     else{
         LOG_DEBUG("block upload to vtex but not needed any more");

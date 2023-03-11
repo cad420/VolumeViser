@@ -59,23 +59,24 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
         auto value = _->lru->get_value(uid);
         LOG_DEBUG("000 {}", uid);
         if (value.has_value()) {
-            LOG_DEBUG("111 {}", uid);
+            LOG_DEBUG("GetBlock 111 {}", uid);
             return value.value().AddReadLock();
         } else {
             if (_->freed.empty()) {
                 // wait for unlock
                 auto& t = _->lru->back();
-                while(t.second.IsLocked());
+//                while(t.second.IsLocked());
+                _->lru->get_value(uid)->AddWriteLock();
                 t.first = uid;
-                _->lru->get_value(uid);
-                LOG_DEBUG("222 {}", uid);
+                return _->lru->get_value(uid).value();
+                LOG_DEBUG("GetBlock 222 {}", uid);
             } else {
                 _->lru->emplace_back(uid, std::move(_->freed.front()));
                 _->freed.pop();
-                LOG_DEBUG("333 {}", uid);
+                LOG_DEBUG("GetBlock 333 {}", uid);
+                return _->lru->get_value(uid).value().AddWriteLock();
             }
-            LOG_DEBUG("444 {}", uid);
-            return _->lru->get_value(uid).value().AddWriteLock();
+
         }
     } catch (const std::exception& err) {
         auto id = GridVolume::BlockUID(uid);

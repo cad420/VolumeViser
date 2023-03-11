@@ -613,13 +613,13 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
 
         RTVolumeRenderer::RTVolumeRendererCreateInfo rt_info{
             .host_mem_mgr = host_mem_mgr_ref.LockRef(),
-            .gpu_mem_mgr = gpu_mem_mgr_ref,
+            .gpu_mem_mgr = gpu_mem_mgr_ref.LockRef(),
             .use_shared_host_mem = true,
             .shared_fixed_host_mem_mgr_ref = fixed_host_mem_mgr_ref.LockRef()
         };
         auto renderer = NewHandle<RTVolumeRenderer>(ResourceType::Object, rt_info);
 
-        renderer->SetRenderMode(true);
+//        renderer->SetRenderMode(false);
 
         _->g_render_params.distrib.updated = true;
 
@@ -639,11 +639,11 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
 
     _->g_render_params.Reset();
 
-    Float3 default_pos = {2.1, 2.577f, 5.312f};
+    Float3 default_pos = {2.1, 2.577f, 5.312f};//8.06206f
     _->camera.set_position(default_pos);
     _->camera.set_perspective(40.f, 0.001f, 10.f);
     _->camera.set_direction(vutil::deg2rad(-90.f), 0.f);
-    _->camera.set_move_speed(0.01);
+    _->camera.set_move_speed(0.005);
     _->camera.set_view_rotation_speed(0.001f);
     //global camera for get proj view
     _->camera.set_w_over_h((float)info.global_frame_width / info.global_frame_height);
@@ -651,7 +651,10 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
 }
 
 VolViewer::~VolViewer() {
-
+    std::cerr << _->camera.get_position().x << " "
+              << _->camera.get_position().y << " "
+              << _->camera.get_position().z
+              << std::endl;
 }
 
 namespace{
@@ -705,6 +708,7 @@ void VolViewer::run()
     };
 
     auto update_per_frame_params = [this]{
+        _->camera.recalculate_matrics();
         auto& params = _->g_per_frame_params;
         params.frame_width = _->info.node_frame_width;
         params.frame_height = _->info.node_frame_height;
@@ -730,13 +734,16 @@ void VolViewer::run()
         else if(key == GLFW_KEY_S){
             _->camera.update({.back = true});
         }
+        else if(key == GLFW_KEY_ESCAPE){
+            exit = true;
+        }
     };
 
     auto process_input = [this, &exit, &update_per_frame_params]{
 
         glfwPollEvents();
 
-        _->camera.recalculate_matrics();
+
 
         update_per_frame_params();
 
@@ -761,6 +768,11 @@ void VolViewer::run()
         _->render_group.submit(render_task);
 
         _->render_group.wait_idle();
+
+        std::cerr << _->camera.get_position().x << " "
+                  << _->camera.get_position().y << " "
+                  << _->camera.get_position().z
+                  << std::endl;
     }
 
 }

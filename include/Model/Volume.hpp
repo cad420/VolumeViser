@@ -88,7 +88,7 @@ public:
             return static_cast<int>(w & 0xff);
         }
     };
-    inline static BlockUID INVALID_BLOCK_UID = { 0xffffu,  0xffffu,  0xfffu, 0xffu};
+    inline static BlockUID INVALID_BLOCK_UID = { 0xffffu,  0xffffu,  0xffffu, 0xffu};
 
     using GridVolumeDesc = VolumeIOInterface::VolumeDesc;
 

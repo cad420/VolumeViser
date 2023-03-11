@@ -8,7 +8,7 @@ VISER_BEGIN
 
 class HashPageTable{
 public:
-    static constexpr int HashTableSize = 1024;
+    static constexpr int HashTableSize = G_HashTableSize;
     using HashTableItem = GPUPageTableMgr::PageTableItem;
     using HashTableKey = HashTableItem::first_type;
     using HashTableValue = HashTableItem::second_type;
@@ -92,7 +92,7 @@ public:
     }
 
     void Clear(){
-        LOG_DEBUG("call hash table clear");
+//        LOG_DEBUG("call hash table clear");
         auto table = hhpt->view_1d<HashTableItem>(HashTableSize);
         for(int i = 0; i < HashTableSize; i++){
             table.at(i) = {INVALID_KEY, INVALID_VALUE};

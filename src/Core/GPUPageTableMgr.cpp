@@ -123,6 +123,8 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                     _->record_block_mp[key] = tex_coord;
                     _->lru->emplace_back(key, {tid, coord});
 
+                    LOG_DEBUG("using lru for freed empty");
+
                     items.push_back({key, {.sx = coord.x,
                             .sy = coord.y,
                             .sz = coord.z,
