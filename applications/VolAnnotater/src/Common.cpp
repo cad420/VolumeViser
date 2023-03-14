@@ -129,8 +129,8 @@ void ViserRescPack::InitializeVolumeResc() {
             .fixed_block_num = block_num
     };
 
-    auto host_pool_uid = host_mem_mgr_ref->RegisterFixedHostMemMgr(host_pool_info);
-    host_block_pool_ref = host_mem_mgr_ref->GetFixedHostMemMgrRef(host_pool_uid).LockRef();
+    auto host_pool_uid = host_mem_mgr_ref.Invoke(&HostMemMgr::RegisterFixedHostMemMgr, host_pool_info);
+    host_block_pool_ref = host_mem_mgr_ref.Invoke(&HostMemMgr::GetFixedHostMemMgrRef, host_pool_uid).LockRef();
     LOG_TRACE("Successfully Create FixedHostMemMgr...");
 
     GPUMemMgr::GPUVTexMgrCreateInfo vtex_info{
@@ -144,9 +144,9 @@ void ViserRescPack::InitializeVolumeResc() {
             .is_float = volume_desc.is_float, .exclusive = true
     };
 
-    auto vtex_uid = render_gpu_mem_mgr_ref->RegisterGPUVTexMgr(vtex_info);
-    gpu_vtex_mgr_ref = render_gpu_mem_mgr_ref->GetGPUVTexMgrRef(vtex_uid);
-    gpu_pt_mgr_ref = gpu_vtex_mgr_ref->GetGPUPageTableMgrRef();
+    auto vtex_uid = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::RegisterGPUVTexMgr, vtex_info);
+    gpu_vtex_mgr_ref = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::GetGPUVTexMgrRef, vtex_uid);
+    gpu_pt_mgr_ref = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetGPUPageTableMgrRef);
     LOG_TRACE("Successfully Create GPUVTexMgr...");
 
     LOG_TRACE("InitializeVolumeResc finish...");
@@ -169,7 +169,7 @@ void VolRenderRescPack::Initialize(ViserRescPack& _) {
     vol_query_priv_data.query_info = NewHandle<CUDAHostBuffer>(ResourceType::Buffer,
                                                                     sizeof(float) * 8,
                                                                     cub::cu_memory_type::e_cu_host,
-                                                                    _.render_gpu_mem_mgr_ref->_get_cuda_context());
+                                                                    _.render_gpu_mem_mgr_ref._get_ptr()->_get_cuda_context());
     vol_query_priv_data.query_info_view = vol_query_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 
 
@@ -224,7 +224,7 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
                                                1.f / AppSettings::VTexShape.z);
     crt_vol_renderer->SetRenderParams(render_params);
 
-    auto vtexs = _.gpu_vtex_mgr_ref->GetAllTextures();
+    auto vtexs = _.gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetAllTextures);
     for(auto& [unit, handle] : vtexs){
         crt_vol_renderer->BindVTexture(handle, unit);
     }
@@ -641,9 +641,10 @@ void SWCRescPack::ResetSWCRenderer(bool init)
 void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
     mesh_file = NewHandle<MeshFile>(ResourceType::Object);
 
-    s2m_priv_data.segment_buffer = _.host_mem_mgr_ref->AllocPinnedHostMem(ResourceType::Buffer,
-                                                                          MaxSegmentCount * sizeof(SWCSegment),
-                                                                          false);
+    s2m_priv_data.segment_buffer = _.host_mem_mgr_ref.Invoke(&HostMemMgr::AllocPinnedHostMem,
+                                                             ResourceType::Buffer,
+                                                             MaxSegmentCount * sizeof(SWCSegment),
+                                                             false);
 
     SWCVoxelizer::VoxelizerCreateInfo v_info{
             .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
@@ -853,7 +854,7 @@ void SWC2MeshRescPack::OnVolumeLoaded(ViserRescPack& _, VolRenderRescPack& __) {
 
     mc_algo->SetVolume(vol_params);
 
-    auto vtexs = _.gpu_vtex_mgr_ref->GetAllTextures();
+    auto vtexs = _.gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetAllTextures);
     for(auto& [unit, handle] : vtexs){
         swc_voxelizer->BindVTexture(handle, unit);
 

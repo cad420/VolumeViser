@@ -27,8 +27,8 @@ class VolAnnotaterApp : public gl_app_t{
         }
         this->max_lod = levels - 1;
         GridVolume::GridVolumeCreateInfo vol_info{
-            .host_mem_mgr_uid = host_mem_mgr_ref->GetUID(),
-            .gpu_mem_mgr_uid = render_gpu_mem_mgr_ref->GetUID(),
+            .host_mem_mgr_uid = host_mem_mgr_ref._get_ptr()->GetUID(),
+            .gpu_mem_mgr_uid = render_gpu_mem_mgr_ref._get_ptr()->GetUID(),
             .levels = levels
         };
         for(uint32_t lod = 0; lod < levels; lod++){
@@ -129,8 +129,8 @@ class VolAnnotaterApp : public gl_app_t{
                     .fixed_block_size = block_size,
                     .fixed_block_num = block_num
         };
-        auto host_pool_uid = host_mem_mgr_ref->RegisterFixedHostMemMgr(host_pool_info);
-        host_block_pool_ref = host_mem_mgr_ref->GetFixedHostMemMgrRef(host_pool_uid);
+        auto host_pool_uid = host_mem_mgr_ref.Invoke(&HostMemMgr::RegisterFixedHostMemMgr, host_pool_info);
+        host_block_pool_ref = host_mem_mgr_ref.Invoke(&HostMemMgr::GetFixedHostMemMgrRef, host_pool_uid);
         LOG_DEBUG("Successfully Create FixedHostMemMgr...");
 
         thread_group.start(create_info.threads_count);
@@ -146,9 +146,9 @@ class VolAnnotaterApp : public gl_app_t{
                 .vtex_block_length = (int)(volume_desc.block_length + volume_desc.padding * 2),
                 .is_float = volume_desc.is_float, .exclusive = true
         };
-        auto vtex_uid = render_gpu_mem_mgr_ref->RegisterGPUVTexMgr(vtex_info);
-        gpu_vtex_mgr_ref = render_gpu_mem_mgr_ref->GetGPUVTexMgrRef(vtex_uid);
-        gpu_pt_mgr_ref = gpu_vtex_mgr_ref->GetGPUPageTableMgrRef();
+        auto vtex_uid = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::RegisterGPUVTexMgr, vtex_info);
+        gpu_vtex_mgr_ref = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::GetGPUVTexMgrRef, vtex_uid);
+        gpu_pt_mgr_ref = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetGPUPageTableMgrRef);
 
         {
             float volume_base_space = std::min({volume_desc.voxel_space.x,
@@ -213,7 +213,7 @@ class VolAnnotaterApp : public gl_app_t{
                                                    1.f / create_info.vtex_shape_z);
         crt_vol_renderer->SetRenderParams(render_params);
 
-        auto vtexs = gpu_vtex_mgr_ref->GetAllTextures();
+        auto vtexs = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetAllTextures);
         for(auto& [unit, handle] : vtexs){
             crt_vol_renderer->BindVTexture(handle, unit);
         }
@@ -221,7 +221,7 @@ class VolAnnotaterApp : public gl_app_t{
         vol_tag_priv_data.query_info = NewHandle<CUDAHostBuffer>(ResourceType::Buffer,
                                                           sizeof(float) * 8,
                                                           cub::cu_memory_type::e_cu_host,
-                                                          render_gpu_mem_mgr_ref->_get_cuda_context());
+                                                          render_gpu_mem_mgr_ref._get_ptr()->_get_cuda_context());
         vol_tag_priv_data.query_info_view = vol_tag_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 
         LOG_DEBUG("Successfully Finish Render Resource Init...");
@@ -499,7 +499,7 @@ private:
         // 加载缺失的数据块到虚拟纹理中
         auto& blocks_info = vol_renderer_priv_data.blocks_info;
         blocks_info.clear();
-        gpu_pt_mgr_ref->GetAndLock(intersect_blocks, blocks_info);
+        gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, blocks_info);
 
         //因为是单机同步的，不需要加任何锁
         // 暂时使用同步等待加载完数据块
@@ -509,7 +509,7 @@ private:
         missed_host_blocks.clear();
         for(auto& block : blocks_info){
             if(!block.second.Missed()) continue;
-            auto block_hd = host_block_pool_ref->GetBlock(block.first.ToUnifiedRescUID());
+            auto block_hd = host_block_pool_ref.Invoke(&FixedHostMemMgr::GetBlock, block.first.ToUnifiedRescUID());
             if(block.first.IsSame(block_hd.GetUID())){
                 host_blocks[block.first] = std::move(block_hd);
             }
@@ -579,13 +579,13 @@ private:
             if(!missed_block.second.Missed()) continue;
             auto& handle = host_blocks[missed_block.first];
             //这部分已经在CPU的数据块，调用异步memcpy到GPU
-            gpu_vtex_mgr_ref->UploadBlockToGPUTexAsync(handle, missed_block.second);
+            gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTexAsync, handle, missed_block.second);
         }
 
-        gpu_vtex_mgr_ref->Flush();
+        gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::Flush);
 
 
-        crt_vol_renderer->BindPTBuffer(gpu_pt_mgr_ref->GetPageTable().GetHandle());
+        crt_vol_renderer->BindPTBuffer(gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).GetHandle());
 
 
         //更新每一帧绘制的参数
@@ -597,7 +597,7 @@ private:
         crt_vol_renderer->Render(framebuffer);
 
 
-        gpu_pt_mgr_ref->Release(intersect_blocks);
+        gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, intersect_blocks, true);
     }
     //查询点对应在体数据中的位置和体素值
     void query_volume(){

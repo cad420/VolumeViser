@@ -1462,7 +1462,7 @@ void VolAnnotaterGUI::render_volume() {
     // 加载缺失的数据块到虚拟纹理中
     auto& blocks_info = vol_render_resc->vol_render_priv_data.blocks_info;
     blocks_info.clear();
-    viser_resc->gpu_pt_mgr_ref->GetAndLock(intersect_blocks, blocks_info);
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, blocks_info);
 
     //因为是单机同步的，不需要加任何锁
     // 暂时使用同步等待加载完数据块
@@ -1472,7 +1472,7 @@ void VolAnnotaterGUI::render_volume() {
     missed_host_blocks.clear();
     for(auto& block : blocks_info){
         if(!block.second.Missed()) continue;
-        auto block_hd = viser_resc->host_block_pool_ref->GetBlock(block.first.ToUnifiedRescUID());
+        auto block_hd = viser_resc->host_block_pool_ref.Invoke(&FixedHostMemMgr::GetBlock, block.first.ToUnifiedRescUID());
         LOG_DEBUG("ok111 {}", block_hd.GetUID());
         assert(block_hd.IsLocked());
         if(block_hd.IsReadLocked()){
@@ -1550,10 +1550,10 @@ void VolAnnotaterGUI::render_volume() {
         if(!missed_block.second.Missed()) continue;
         auto& handle = host_blocks[missed_block.first];
         //这部分已经在CPU的数据块，调用异步memcpy到GPU
-        viser_resc->gpu_vtex_mgr_ref->UploadBlockToGPUTexAsync(handle, missed_block.second);
+        viser_resc->gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, handle, missed_block.second);
     }
 
-    viser_resc->gpu_vtex_mgr_ref->Flush();
+//    viser_resc->gpu_vtex_mgr_ref->Flush();
 
     for(auto& [_, handle] : host_blocks){
         handle.ReleaseReadLock();
@@ -1563,7 +1563,7 @@ void VolAnnotaterGUI::render_volume() {
     t_cnt += __t.count();
     std::cerr << "t cnt : " << t_cnt << std::endl;
 
-    vol_render_resc->crt_vol_renderer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable().GetHandle());
+    vol_render_resc->crt_vol_renderer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).GetHandle());
 
 
     //更新每一帧绘制的参数
@@ -1575,7 +1575,7 @@ void VolAnnotaterGUI::render_volume() {
     vol_render_resc->crt_vol_renderer->Render(vol_render_resc->framebuffer);
     vol_render_timer.stop();
 
-    viser_resc->gpu_pt_mgr_ref->Release(intersect_blocks);
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, intersect_blocks, true);
 }
 
 bool VolAnnotaterGUI::query_volume() {
@@ -1916,11 +1916,11 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         seg_blocks_.push_back(BlockUID(b).SetSWC());
     }
     std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
-    viser_resc->gpu_pt_mgr_ref->GetAndLock(seg_blocks_, blocks_info);
-    for(auto& key : seg_blocks_) viser_resc->gpu_pt_mgr_ref->Promote(key);
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, seg_blocks_, blocks_info);
+    for(auto& key : seg_blocks_) viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Promote, key);
     //获取页表项后即可 没有从host pool中调度的步骤
     //更新gpu页表并绑定到swc voxelizer
-    swc2mesh_resc->swc_voxelizer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable().GetHandle());
+    swc2mesh_resc->swc_voxelizer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).GetHandle());
 
     SWCVoxelizer::SWCVoxelizeAlgoParams params;
     params.ptrs = swc2mesh_resc->s2m_priv_data.segment_buffer->view_1d<SWCSegment>(count);
@@ -1934,14 +1934,14 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     swc2mesh_resc->swc_voxelizer->Run(params);
 
     //voxelize过程中会标记真正受影响的block 需要获取 并且也会同步写入到gpu的pt
-    viser_resc->gpu_pt_mgr_ref->GetPageTable(false).DownLoad();
-    auto v_blocks = viser_resc->gpu_pt_mgr_ref->GetPageTable(false).GetKeys(TexCoordFlag_IsValid | TexCoordFlag_IsSWC | TexCoordFlag_IsSWCV);
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, false).DownLoad();
+    auto v_blocks = viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, false).GetKeys(TexCoordFlag_IsValid | TexCoordFlag_IsSWC | TexCoordFlag_IsSWCV);
     //note: 这里不需要对所有写入的block重新进行mc 但是这个功能设计还是有用的
     v_blocks = seg_blocks_;
 
     //对每一个真正体素化影响到的block进行mc
     //这里的pt在体素化的时候被更新了 添加了TexCoordFlag_IsSWCV 这个其实没啥用了
-    swc2mesh_resc->mc_algo->BindPTBuffer(viser_resc->gpu_pt_mgr_ref->GetPageTable(false).GetHandle());
+    swc2mesh_resc->mc_algo->BindPTBuffer(viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, false).GetHandle());
 
     // run marching cube
     MarchingCubeAlgo::MarchingCubeAlgoParams mc_params;
@@ -1973,15 +1973,15 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
 
     //跑完mc后再释放pt
-    viser_resc->gpu_pt_mgr_ref->Release(seg_blocks_);
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, seg_blocks_, true);
 
-    viser_resc->gpu_pt_mgr_ref->ClearWithOption([](const BlockUID& uid){
+    viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::ClearWithOption, [](const BlockUID& uid){
         return uid.IsSWC();
     });
 
     //清除体素化写入的vtex
     for(auto& [uid, tex] : blocks_info){
-        viser_resc->gpu_vtex_mgr_ref->Clear(uid.ToUnifiedRescUID(), tex);
+        viser_resc->gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::Clear, uid.ToUnifiedRescUID(), tex);
     }
 
 }

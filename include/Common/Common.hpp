@@ -204,6 +204,9 @@ public:
         assert(p);
     }
 
+    Ref(const Ref<T>& other) = default;
+    Ref& operator=(const Ref<T>& other) = default;
+
     ~Ref(){
         Release();
     }
