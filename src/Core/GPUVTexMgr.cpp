@@ -81,7 +81,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
 
     _ = std::make_unique<GPUVTexMgrPrivate>();
 
-    _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+    _->ctx = info.gpu_mem_mgr._get_ptr()->_get_cuda_context();
 
     _->transfer_stream = cub::cu_stream(_->ctx);
 
@@ -102,7 +102,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         }
     };
     for(int i = 0; i < info.vtex_count; i++){
-        auto tex_handle = info.gpu_mem_mgr->_AllocTexture(ResourceType::Buffer, tex_info);
+        auto tex_handle = info.gpu_mem_mgr.Invoke(&GPUMemMgr::_AllocTexture, ResourceType::Buffer, tex_info);
         auto tex_uid = i;
         assert(_->tex_mp.count(tex_uid) == 0);
         _->tex_mp[tex_uid] = std::move(tex_handle);
@@ -124,7 +124,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     _->vtex_block_dim = info.vtex_shape / info.vtex_block_length;
     _->vtex_block_size_bytes = (size_t)_->vtex_ele_size * _->vtex_block_length * _->vtex_block_length * _->vtex_block_length;
 
-    _->cu_black_buffer = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, _->vtex_block_size_bytes);
+    _->cu_black_buffer = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, _->vtex_block_size_bytes);
     CUB_CHECK(cudaMemset(_->cu_black_buffer->get_data(), 0, _->vtex_block_size_bytes));
 
     _->uid = _->GenRescUID();
@@ -154,6 +154,16 @@ void GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     //使用异步的memcpy，要不要同步等待其全部完成，可以之后测试
     //因为可能渲染启动的时候，拷贝没有完成，内部也会做一些同步，比如读之前必须等待写完成
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
+//    {
+//        auto s = src->get_size();
+//        uint8_t* d = static_cast<uint8_t*>(src->get_data());
+//        size_t c = 0;
+//        for(size_t i = 0; i < s; i++)
+//            if(d[i]) c++;
+//        if(c > 0){
+//            LOG_DEBUG("buffer is ok");
+//        }
+//    }
     cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
     //还是要检查上传的数据是否仍需要 是否有效
     auto block_uid = GridVolume::BlockUID(src.GetUID());

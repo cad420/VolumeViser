@@ -212,29 +212,23 @@ public:
         return obj;
     }
 
-    T* operator->(){
-        auto _ = AutoLock();
-        assert(obj);
-        return obj;
-    }
-
-    const T* operator->() const {
-        auto _ = AutoLock();
-        assert(obj);
-        return obj;
-    }
 
     T& operator*(){
-        auto _ = AutoLock();
         assert(obj);
         return *obj;
     }
 
     const T& operator*() const {
-        auto _ = AutoLock();
         assert(obj);
         return *obj;
     }
+
+    template<typename F, typename... Args>
+    decltype(auto) Invoke(F&& f, Args&&... args){
+        auto _ = AutoLock();
+        return (obj->*f)(std::forward<Args>(args)...);
+    }
+
 
     Ref<T>& LockRef() {
         thread_safe = true;
@@ -402,7 +396,9 @@ public:
     }
 
     Handle<T>& ConvertWriteToReadLock(){
-        _->rw_lk.converse_write_to_read();
+        LOG_DEBUG("call handle wr");
+        _->rw_lk.converse_write_to_read(true);
+        LOG_DEBUG("call handle wr ok");
         return *this;
     }
     auto GetResourceType() const {

@@ -30,7 +30,7 @@ FixedHostMemMgr::FixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
     _->lru =  std::make_unique<FixedHostMemMgrPrivate::LRUCache>(info.fixed_block_num);
 
     for(int i = 0; i < info.fixed_block_num; i++){
-        auto handle = info.host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, info.fixed_block_size, true);
+        auto handle = info.host_mem_mgr.Invoke(&HostMemMgr::AllocPinnedHostMem, ResourceType::Buffer, info.fixed_block_size, true);
         assert(CheckUnifiedRescUID(handle.GetUID()));
         _->freed.push(std::move(handle));
     }
@@ -60,16 +60,53 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
         LOG_DEBUG("000 {}", uid);
         if (value.has_value()) {
             LOG_DEBUG("GetBlock 111 {}", uid);
-            return value.value().AddReadLock();
+            return value.value().AddReadLock();//多线程交叉互锁
         } else {
             if (_->freed.empty()) {
                 // wait for unlock
                 auto& t = _->lru->back();
 //                while(t.second.IsLocked());
-                _->lru->get_value(uid)->AddWriteLock();
+                t.second.AddWriteLock();
                 t.first = uid;
-                return _->lru->get_value(uid).value();
                 LOG_DEBUG("GetBlock 222 {}", uid);
+                return _->lru->get_value(uid).value();
+
+            } else {
+                _->lru->emplace_back(uid, std::move(_->freed.front()));
+                _->freed.pop();
+                LOG_DEBUG("GetBlock 333 {}", uid);
+                return _->lru->get_value(uid).value().AddWriteLock();
+            }
+
+        }
+    } catch (const std::exception& err) {
+        auto id = GridVolume::BlockUID(uid);
+        LOG_ERROR("GetBlock error : {}, block uid: {}, {} {} {} {}", err.what(),
+                  uid, id.x, id.y, id.z, id.GetLOD());
+    }
+}
+Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlockIM(UnifiedRescUID uid)
+{
+    try {
+        auto value = _->lru->get_value(uid);
+        LOG_DEBUG("000 {}", uid);
+        if (value.has_value()) {
+            LOG_DEBUG("GetBlock 111 {}", uid);
+            if(value->IsWriteLocked()) return {};
+            return value.value().AddReadLock();//多线程交叉互锁
+        } else {
+            if (_->freed.empty()) {
+                // wait for unlock
+                auto& t = _->lru->back();
+                //                while(t.second.IsLocked());
+                t.second.AddWriteLock();
+                auto oid = t.first;
+                _->lru->replace(oid, uid);
+                auto ret =  _->lru->get_value(uid);
+                assert(ret.has_value());
+                LOG_DEBUG("GetBlock 222 {} {}", uid,ret.has_value());
+                return ret.value();
+
             } else {
                 _->lru->emplace_back(uid, std::move(_->freed.front()));
                 _->freed.pop();

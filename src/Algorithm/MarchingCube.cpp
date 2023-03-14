@@ -1002,19 +1002,19 @@ VISER_BEGIN
     MarchingCubeAlgo::MarchingCubeAlgo(const MarchingCubeAlgoCreateInfo& info) {
         _ = std::make_unique<MarchingCubeAlgoPrivate>();
 
-        _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+        _->ctx = info.gpu_mem_mgr._get_ptr()->_get_cuda_context();
         //使用null流，如果和渲染同一个ctx，那么两者不能并行，即进行mc的时候不能渲染
-        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
+        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr._get_ptr()->_get_cuda_context());
 
         _->max_voxel_num = info.max_voxel_num;
         _->max_vert_num = info.max_voxel_num / 8;
 
-        _->vol_mc_code = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
-        _->vol_mc_scanned = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
-        _->vol_vert_num = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_mc_code = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_mc_scanned = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_vert_num = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
 
-        _->vol_gen_host_vert = info.host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3), false);
-        _->vol_vert_pos = info.gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3));
+        _->vol_gen_host_vert = info.host_mem_mgr.Invoke(&HostMemMgr::AllocPinnedHostMem, ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3), false);
+        _->vol_vert_pos = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3));
 
         _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
         _->params.max_vert_num = _->max_vert_num;

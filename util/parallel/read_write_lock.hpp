@@ -20,6 +20,7 @@ VUTIL_BEGIN
         inline void lock_read(){
             auto v = counter.fetch_add(Read,std::memory_order_acquire);
             while((v & Write) != 0){
+                std::cerr << "lock read ..." << std::endl;
                 v = counter.load(std::memory_order_acquire);
             }
         }
@@ -32,6 +33,7 @@ VUTIL_BEGIN
             uint32_t expected = 0;
             while(!counter.compare_exchange_weak(expected,Write,std::memory_order_acquire,
                                                  std::memory_order_relaxed)){
+                std::cerr << "lock write ... : " << counter << std::endl;
                 expected = 0;
             }
         }
@@ -49,13 +51,17 @@ VUTIL_BEGIN
                 lock_write();
             }
         }
-        inline void converse_write_to_read(){
+        inline void converse_write_to_read(bool tag = false){
             uint32_t expected = Write;
-            if(!counter.compare_exchange_strong(expected, Read,
+            while(!counter.compare_exchange_weak(expected, Read,
                                                 std::memory_order_acquire,
                                                 std::memory_order_relaxed)){
+                if(tag)
+                    std::cerr << "write to read ... from Handle : " << counter.load() << std::endl;
+                else
+                    std::cerr << "write to read ... from naive : " << counter.load() << std::endl;
                 expected = Write;
-                unlock_write();
+//                unlock_write();
 //                lock_read();
             }
         }

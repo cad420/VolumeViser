@@ -18,9 +18,9 @@ public:
 
 
     HashPageTable(Ref<GPUMemMgr> gpu_mem_mgr, Ref<HostMemMgr> host_mem_mgr){
-        ctx = gpu_mem_mgr->_get_cuda_context();
-        hash_page_table = gpu_mem_mgr->AllocBuffer(ResourceType::Buffer, HashTableSize * sizeof(HashTableItem));
-        hhpt = host_mem_mgr->AllocPinnedHostMem(ResourceType::Buffer, HashTableSize * sizeof(HashTableItem), false);
+        ctx = gpu_mem_mgr._get_ptr()->_get_cuda_context();
+        hash_page_table = gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, HashTableSize * sizeof(HashTableItem));
+        hhpt = host_mem_mgr.Invoke(&HostMemMgr::AllocPinnedHostMem, ResourceType::Buffer, HashTableSize * sizeof(HashTableItem), false);
         Clear();
         dirty = false;
     }
@@ -67,6 +67,7 @@ public:
 //                      << std::endl;
 //        }
     }
+
     void Append(const HashTableItem& item){
         uint32_t hash_v = GetHashValue(item.first);
         auto pos = hash_v % HashTableSize;

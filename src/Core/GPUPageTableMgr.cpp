@@ -150,14 +150,14 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
     }
 }
 
-void GPUPageTableMgr::Release(const std::vector<Key>& keys) {
+void GPUPageTableMgr::Release(const std::vector<Key>& keys, bool readonly) {
     for(auto& key : keys){
         auto& [tid, coord] = _->record_block_mp.at(key);
         auto& lk = _->tex_table[tid][coord].rw_lk;
-        if(lk.is_write_locked())
-            lk.unlock_write();
-        else
+        if(lk.is_read_locked())
             lk.unlock_read();
+        else if(!readonly && lk.is_write_locked())
+            lk.unlock_write();
     }
 }
 
@@ -184,8 +184,21 @@ HashPageTable& GPUPageTableMgr::GetPageTable(bool update) {
 
 void GPUPageTableMgr::Promote(const Key &key) {
     auto& [tid, coord] = _->record_block_mp.at(key);
-    _->tex_table[tid][coord].rw_lk.converse_write_to_read();
+    LOG_DEBUG("promote start");
+    auto& lk = _->tex_table[tid][coord].rw_lk;
+    if(lk.is_write_locked())
+        lk.converse_write_to_read();
+    else if(lk.is_read_locked()){
+        LOG_ERROR("promote lk is read locked");
+//        throw std::runtime_error("promote lk is read locked");
+    }
+    else{
+        LOG_ERROR("promote lk is not locked");
+//        throw std::runtime_error("promote lk is not locked");
+    }
+
     //暂时不更新缓存优先级
+    LOG_ERROR("promote ok");
 
 }
 bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableMgr::Value &value)

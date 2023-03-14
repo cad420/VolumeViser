@@ -54,6 +54,18 @@ VUTIL_BEGIN
         /**
          * if key exists then the value of key will update and move this item to head
          */
+         void replace(const Key& o, const Key& n){
+             auto it = pos.find(o);
+             if(it != pos.end()){
+                 move_to_head(it->second);
+                 pos.erase(o);
+                 data.begin()->first = n;
+                 pos[n] = data.begin();
+             }
+             else{
+                 assert(false);
+             }
+         }
         void emplace_back(const Key& key,Value value){
             auto it = pos.find(key);
             if(it != pos.end()){

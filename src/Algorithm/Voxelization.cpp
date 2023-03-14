@@ -304,10 +304,10 @@ VISER_BEGIN
 
         _->uid = _->GenRescUID();
 
-        _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+        _->ctx = info.gpu_mem_mgr._get_ptr()->_get_cuda_context();
 
         //暂时使用null流
-        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
+        _->compute_stream = cub::cu_stream::null(info.gpu_mem_mgr._get_ptr()->_get_cuda_context());
 
         _->cu_ptrs = NewHandle<CUDABuffer>(ResourceType::Buffer, info.max_segment_count * sizeof(SWCSegment), cub::e_cu_device, _->ctx);
         _->cu_ptrs_view = _->cu_ptrs->view_1d<SWCSegment>(info.max_segment_count);

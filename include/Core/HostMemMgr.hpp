@@ -36,12 +36,12 @@ public:
     template<>
     Handle<CUDAHostBuffer> AllocHostMem<CUDAHostBuffer, Pinned>(ResourceType access, size_t bytes, bool required);
 
-#define AllocPinnedHostMem(access, bytes, required) AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>(access,bytes,required)
+#define AllocPinnedHostMem AllocHostMem<CUDAHostBuffer, HostMemMgr::RescType::Pinned>
 
     template<>
     Handle<HostBuffer> AllocHostMem<HostBuffer, Paged>(ResourceType access, size_t bytes, bool required);
 
-#define AllocPagedHostMem(access, bytes, required) AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>(access,bytes,required)
+#define AllocPagedHostMem AllocHostMem<HostBuffer, HostMemMgr::RescType::Paged>
 
     using FixedHostMemMgrCreateInfo = FixedHostMemMgr::FixedHostMemMgrCreateInfo;
     UnifiedRescUID RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo& info);

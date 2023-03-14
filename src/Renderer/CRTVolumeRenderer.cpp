@@ -707,9 +707,9 @@ VISER_BEGIN
 
     CRTVolumeRenderer::CRTVolumeRenderer(const CRTVolumeRenderer::CRTVolumeRendererCreateInfo &info) {
         _  = std::make_unique<CRTVolumeRendererPrivate>();
-        _->render_stream = cub::cu_stream::null(info.gpu_mem_mgr->_get_cuda_context());
+        _->render_stream = cub::cu_stream::null(info.gpu_mem_mgr._get_ptr()->_get_cuda_context());
 
-        _->ctx = info.gpu_mem_mgr->_get_cuda_context();
+        _->ctx = info.gpu_mem_mgr._get_ptr()->_get_cuda_context();
 
         _->uid = _->GenRescUID();
 

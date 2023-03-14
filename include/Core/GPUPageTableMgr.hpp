@@ -59,7 +59,9 @@ public:
     void GetAndLock(const std::vector<Key>& keys, std::vector<PageTableItem>& items);
 
     //释放最近一次GetAndLock传入的keys
-    void Release(const std::vector<Key>& keys);
+
+    CUB_CPU_GPU void Release(const std::vector<Key>& keys, bool readonly  = true);
+
 
     //todo 清除所有页表项，否则哈希页表会爆满
     void Reset();

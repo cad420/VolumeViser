@@ -38,7 +38,8 @@ public:
     Ref<GPUPageTableMgr> GetGPUPageTableMgrRef();
 
     using TexCoord = GPUPageTableMgr::TexCoord;
-    void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
+
+    CUB_CPU_GPU void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
 
     void UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, TexCoord dst);
 

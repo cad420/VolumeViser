@@ -36,6 +36,8 @@ public:
     //如果多线程调用，需要对*this套一个线程安全的Ref
     Handle<CUDAHostBuffer> GetBlock(UnifiedRescUID uid);
 
+    Handle<CUDAHostBuffer> GetBlockIM(UnifiedRescUID uid);
+
     //GetBlockAsync不需要，因为异步的需求在调用者层次处理
 
 protected:

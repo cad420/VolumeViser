@@ -28,6 +28,10 @@
 
 #include <cuda_d3d11_interop.h>
 
+
+#define SHARED_FIXED_HOST_MEMORY
+
+
 //	d3d11.lib dxgi.lib d3dcompiler.lib dxguid.lib
 
 using namespace viser;
@@ -89,7 +93,7 @@ class VolViewWindow {
     explicit VolViewWindow(const VolViewWindowCreateInfo& info){
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-//        glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+        glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 
         glfw_window = glfwCreateWindow(info.window_width, info.window_height, "", nullptr, nullptr);
         glfwSetWindowPos(glfw_window, info.window_xpos, info.window_ypos);
@@ -211,7 +215,7 @@ class VolViewWindow {
 
       // cuda d3d interop
       gpu_mem_mgr_ref = std::move(info.gpu_mem_mgr_ref);
-      auto __ = gpu_mem_mgr_ref->_get_cuda_context()->temp_ctx();
+      auto __ = gpu_mem_mgr_ref._get_ptr()->_get_cuda_context()->temp_ctx();
       D3D11_TEXTURE2D_DESC osf_desc;
       osf_desc.ArraySize = 1;
       osf_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
@@ -328,7 +332,7 @@ class VolViewWindow {
     }
 
     void DrawVol(){
-        auto __ = gpu_mem_mgr_ref->_get_cuda_context()->temp_ctx();
+        auto __ = gpu_mem_mgr_ref._get_ptr()->_get_cuda_context()->temp_ctx();
         CUB_CHECK(cudaGraphicsResourceSetMapFlags(cuda_frame_color_resc, cudaGraphicsMapFlagsWriteDiscard));
         CUB_CHECK(cudaGraphicsMapResources(1, &cuda_frame_color_resc));
         if constexpr(false){
@@ -367,6 +371,10 @@ class VolViewWindow {
 
     void HandleEvents(){
 
+    }
+
+    auto GetD3D11Device() const {
+        return dev.Get();
     }
 
     struct{
@@ -560,15 +568,15 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     size_t fixed_mem_size = (info.MaxHostMemGB << 30) * MEMORY_RATIO;
     size_t block_num = fixed_mem_size / block_size;
     //create fixed host mem mgr
-
+#ifdef SHARED_FIXED_HOST_MEMORY
     FixedHostMemMgr::FixedHostMemMgrCreateInfo fixed_info;
     fixed_info.fixed_block_size = block_size;
     fixed_info.fixed_block_num = block_num;
     fixed_info.host_mem_mgr = host_mem_mgr_ref;
 
-    auto fixed_host_mem_mgr_uid = host_mem_mgr_ref->RegisterFixedHostMemMgr(fixed_info);
-    auto fixed_host_mem_mgr_ref = host_mem_mgr_ref->GetFixedHostMemMgrRef(fixed_host_mem_mgr_uid);
-
+    auto fixed_host_mem_mgr_uid = host_mem_mgr_ref.Invoke(&HostMemMgr::RegisterFixedHostMemMgr, fixed_info);
+    auto fixed_host_mem_mgr_ref = host_mem_mgr_ref.Invoke(&HostMemMgr::GetFixedHostMemMgrRef, fixed_host_mem_mgr_uid);
+#endif
     //init render params
     ComputeUpBoundLOD(_->g_render_params.lod.leve_of_dist, render_space,
                       info.global_frame_width, info.global_frame_height, vutil::deg2rad(40.f));
@@ -614,12 +622,16 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
         RTVolumeRenderer::RTVolumeRendererCreateInfo rt_info{
             .host_mem_mgr = host_mem_mgr_ref.LockRef(),
             .gpu_mem_mgr = gpu_mem_mgr_ref.LockRef(),
+#ifdef SHARED_FIXED_HOST_MEMORY
             .use_shared_host_mem = true,
             .shared_fixed_host_mem_mgr_ref = fixed_host_mem_mgr_ref.LockRef()
+#else
+            .use_shared_host_mem = false
+#endif
         };
         auto renderer = NewHandle<RTVolumeRenderer>(ResourceType::Object, rt_info);
 
-//        renderer->SetRenderMode(false);
+        renderer->SetRenderMode(false);
 
         _->g_render_params.distrib.updated = true;
 
@@ -639,7 +651,7 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
 
     _->g_render_params.Reset();
 
-    Float3 default_pos = {2.1, 2.577f, 5.312f};//8.06206f
+    Float3 default_pos = {2.45001, 2.777 ,5.152};//8.06206f
     _->camera.set_position(default_pos);
     _->camera.set_perspective(40.f, 0.001f, 10.f);
     _->camera.set_direction(vutil::deg2rad(-90.f), 0.f);
@@ -728,15 +740,29 @@ void VolViewer::run()
     };
 
     KeyCallback = [&](GLFWwindow* glfw_window,int key,int scancode,int action,int mods){
+        fps_camera_t::UpdateParams params;
         if(key == GLFW_KEY_W){
-            _->camera.update({.front = true});
+            params.front = true;
         }
         else if(key == GLFW_KEY_S){
-            _->camera.update({.back = true});
+            params.back = true;
+        }
+        else if(key == GLFW_KEY_A){
+            params.left = true;
+        }
+        else if(key == GLFW_KEY_D){
+            params.right = true;
+        }
+        else if(key == GLFW_KEY_SPACE){
+            params.up = true;
+        }
+        else if(key == GLFW_KEY_LEFT_SHIFT){
+            params.down = true;
         }
         else if(key == GLFW_KEY_ESCAPE){
             exit = true;
         }
+        _->camera.update(params);
     };
 
     auto process_input = [this, &exit, &update_per_frame_params]{
@@ -759,15 +785,31 @@ void VolViewer::run()
 
         for(auto& [idx, resc] : _->window_resc_mp){
             auto& window = resc.window;
-            render_task->enqueue_task([&]{
+            render_task->enqueue_task([&, idx = idx]{
+                vutil::AutoTimer _timer("render window " + std::to_string(idx >> 16));
+//                if((idx >> 16) == 0) return;
                 window->PreRender();
                 window->Draw(VolViewRenderType::VOL);
-                window->Commit();
+//                window->Commit();
             });
         }
         _->render_group.submit(render_task);
 
         _->render_group.wait_idle();
+
+        auto draw_task = _->render_group.create_task();
+
+        for(auto& [idx, resc] : _->window_resc_mp){
+            auto& window = resc.window;
+            draw_task->enqueue_task([&]{
+                window->Commit();
+            });
+        }
+
+        _->render_group.submit(draw_task);
+
+        _->render_group.wait_idle();
+
 
         std::cerr << _->camera.get_position().x << " "
                   << _->camera.get_position().y << " "

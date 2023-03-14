@@ -6,26 +6,26 @@
   "node" : {
     "root-rank" : 0,
     "node-count" : 1,
-    "node-frame-width": 1280,
+    "node-frame-width": 640,
     "node-frame-height": 720,
     "window-rows": 1,
-    "window-cols": 1,
+    "window-cols": 2,
     "node-0" : {
       "resource-path": "test_mouse.lod.desc.json",
-      "window-count" : 1,
+      "window-count" : 2,
       "window-0": {
         "window-index-x": 0,
         "window-index-y": 0,
 
         "window-xpos": 30,
         "window-ypos": 30,
-        "window-w": 1920,
+        "window-w": 960,
         "window-h": 1080
       },
       "window-1": {
         "window-index-x": 1,
         "window-index-y": 0,
-        "window-xpos": 960,
+        "window-xpos": 990,
         "window-ypos": 30,
         "window-w": 960,
         "window-h": 1080
