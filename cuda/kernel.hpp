@@ -53,8 +53,8 @@ public:
             CUB_CHECK(cudaLaunchKernel((const void*)kernel,
                              info.grid_dim, info.block_dim,params,
                                      info.shared_mem_bytes, stream.get_handle()));
-            CUB_WHEN_DEBUG(std::cout << "cuda kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
-                                     << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
+//            CUB_WHEN_DEBUG(std::cout << "cuda kernel launch task: (" << info.grid_dim.x << " " << info.grid_dim.y << " " << info.grid_dim.z
+//                                     << "), (" << info.block_dim.x << " " << info.block_dim.y << " " << info.block_dim.z << ")" << std::endl)
         };
         return cu_task(task);
     }

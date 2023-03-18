@@ -84,6 +84,12 @@ VUTIL_BEGIN
 //            LOG_DEBUG("2222");
             pos[key] = data.begin();
         }
+        void remove(const Key& key){
+            auto it = pos.find(key);
+            if(it == pos.end()) return;
+            data.erase(it->second);
+            pos.erase(it);
+        }
         float get_load_factor() const{
             return 1.f * data.size() / capacity;
         }

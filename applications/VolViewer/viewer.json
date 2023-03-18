@@ -5,7 +5,7 @@
   "global-frame-height" : 720,
   "node" : {
     "root-rank" : 0,
-    "node-count" : 1,
+    "node-count" : 2,
     "node-frame-width": 640,
     "node-frame-height": 720,
     "window-rows": 1,
@@ -19,26 +19,47 @@
 
         "window-xpos": 30,
         "window-ypos": 30,
-        "window-w": 960,
-        "window-h": 1080
+        "window-w": 480,
+        "window-h": 540
       },
       "window-1": {
         "window-index-x": 1,
         "window-index-y": 0,
-        "window-xpos": 990,
+        "window-xpos": 510,
         "window-ypos": 30,
-        "window-w": 960,
-        "window-h": 1080
+        "window-w": 480,
+        "window-h": 540
       }
     },
     "node-1" : {
+      "resource-path": "test_mouse.lod.desc.json",
+      "window-count" : 2,
+      "window-0": {
+        "window-index-x": 0,
+        "window-index-y": 0,
 
+        "window-xpos": 30,
+        "window-ypos": 750,
+        "window-w": 960,
+        "window-h": 540
+      },
+      "window-1": {
+        "window-index-x": 1,
+        "window-index-y": 0,
+        "window-xpos": 670,
+        "window-ypos": 750,
+        "window-w": 960,
+        "window-h": 540
+      }
     },
     "node-2" : {
 
     }
   },
   "memory" : {
+
+  },
+  "render": {
 
   }
 }

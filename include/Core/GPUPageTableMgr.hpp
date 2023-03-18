@@ -62,6 +62,7 @@ public:
 
     CUB_CPU_GPU void Release(const std::vector<Key>& keys, bool readonly  = true);
 
+    void Discard(const std::vector<Key>& keys);
 
     //todo 清除所有页表项，否则哈希页表会爆满
     void Reset();

@@ -250,7 +250,6 @@ public:
     bool IsValid() const {
         return obj;
     }
-  private:
     auto AutoLock() const {
         if constexpr(std::is_base_of_v<UnifiedRescBase, T>){
             if(thread_safe){
@@ -384,7 +383,7 @@ public:
     }
 
     Handle<T>& AddWriteLock(){
-        _->rw_lk.lock_write();
+        _->rw_lk.lock_write(true);
         return *this;
     }
 

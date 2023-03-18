@@ -24,7 +24,7 @@ struct VolViewerCreateInfo{
 
 
     size_t MaxHostMemGB = 16;
-    size_t MaxGPUMemGB = 16;
+    size_t MaxGPUMemGB = 20;
 };
 
 class VolViewerPrivate;

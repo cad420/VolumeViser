@@ -108,12 +108,12 @@ VUTIL_BEGIN
 
             return plane;
         };
-        frustum_ext.left_plane = calc_plane(0, 2, 4);
-        frustum_ext.right_plane = calc_plane(1, 5, 3);
-        frustum_ext.bottom_plane = calc_plane(0, 4, 1);
-        frustum_ext.top_plane = calc_plane(2, 3, 6);
-        frustum_ext.near_plane = calc_plane(0, 1, 2);
-        frustum_ext.far_plane = calc_plane(4, 6, 5);
+        frustum_ext.left_plane = calc_plane(0, 4, 2);
+        frustum_ext.right_plane = calc_plane(1, 3, 5);
+        frustum_ext.bottom_plane = calc_plane(0, 1, 4);
+        frustum_ext.top_plane = calc_plane(2, 6, 3);
+        frustum_ext.near_plane = calc_plane(0, 2, 1);
+        frustum_ext.far_plane = calc_plane(4, 5, 6);
     }
 
     template <typename T>

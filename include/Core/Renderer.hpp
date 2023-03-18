@@ -73,7 +73,7 @@ public:
         float render_space_ratio = 1.f;
 
         size_t fixed_host_mem_bytes = 6ull << 30;
-        size_t vtex_cnt = 12;
+        size_t vtex_cnt = 8;
         Int3 vtex_shape{1024, 1024, 1024};
     };
 

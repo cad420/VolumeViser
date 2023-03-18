@@ -20,6 +20,8 @@ struct TransferFuncT{
     using Value = V;
     mutable std::map<Key, Value> pts;
 
+    //todo add vector
+
     std::vector<Value> Gen1DTF(int dim = 256) const ;
 
     std::vector<Value> Gen2DTF(const std::vector<Value>& tf1d, int dim = 256) const ;

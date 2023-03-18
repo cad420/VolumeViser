@@ -39,7 +39,7 @@ public:
 
     using TexCoord = GPUPageTableMgr::TexCoord;
 
-    CUB_CPU_GPU void UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
+    CUB_CPU_GPU bool UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, TexCoord dst);
 
     void UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, TexCoord dst);
 

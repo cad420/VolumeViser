@@ -26,11 +26,19 @@ class DistributeMgr : public UnifiedRescBase{
 
 
     template<typename T>
-    void Bcast(std::function<void(T*, int, int)>);
+    void Bcast(T* data, int count);
+
+    template<>
+    void Bcast<float>(float* data, int count);
+
+    template<>
+    void Bcast<int>(int* data, int count);
+
+    void Bcast(void* data, int count, int type);
 
     void WaitForSync();
 
-    void SetWorldRank(int rank);
+    void SetRootRank(int rank);
 
     int GetWorldRank();
 

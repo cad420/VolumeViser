@@ -1,6 +1,3 @@
-#include "VolViewer.hpp"
-#include "NeuronRenderer.hpp"
-
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Algorithm/MarchingCube.hpp>
 #include <Algorithm/Voxelization.hpp>
@@ -18,16 +15,18 @@
 #include <fstream>
 
 
+
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
-#include <wrl/client.h>
-#include <d3d11_1.h> //use 11.0 is ok
-#include <d3dcompiler.h>
+#include "VolViewer.hpp"
+#include "NeuronRenderer.hpp"
 
 #include <cuda_d3d11_interop.h>
 
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_dx11.h>
 
 #define SHARED_FIXED_HOST_MEMORY
 
@@ -38,8 +37,7 @@ using namespace viser;
 using namespace vutil;
 using namespace vutil::gl;
 
-template <class T>
-using ComPtr = Microsoft::WRL::ComPtr<T>;
+
 
 namespace {
     void glfw_close_callback(GLFWwindow * glfw_window);
@@ -74,6 +72,8 @@ class D3D11Exception : public std::runtime_error
 //window不用记录相机参数 虽然每个节点有单独的相机 但是只会使用root节点记录的相机参数
 // sdl2 + dx11
 
+GLFWwindow* root_window = nullptr;
+
 class VolViewWindow {
   public:
     struct VolViewWindowCreateInfo{
@@ -86,6 +86,7 @@ class VolViewWindow {
         int frame_width;
         int frame_height;
         int gpu_index;
+        bool root = false;
 
         Ref<GPUMemMgr> gpu_mem_mgr_ref;
     };
@@ -283,17 +284,27 @@ class VolViewWindow {
       compile_shader(L"asset/hlsl/quad.hlsl", "PSMain", "ps_5_0");
       dev->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, quad_ps_shader.GetAddressOf());
 
+      //imgui
+      if(info.root){
+          ImGui::CreateContext();
+          ImGui_ImplGlfw_InitForOther(glfw_window, false);
+          ImGui_ImplDX11_Init(dev.Get(), dev_ctx.Get());
+      }
 
       // others
       window_w = info.window_width;
       window_h = info.window_height;
 
+      root = info.root;
 
       vol_framebuffer = NewHandle<FrameBuffer>(ResourceType::Buffer);
       vol_framebuffer->frame_width = info.frame_width;
       vol_framebuffer->frame_height = info.frame_height;
 
       window_framebuffer_size = (size_t)info.frame_width * info.frame_height * 4;
+      if(root){
+          root_window = glfw_window;
+      }
     }
 
     ~VolViewWindow(){
@@ -319,11 +330,236 @@ class VolViewWindow {
 
     }
 
-    void Draw(VolViewRenderType type){
+    void Draw(VolViewRenderType type, bool onlyImGui = false){
         //std::functional is better hhh
         static void(VolViewWindow::*draw_funcs[2])()  = {&VolViewWindow::DrawVol, &VolViewWindow::DrawMesh};
         assert(type == VolViewRenderType::VOL || type == VolViewRenderType::MESH);
+        if(!onlyImGui)
         (this->*draw_funcs[static_cast<int>(type)])();
+
+        if(onlyImGui){
+            Draw(osf_srv);
+        }
+
+        if(root && DistributeMgr::GetInstance().IsRoot()){
+            DrawImGui();
+        }
+
+    }
+
+    void DrawImGui(){
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        {
+            ImGui::Begin("Settings");
+            if(ImGui::TreeNode("Vol Render Setting")){
+                if(ImGui::TreeNode("Raycast")){
+                    bool update = false;
+                    update |= ImGui::InputFloat("Ray Step", &render_params->raycast.ray_step,
+                                                0.00016f, 0.00016f, "%.5f");
+                    update |= ImGui::InputFloat("Max Ray Dist", &render_params->raycast.max_ray_dist,
+                                                0.1f, 0.1f);
+
+                    render_params->raycast.updated = update;
+
+                    ImGui::TreePop();
+                }
+                if(ImGui::TreeNode("TransferFunc")){
+                    bool tf_update = false;
+
+                    static std::map<int, Float4> pt_mp;
+
+                    static Float3 color;
+                    static bool selected_pt = false;
+                    static int sel_pos;
+                    if(selected_pt){
+                        color = pt_mp.at(sel_pos).xyz();
+                    }
+                    if(ImGui::ColorEdit3("Point Color(RGBA)", &color.x)){
+                        if(selected_pt){
+                            auto& c = pt_mp.at(sel_pos);
+                            c.x = color.x;
+                            c.y = color.y;
+                            c.z = color.z;
+
+                            tf_update = true;
+                        }
+                    }
+
+
+
+                    ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
+                    ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
+                    const int ysize = 255;
+                    canvas_sz.y = ysize;
+                    ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
+                    ImGui::InvisibleButton("tf", canvas_sz);
+
+
+                    ImGuiIO& io = ImGui::GetIO();
+                    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+                    draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(30, 30, 30, 255));
+                    draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(200, 200, 200, 255));
+
+                    const bool is_hovered = ImGui::IsItemHovered(); // Hovered
+                    const bool is_active = ImGui::IsItemActive();   // Held
+                    const ImVec2 origin(canvas_p0.x, canvas_p0.y); // Lock scrolled origin
+                    const ImVec2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
+                    const ImVec2 tf_origin(canvas_p0.x, canvas_p0.y + canvas_sz.y);
+
+                    bool check_add = false;
+                    if(is_active && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)){
+                        check_add = true;
+                    }
+
+                    auto canvas_y_to_alpha = [&](float y){
+                        return (ysize - y) / float(ysize);
+                    };
+                    auto alpha_to_canvas_y = [&](float alpha){
+                        return ysize - alpha * ysize;
+                    };
+
+
+
+                    if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
+                        bool pick = false;
+                        for(auto& [x_pos, color] : pt_mp){
+                            if(std::abs(x_pos - mouse_pos_in_canvas.x) < 5
+                                && std::abs(alpha_to_canvas_y(color.w) - mouse_pos_in_canvas.y) < 5){
+                                selected_pt = true;
+                                sel_pos = x_pos;
+                                pick = true;
+                                break;
+                            }
+                        }
+                        if(!pick) selected_pt = false;
+                    }
+
+
+
+                    if(!selected_pt && check_add){
+                        auto it = pt_mp.upper_bound(mouse_pos_in_canvas.x);
+                        Float4 rgba;
+                        rgba.w = canvas_y_to_alpha(mouse_pos_in_canvas.y);
+                        if(it == pt_mp.end()){
+                            auto itt = pt_mp.lower_bound(mouse_pos_in_canvas.x);
+                            if(itt == pt_mp.begin()){
+                                rgba.x = rgba.y = rgba.z = 0.f;
+                            }
+                            else{
+                                itt = std::prev(itt);
+                                rgba.x = itt->second.x;
+                                rgba.y = itt->second.y;
+                                rgba.z = itt->second.z;
+                            }
+                        }
+                        else{
+                            auto itt = pt_mp.lower_bound(mouse_pos_in_canvas.x);
+                            if(itt == pt_mp.begin()){
+                                rgba.x = it->second.x;
+                                rgba.y = it->second.y;
+                                rgba.z = it->second.z;
+                            }
+                            else{
+                                itt = std::prev(itt);
+                                float u = (mouse_pos_in_canvas.x - itt->first) / (float)(it->first - itt->first);
+                                rgba.x = itt->second.x * (1.f - u) + it->second.x * u;
+                                rgba.y = itt->second.y * (1.f - u) + it->second.y * u;
+                                rgba.z = itt->second.z * (1.f - u) + it->second.z * u;
+                            }
+                        }
+                        pt_mp[mouse_pos_in_canvas.x] = rgba;
+                        selected_pt = true;
+                        sel_pos = mouse_pos_in_canvas.x;
+                        tf_update = true;
+                    }
+
+
+                    //add
+                    if(is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left)
+                        && selected_pt){
+                        int nx = sel_pos + io.MouseDelta.x;
+                        auto c = pt_mp.at(sel_pos);
+                        int ny = alpha_to_canvas_y(c.w) + io.MouseDelta.y;
+                        //                    LOG_DEBUG("ny : {}, delta y: {}", ny, io.MouseDelta.y);
+                        ny = (std::min)(ny, ysize);
+                        ny = (std::max)(ny, 0);
+                        if(nx == sel_pos || pt_mp.count(nx) == 0){
+                            c.w = canvas_y_to_alpha(ny);
+                            pt_mp.erase(sel_pos);
+                            sel_pos = nx;
+                            pt_mp[nx] = c;
+                            tf_update = true;
+                        }
+                    }
+
+                    //delete
+                    if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Right)
+                        && selected_pt){
+                        selected_pt = false;
+                        pt_mp.erase(sel_pos);
+                        tf_update = true;
+                    }
+
+                    draw_list->PushClipRect(canvas_p0, canvas_p1, true);
+                    bool first = true;
+                    ImVec2 prev;
+                    if(!pt_mp.empty()){
+                        auto it = pt_mp.begin();
+                        ImVec2 p = ImVec2(it->first + origin.x, alpha_to_canvas_y(it->second.w) + origin.y);
+                        draw_list->AddLine(ImVec2(origin.x, p.y), p, IM_COL32(0, 0, 0, 255));
+                        auto itt = std::prev(pt_mp.end());
+                        p = ImVec2(itt->first + origin.x, alpha_to_canvas_y(itt->second.w) + origin.y);
+                        draw_list->AddLine(p, ImVec2(origin.x + canvas_sz.x, p.y), IM_COL32(0, 0, 0, 255));
+                    }
+                    for(auto& [x, c] : pt_mp){
+                        ImVec2 cur = ImVec2(x + origin.x, alpha_to_canvas_y(c.w) + origin.y);
+                        if(first){
+                            first = false;
+                        }
+                        else{
+                            draw_list->AddLine(prev, cur, IM_COL32(0, 0, 0, 255));
+                        }
+                        prev = cur;
+                    }
+                    for(auto& [x, c] : pt_mp){
+                        ImVec2 cur = ImVec2(x + origin.x, alpha_to_canvas_y(c.w) + origin.y);
+                        draw_list->AddCircleFilled(cur, 5.f,
+                                                   IM_COL32(int(c.x * 255), int(c.y * 255), int(c.z * 255), 255));
+                        if(x == sel_pos && selected_pt){
+                            draw_list->AddCircle(cur, 6.f, IM_COL32(255, 127, 0, 255), 0, 2.f);
+                        }
+                    }
+                    draw_list->PopClipRect();
+
+                    ImGui::TreePop();
+
+                    if(tf_update){
+                        static std::vector<std::pair<float, Float4>> pts; pts.clear();
+
+                        for(auto& [x, c] : pt_mp){
+                            pts.emplace_back((float)x / (float)canvas_sz.x, c);
+                        }
+                        for(auto& pt : pts){
+                            render_params->tf.tf_pts.pts[pt.first] = pt.second;
+                        }
+                        render_params->tf.updated = true;
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+
+
+
+            ImGui::End();
+        }
+        ImGui::EndFrame();
+        ImGui::Render();
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
     }
 
     void DrawMesh(){
@@ -369,9 +605,6 @@ class VolViewWindow {
         }
     }
 
-    void HandleEvents(){
-
-    }
 
     auto GetD3D11Device() const {
         return dev.Get();
@@ -380,7 +613,7 @@ class VolViewWindow {
     struct{
         Handle<RTVolumeRenderer> rt_renderer;
 
-        RenderParams render_params;
+        std::shared_ptr<RenderParams> render_params;
 
         PerFrameParams per_frame_params;
 
@@ -388,6 +621,9 @@ class VolViewWindow {
     };
   private:
     void Draw(ComPtr<ID3D11ShaderResourceView> frame){
+
+        dev_ctx->OMSetRenderTargets(1, rtv.GetAddressOf(), dsv.Get());
+
         dev_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         dev_ctx->VSSetShader(quad_vs_shader.Get(), nullptr, 0);
         dev_ctx->PSSetShader(quad_ps_shader.Get(), nullptr, 0);
@@ -411,6 +647,7 @@ class VolViewWindow {
     };
 
     struct{
+        bool root;
         Ref<GPUMemMgr> gpu_mem_mgr_ref;
 
         GLFWwindow* glfw_window;
@@ -473,7 +710,7 @@ public:
     VolViewRenderType view_render_type = VolViewRenderType::VOL;
 
     struct{
-        RenderParams g_render_params;
+        std::shared_ptr<RenderParams> g_render_params;
         PerFrameParams g_per_frame_params;
         fps_camera_t camera;
     };
@@ -522,7 +759,7 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     _->info = info;
 
     auto& distr = DistributeMgr::GetInstance();
-    DistributeMgr::GetInstance().SetWorldRank(info.root_rank);
+    DistributeMgr::GetInstance().SetRootRank(info.root_rank);
 
 
     _->node_window_count = info.window_infos.size();
@@ -578,24 +815,28 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     auto fixed_host_mem_mgr_ref = host_mem_mgr_ref.Invoke(&HostMemMgr::GetFixedHostMemMgrRef, fixed_host_mem_mgr_uid);
 #endif
     //init render params
-    ComputeUpBoundLOD(_->g_render_params.lod.leve_of_dist, render_space,
+    _->g_render_params = std::make_shared<RenderParams>();
+    ComputeUpBoundLOD(_->g_render_params->lod.leve_of_dist, render_space,
                       info.global_frame_width, info.global_frame_height, vutil::deg2rad(40.f));
-    _->g_render_params.lod.updated = true;
+    _->g_render_params->lod.updated = true;
     for(int i = 0; i < vol_info.levels; i++)
-    _->g_render_params.lod.leve_of_dist.LOD[i] *= 1.5f;
+    _->g_render_params->lod.leve_of_dist.LOD[i] *= 1.5f;
 
-    _->g_render_params.tf.updated = true;
-    _->g_render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 0.1f, 0.2f, 0.f);
-    _->g_render_params.tf.tf_pts.pts[0.6f] = Float4(0.3f, 0.6f, 0.9f, 1.f);
-    _->g_render_params.tf.tf_pts.pts[0.96f] = Float4(0.f, 0.5f, 1.f, 1.f);
+    _->g_render_params->tf.updated = true;
+    _->g_render_params->tf.tf_pts.pts[119.f/255.f] = Float4(0.f, 0.f, 0.f, 0.f);
+    _->g_render_params->tf.tf_pts.pts[142.f/255.f] = Float4(0.5f, 0.48443f, 0.36765f, 0.3412f);
+    _->g_render_params->tf.tf_pts.pts[238.f/255.f] = Float4(0.853f, 0.338f, 0.092f, 0.73333f);
 
-    _->g_render_params.other.updated = true;
-    _->g_render_params.other.ray_step = render_space * 0.5f;
-    _->g_render_params.other.max_ray_dist = 6.f;
-    _->g_render_params.other.output_depth = false;
 
-    _->g_render_params.distrib.world_row_count = info.global_window_rows;
-    _->g_render_params.distrib.world_col_count = info.global_window_cols;
+    _->g_render_params->raycast.updated = true;
+    _->g_render_params->raycast.ray_step = render_space * 0.5f;
+    _->g_render_params->raycast.max_ray_dist = 6.f;
+
+    _->g_render_params->other.updated = true;
+    _->g_render_params->other.output_depth = false;
+
+    _->g_render_params->distrib.world_row_count = info.global_window_rows;
+    _->g_render_params->distrib.world_col_count = info.global_window_cols;
 
     // create renderer
     for(int i = 0; i < _->node_window_count; i++){
@@ -613,11 +854,12 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
             .window_xpos = window_info.pos_x, .window_ypos = window_info.pos_y,
             .window_width = window_info.window_w, .window_height = window_info.window_h,
             .frame_width = info.node_frame_width, .frame_height = info.node_frame_height,
-            .gpu_index = i,
+            .gpu_index = i, .root = ((idx >> 16) == 0),
             .gpu_mem_mgr_ref = gpu_mem_mgr_ref
+
         });
         resc.window->Initialize();
-
+        resc.window->render_params = _->g_render_params;
 
         RTVolumeRenderer::RTVolumeRendererCreateInfo rt_info{
             .host_mem_mgr = host_mem_mgr_ref.LockRef(),
@@ -631,35 +873,44 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
         };
         auto renderer = NewHandle<RTVolumeRenderer>(ResourceType::Object, rt_info);
 
-        renderer->SetRenderMode(false);
+//        renderer->SetRenderMode(false);
 
-        _->g_render_params.distrib.updated = true;
+        _->g_render_params->distrib.updated = true;
 
         float ox = (window_info.window_index_x - (info.global_window_cols * 0.5f - 0.5f)) * info.node_frame_width;
         float oy = (window_info.window_index_y - (info.global_window_rows * 0.5f - 0.5f)) * info.node_frame_height;
-        _->g_render_params.distrib.node_x_offset = ox;
-        _->g_render_params.distrib.node_y_offset = oy;
-        _->g_render_params.distrib.node_x_index = window_info.window_index_x;
-        _->g_render_params.distrib.node_y_index = window_info.window_index_y;
+        LOG_INFO("window idx xy: {} {}, ox oy: {} {}",
+                  window_info.window_index_x,
+                  window_info.window_index_y,
+                  ox, oy);
+        _->g_render_params->distrib.node_x_offset = ox;
+        _->g_render_params->distrib.node_y_offset = oy;
+        _->g_render_params->distrib.node_x_index = window_info.window_index_x;
+        _->g_render_params->distrib.node_y_index = window_info.window_index_y;
 
-        renderer->SetRenderParams(_->g_render_params);
+
+        renderer->SetRenderParams(*_->g_render_params);
 
         renderer->BindGridVolume(volume);
+
+        LOG_DEBUG("BindGridVolume ok");
 
         _->window_resc_mp.at(_->get_window_idx(i)).window->rt_renderer = std::move(renderer);
     }
 
-    _->g_render_params.Reset();
+    _->g_render_params->Reset();
 
-    Float3 default_pos = {2.45001, 2.777 ,5.152};//8.06206f
+    Float3 default_pos = {3.60977, 2.882, 9.3109};//8.06206f
     _->camera.set_position(default_pos);
     _->camera.set_perspective(40.f, 0.001f, 10.f);
     _->camera.set_direction(vutil::deg2rad(-90.f), 0.f);
     _->camera.set_move_speed(0.005);
-    _->camera.set_view_rotation_speed(0.001f);
+    _->camera.set_view_rotation_speed(0.0003f);
     //global camera for get proj view
     _->camera.set_w_over_h((float)info.global_frame_width / info.global_frame_height);
 
+//    distr.WaitForSync();
+    LOG_DEBUG("viewer create ok");
 }
 
 VolViewer::~VolViewer() {
@@ -711,15 +962,21 @@ namespace{
 
 void VolViewer::run()
 {
+    LOG_DEBUG("start run");
 
-
-    bool exit = false;
+    int exit = false;
+    bool show_mouse = false;
     auto should_close = [this, &exit]{
 
         return exit;
     };
 
-    auto update_per_frame_params = [this]{
+    fps_camera_t::UpdateParams u_params;
+    static double ox, oy;
+    bool render_params_updated = false;
+    auto update_per_frame_params = [&]{
+        _->camera.update(u_params);
+        u_params = fps_camera_t::UpdateParams{};
         _->camera.recalculate_matrics();
         auto& params = _->g_per_frame_params;
         params.frame_width = _->info.node_frame_width;
@@ -733,54 +990,141 @@ void VolViewer::run()
         params.cam_up = vutil::cross(params.cam_right, params.cam_dir);
         params.proj_view = _->camera.get_view_proj();
 
+        //mpi
+        auto& distr = DistributeMgr::GetInstance();
+                distr.WaitForSync();
+        distr.Bcast(reinterpret_cast<float*>(&params), 32);
+        distr.Bcast(&_->g_render_params->raycast.ray_step, 3);
+        distr.Bcast(&_->g_render_params->raycast.updated, 1);
+//        distr.WaitForSync();
+
         for(auto& [idx, resc] : _->window_resc_mp){
             auto& window = resc.window;
+            window->rt_renderer->SetRenderParams(*_->g_render_params);
             window->rt_renderer->SetPerFrameParams(params);
+        }
+        {
+            render_params_updated |= _->g_render_params->tf.updated
+                | _->g_render_params->lod.updated | _->g_render_params->light.updated | _->g_render_params->raycast.updated
+                | _->g_render_params->distrib.updated | _->g_render_params->other.updated;
+        }
+        _->g_render_params->Reset();
+    };
+
+    CharCallback = [&](GLFWwindow* glfw_window, int c){
+        ImGui_ImplGlfw_CharCallback(glfw_window, c);
+
+    };
+    FocusCallback = [&](GLFWwindow* glfw_window, int focus){
+        if(focus){
+            glfwSetInputMode(
+                glfw_window, GLFW_CURSOR,
+                show_mouse ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
         }
     };
 
+    ScrollCallback = [&](GLFWwindow* glfw_window,double x,double y){
+        ImGui_ImplGlfw_ScrollCallback(glfw_window, x, y);
+        if(show_mouse) return;
+
+    };
+
+    CursorCallback = [&](GLFWwindow* glfw_window,double x,double y){
+        ImGui_ImplGlfw_CursorPosCallback(glfw_window, x, y);
+
+        if(show_mouse) return;
+        u_params.cursor_rel_x = x - ox;
+        u_params.cursor_rel_y = y - oy;
+        ox = x;
+        oy = y;
+
+    };
+
+    MouseButtonCallback = [&](GLFWwindow* glfw_window, int button, int action, int mods){
+        if(show_mouse){
+            ImGui_ImplGlfw_MouseButtonCallback(glfw_window, button, action, mods);
+            return;
+        }
+
+
+    };
+
     KeyCallback = [&](GLFWwindow* glfw_window,int key,int scancode,int action,int mods){
-        fps_camera_t::UpdateParams params;
+        ImGui_ImplGlfw_KeyCallback(glfw_window,key,scancode,action,mods);
+        if(action == GLFW_RELEASE) return;
+        if(key == GLFW_KEY_LEFT_CONTROL && action == GLFW_PRESS){
+            show_mouse = !show_mouse;
+            glfwSetInputMode(
+                glfw_window, GLFW_CURSOR,
+                show_mouse ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+        }
+        if(show_mouse) return;
+
+
         if(key == GLFW_KEY_W){
-            params.front = true;
+            u_params.front = true;
         }
         else if(key == GLFW_KEY_S){
-            params.back = true;
+            u_params.back = true;
         }
         else if(key == GLFW_KEY_A){
-            params.left = true;
+            u_params.left = true;
         }
         else if(key == GLFW_KEY_D){
-            params.right = true;
+            u_params.right = true;
         }
         else if(key == GLFW_KEY_SPACE){
-            params.up = true;
+            u_params.up = true;
         }
         else if(key == GLFW_KEY_LEFT_SHIFT){
-            params.down = true;
+            u_params.down = true;
         }
         else if(key == GLFW_KEY_ESCAPE){
             exit = true;
         }
-        _->camera.update(params);
+
     };
 
-    auto process_input = [this, &exit, &update_per_frame_params]{
+    auto update_cursor_pos = [&]{
+        glfwGetCursorPos(root_window, &ox, &oy);
+    };
+
+    auto process_input = [&]{
+
+        update_cursor_pos();
 
         glfwPollEvents();
 
-
-
+        LOG_DEBUG("start update per frame params");
         update_per_frame_params();
+        LOG_DEBUG("finish update per frame params");
+        // mpi
 
     };
 
+    auto should_redraw = [&]()->bool{
+        if(show_mouse){
+            if(render_params_updated) return true;
+            return false;
+        }
+        else return true;
+    };
 
+    auto after_render = [&]{
+        render_params_updated = false;
+
+
+//        std::cerr << _->camera.get_position().x << " "
+//                  << _->camera.get_position().y << " "
+//                  << _->camera.get_position().z
+//                  << std::endl;
+    };
 
     while(!should_close()){
         vutil::AutoTimer frame_timer("render frame");
+///        LOG_DEBUG("start process input");
         process_input();
-
+//        LOG_DEBUG("finish process input");
         auto render_task = _->render_group.create_task();
 
         for(auto& [idx, resc] : _->window_resc_mp){
@@ -789,7 +1133,7 @@ void VolViewer::run()
                 vutil::AutoTimer _timer("render window " + std::to_string(idx >> 16));
 //                if((idx >> 16) == 0) return;
                 window->PreRender();
-                window->Draw(VolViewRenderType::VOL);
+                window->Draw(VolViewRenderType::VOL, !should_redraw());
 //                window->Commit();
             });
         }
@@ -810,11 +1154,8 @@ void VolViewer::run()
 
         _->render_group.wait_idle();
 
+        after_render();
 
-        std::cerr << _->camera.get_position().x << " "
-                  << _->camera.get_position().y << " "
-                  << _->camera.get_position().z
-                  << std::endl;
     }
 
 }

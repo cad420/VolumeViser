@@ -20,7 +20,7 @@ VUTIL_BEGIN
         inline void lock_read(){
             auto v = counter.fetch_add(Read,std::memory_order_acquire);
             while((v & Write) != 0){
-                std::cerr << "lock read ..." << std::endl;
+//                std::cerr << "lock read ..." << v << std::endl;
                 v = counter.load(std::memory_order_acquire);
             }
         }
@@ -29,17 +29,23 @@ VUTIL_BEGIN
             counter.fetch_sub(Read,std::memory_order_release);
         }
         // wait for read/write unlock and add write lock
-        inline void lock_write(){
+        inline void lock_write(bool tag = false){
             uint32_t expected = 0;
             while(!counter.compare_exchange_weak(expected,Write,std::memory_order_acquire,
                                                  std::memory_order_relaxed)){
-                std::cerr << "lock write ... : " << counter << std::endl;
+                if(tag)
+                    std::cerr << "lock write ... from Handle: " << counter << std::endl;
+                else
+                    std::cerr << "lock write ... from naive: " << counter << std::endl;
                 expected = 0;
             }
         }
 
         inline void unlock_write(){
             counter.fetch_and(~Write,std::memory_order_release);
+        }
+        inline void unlock_all(){
+            counter.store(0, std::memory_order_relaxed);
         }
         inline void converse_read_to_write(){
             uint32_t expected = Read;
@@ -53,7 +59,7 @@ VUTIL_BEGIN
         }
         inline void converse_write_to_read(bool tag = false){
             uint32_t expected = Write;
-            while(!counter.compare_exchange_weak(expected, Read,
+            if(!counter.compare_exchange_strong(expected, Read,
                                                 std::memory_order_acquire,
                                                 std::memory_order_relaxed)){
                 if(tag)
@@ -61,8 +67,8 @@ VUTIL_BEGIN
                 else
                     std::cerr << "write to read ... from naive : " << counter.load() << std::endl;
                 expected = Write;
-//                unlock_write();
-//                lock_read();
+                unlock_write();
+                lock_read();
             }
         }
         bool is_read_locked(){

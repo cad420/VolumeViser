@@ -65,7 +65,7 @@ UnifiedRescUID GPUMemMgr::GetUID() const {
 }
 
 Handle<CUDABuffer> GPUMemMgr::AllocBuffer(ResourceType type, size_t bytes) {
-    auto used = _->used_mem_bytes.fetch_add(bytes);
+    auto used = _->used_mem_bytes += bytes;
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
@@ -75,7 +75,7 @@ Handle<CUDABuffer> GPUMemMgr::AllocBuffer(ResourceType type, size_t bytes) {
 
 Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_t width, size_t height, size_t ele_size) {
     auto bytes = width * height * ele_size;
-    auto used = _->used_mem_bytes.fetch_add(bytes);
+    auto used = _->used_mem_bytes += bytes;
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
@@ -85,7 +85,7 @@ Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_
 
 Handle<CUDATexture> GPUMemMgr::AllocTexture(ResourceType type, const TextureCreateInfo& info) {
     auto bytes = info.resc_info.alloc_bytes();
-    auto used = _->used_mem_bytes.fetch_add(bytes);
+    auto used = _->used_mem_bytes += bytes;
     if(used > _->max_mem_bytes){
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
@@ -101,20 +101,21 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     try{
         size_t alloc_size = (size_t)info.vtex_count * info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z
                 * info.bits_per_sample * info.samples_per_channel / 8;
-        auto used = _->used_mem_bytes.fetch_add(alloc_size);
+        auto used = _->used_mem_bytes += alloc_size;
         if(used + alloc_size > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
 
-        LOG_DEBUG("Register GPUVTexMgr cost free memory: {}, remain free: {}",
-                  alloc_size, _->max_mem_bytes - used);
 
         info.gpu_mem_mgr = Ref(this, false);
         auto resc = std::make_unique<GPUVTexMgr>(info);
         auto uid = resc->GetUID();
         assert(_->vtex_mgr_mp.count(uid) == 0);
         _->vtex_mgr_mp[uid] = std::move(resc);
+        LOG_DEBUG("Register GPUVTexMgr cost free memory: {}, remain free: {}",
+                  alloc_size, _->max_mem_bytes - used);
+
         return uid;
     }
     catch (const std::exception& e) {

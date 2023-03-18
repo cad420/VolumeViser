@@ -6,7 +6,7 @@
 #include <Core/HashPageTable.hpp>
 #include "Common.hpp"
 #include "../Common/helper_math.h"
-
+#include <array>
 #define Transform(t) t.x, t.y, t.z
 
 VISER_BEGIN
@@ -20,7 +20,7 @@ namespace{
 
     using HashTableItem = GPUPageTableMgr::PageTableItem;
     constexpr int HashTableSize = G_HashTableSize;
-    constexpr int MaxHashTableQueryIdx = 512;
+    constexpr int MaxHashTableQueryIdx = 1024;
     constexpr int MaxLodLevels = LevelOfDist::MaxLevelCount;
     constexpr float MachineEpsilon = std::numeric_limits<float>::epsilon() * 0.5f;
 //#define INVALID_HASH_TABLE_KEY uint4{0xffffu, 0xffffu, 0xffffu, 0xffu}
@@ -51,6 +51,7 @@ namespace{
         float3 inv_tex_shape;
         bool use_2d_tf;
         int2 mpi_node_offset;
+        int2 world_shape;
         bool gamma_correction;
         bool output_depth;
     };
@@ -407,8 +408,10 @@ namespace{
         Ray ray;
         ray.o = params.cu_per_frame_params.cam_pos;
         float scale = tanf(0.5f * params.cu_per_frame_params.fov);
-        float ix = (x + params.cu_render_params.mpi_node_offset.x + 0.5f) / params.cu_per_frame_params.frame_width - 0.5f;
-        float iy = (y + params.cu_render_params.mpi_node_offset.y + 0.5f) / params.cu_per_frame_params.frame_height - 0.5f;
+        float ix = (x + params.cu_render_params.mpi_node_offset.x + 0.5f) /
+                       (params.cu_per_frame_params.frame_width * params.cu_render_params.world_shape.x) - 0.5f;
+        float iy = (y + params.cu_render_params.mpi_node_offset.y + 0.5f) /
+                       (params.cu_per_frame_params.frame_height * params.cu_render_params.world_shape.y) - 0.5f;
         ray.d = params.cu_per_frame_params.cam_dir + params.cu_per_frame_params.cam_up * scale * iy
                 + params.cu_per_frame_params.cam_right * scale * ix * params.cu_per_frame_params.frame_w_over_h;
 
@@ -512,7 +515,7 @@ class RTVolumeRendererPrivate{
     struct{
         bool async;
         std::vector<BlockUID> intersect_blocks;
-        std::vector<GPUPageTableMgr::PageTableItem> block_infos;
+//        std::vector<GPUPageTableMgr::PageTableItem> block_infos;
 
     };
 
@@ -536,13 +539,17 @@ class RTVolumeRendererPrivate{
         aq.async_transfer_queue.start(2);
     }
 
-    void AQ_Update(const std::vector<GPUPageTableMgr::PageTableItem>& cur_intersect_blocks){
+    void AQ_Update(const std::vector<BlockUID>& intersect_blocks){
         std::vector<BlockUID> missed_blocks;
+        std::vector<GPUPageTableMgr::PageTableItem> block_infos;
 //        aq.cur_block_infos_mp.clear();
         {
             std::lock_guard<std::mutex> lk(aq.block_infos_mtx);
+
+            gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, block_infos);
+
             std::unordered_map<BlockUID, GPUPageTableMgr::PageTableItem> dummy;
-            for (auto &[block_uid, tex_coord] : cur_intersect_blocks)
+            for (auto &[block_uid, tex_coord] : block_infos)
             {
                 if (!tex_coord.Missed())
                     continue;
@@ -557,15 +564,17 @@ class RTVolumeRendererPrivate{
 
         auto task = aq.async_loading_queue.create_task([&, missed_blocks = std::move(missed_blocks)]{
             std::vector<Handle<CUDAHostBuffer>> buffers;
-            std::lock_guard<std::mutex> lk(aq.block_infos_mtx);
+//            std::lock_guard<std::mutex> lk(aq.block_infos_mtx);
+            fixed_host_mem_mgr_ref._get_ptr()->Lock();
             for(auto& block_uid : missed_blocks){
                 LOG_DEBUG("start loading block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-                auto hd = fixed_host_mem_mgr_ref.Invoke(&FixedHostMemMgr::GetBlockIM, block_uid.ToUnifiedRescUID());
-                if(!hd.IsValid()){
-                    LOG_DEBUG("Invalid erase block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-                    aq.cur_block_infos_mp.erase(block_uid);
-                    continue;
-                }
+                auto hd = fixed_host_mem_mgr_ref._get_ptr()->GetBlock(block_uid.ToUnifiedRescUID());
+//                if(!hd.IsValid()){
+////                    LOG_DEBUG("Invalid erase block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
+//                    aq.cur_block_infos_mp.erase(block_uid);
+//
+//                    continue;
+//                }
 
                 auto& b = buffers.emplace_back(hd.SetUID(block_uid.ToUnifiedRescUID()));
 
@@ -574,6 +583,7 @@ class RTVolumeRendererPrivate{
                     LOG_ERROR("no locked block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
                 }
             }
+            fixed_host_mem_mgr_ref._get_ptr()->UnLock();
             _AQ_AppendTask(std::move(buffers));
         });
         aq.async_loading_queue.submit(task);
@@ -597,7 +607,7 @@ class RTVolumeRendererPrivate{
         }
     }
 
-    void AQ_Commit(){
+    void AQ_Commit(bool updatePT = true){
         // submit loading tasks
         std::map<int, vutil::task_group_handle_t> task_groups;
         std::vector<int> lods;
@@ -628,17 +638,22 @@ class RTVolumeRendererPrivate{
 
         // wait all transfer tasks finished
         aq.async_transfer_queue.wait_idle();
-
-        //update page table
-        kernel_params.cu_page_table.table = gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).
-                                            GetHandle()->view_1d<HashTableItem>(HashTableSize * sizeof(HashTableItem));
-
+        if(updatePT){
+            //update page table
+            kernel_params.cu_page_table.table = gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).
+                                                GetHandle()->view_1d<HashTableItem>(HashTableSize * sizeof(HashTableItem));
+        }
     }
 
     void AQ_Wait(){
-        aq.async_loading_queue.wait_idle();
-        aq.async_decoding_queue.wait_idle();
-        aq.async_transfer_queue.wait_idle();
+        auto all_is_ok = [&] {
+            return aq.async_loading_queue.is_idle()
+            && aq.async_decoding_queue.is_idle()
+            && aq.async_transfer_queue.is_idle();
+        };
+        while(!all_is_ok())
+            AQ_Commit(false);
+        AQ_Commit(true);
     }
 
     void _AQ_AppendDecodingTask(Handle<CUDAHostBuffer> buffer){
@@ -648,8 +663,11 @@ class RTVolumeRendererPrivate{
         aq.tasks[lod].emplace_back([this, block_uid = block_uid, buffer = std::move(buffer)]() mutable {
            //CPU decoding
            LOG_DEBUG("decoding start, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-            volume->ReadBlock(block_uid, *buffer);
-//            buffer.SetUID(block_uid.ToUnifiedRescUID());
+           {
+               auto lk = volume.AutoLocker();
+               volume->ReadBlock(block_uid, *buffer);
+           }
+           //            buffer.SetUID(block_uid.ToUnifiedRescUID());
             if(!buffer.IsWriteLocked()){
                 LOG_ERROR("buffer not write locked");
             }
@@ -670,15 +688,21 @@ class RTVolumeRendererPrivate{
                 if (aq.cur_block_infos_mp.count(block_uid))
                 {
                     auto dst = aq.cur_block_infos_mp.at(block_uid).second;
-                    gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, buffer,
+                    auto ret = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, buffer,
                                             dst);
-
-                    aq.cur_block_infos_mp.erase(block_uid);
+                    if(ret){
+                        aq.cur_block_infos_mp.erase(block_uid);
+                        gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, std::vector<BlockUID>{block_uid}, false);
+                    }
+                    else{
+                        gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Discard, std::vector<BlockUID>{block_uid});
+                    }
                 }
                 else{
                     //release write lock for pt
+                    gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Discard, std::vector<BlockUID>{block_uid});
                 }
-                gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, std::vector<BlockUID>{block_uid}, false);
+
             }
             //上传到显存后，不会再使用，释放读锁
             buffer.ReleaseReadLock();
@@ -868,14 +892,14 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
         cub::memory_transfer_info info;
         info.width_bytes = sizeof(TransferFunc::Value) * render_params.tf.dim;
         info.height = info.depth = 1;
-        VISER_WHEN_DEBUG({
-            auto v = _->tf1d->view_1d<float4>(256);
-            for (int i = 0; i < 256; i++)
-            {
-                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w
-                          << std::endl;
-            }
-        });
+//        VISER_WHEN_DEBUG({
+//            auto v = _->tf1d->view_1d<float4>(256);
+//            for (int i = 0; i < 256; i++)
+//            {
+//                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w
+//                          << std::endl;
+//            }
+//        });
         cub::cu_memory_transfer(*_->tf1d, *_->cu_tf_tex, info).launch(_->stream);
         info.height = render_params.tf.dim;
         cub::cu_memory_transfer(*_->tf2d, *_->cu_2d_tf_tex, info).launch(_->stream);
@@ -886,14 +910,18 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
     if(render_params.distrib.updated){
         _->kernel_params.cu_render_params.mpi_node_offset = {render_params.distrib.node_x_offset,
                                                               render_params.distrib.node_y_offset};
+        _->kernel_params.cu_render_params.world_shape = {render_params.distrib.world_col_count,
+                                                         render_params.distrib.world_row_count};
         _->world_rows = render_params.distrib.world_row_count;
         _->world_cols = render_params.distrib.world_col_count;
         _->node_x_idx = render_params.distrib.node_x_index;
         _->node_y_idx = render_params.distrib.node_y_index;
     }
+    if(render_params.raycast.updated){
+        _->kernel_params.cu_render_params.ray_step = render_params.raycast.ray_step;
+        _->kernel_params.cu_render_params.max_ray_dist = render_params.raycast.max_ray_dist;
+    }
     if(render_params.other.updated){
-        _->kernel_params.cu_render_params.ray_step = render_params.other.ray_step;
-        _->kernel_params.cu_render_params.max_ray_dist = render_params.other.max_ray_dist;
         //todo
 //        _->kernel_params.cu_render_params.inv_tex_shape = float3{
 //            render_params.other.inv_tex_shape.x,
@@ -916,7 +944,7 @@ void RTVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
     _->kernel_params.cu_per_frame_params.frame_height = per_frame_params.frame_height;
     _->kernel_params.cu_per_frame_params.cam_up = { Transform(per_frame_params.cam_up) };
     _->kernel_params.cu_per_frame_params.frame_w_over_h = per_frame_params.frame_w_over_h;
-    _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
+//    _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
 
     _->camera_pos = per_frame_params.cam_pos;
     _->proj_view = per_frame_params.proj_view;
@@ -941,17 +969,20 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
             ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
             return ret;
         };
-        auto& o_corners = camera_view_frustum.frustum_corners;
-        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
-        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
-        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
-        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
-        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
-        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
-        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
-        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
-        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
-        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
+//        auto& o_corners = camera_view_frustum.frustum_corners;
+//        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
+//        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
+//        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
+//        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
+//        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
+//        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
+//        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
+//        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
+//        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
+//        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
+//        std::array<Float3,8> corners;
+//        for(int i = 0; i < 8; i++) corners[i] = camera_view_frustum.frustum_corners[i];
+//        vutil::extract_frustum_from_corners(corners, camera_view_frustum);
     }
 
     // compute current intersect blocks
@@ -976,12 +1007,12 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
 
 
     // query from gpu page table
-    auto& block_infos = _->block_infos; block_infos.clear();
-    _->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, block_infos);
+//    auto& block_infos = _->block_infos; block_infos.clear();
+//    _->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, block_infos);
 
 
     // add missed blocks into async-loading-queue
-    _->AQ_Update(block_infos);
+    _->AQ_Update(intersect_blocks);
 
     _->AQ_Commit();
 

@@ -768,9 +768,11 @@ VISER_BEGIN
             _->kernel_params.cu_tf_tex = _->cu_tf_tex->_get_tex_handle();
             _->kernel_params.cu_2d_tf_tex = _->cu_2d_tf_tex->_get_tex_handle();
         }
+        if(render_params.raycast.updated){
+            _->kernel_params.cu_render_params.ray_step = render_params.raycast.ray_step;
+            _->kernel_params.cu_render_params.max_ray_dist = render_params.raycast.max_ray_dist;
+        }
         if(render_params.other.updated){
-            _->kernel_params.cu_render_params.ray_step = render_params.other.ray_step;
-            _->kernel_params.cu_render_params.max_ray_dist = render_params.other.max_ray_dist;
             _->kernel_params.cu_render_params.inv_tex_shape = float3{
                 render_params.other.inv_tex_shape.x,
                 render_params.other.inv_tex_shape.y,
@@ -790,7 +792,7 @@ VISER_BEGIN
         _->kernel_params.cu_per_frame_params.frame_height = per_frame_params.frame_height;
         _->kernel_params.cu_per_frame_params.cam_up = { Transform(per_frame_params.cam_up) };
         _->kernel_params.cu_per_frame_params.frame_w_over_h = per_frame_params.frame_w_over_h;
-        _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
+//        _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
     }
 
     void CRTVolumeRenderer::Render(Handle<FrameBuffer> frame) {

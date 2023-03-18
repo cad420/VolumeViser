@@ -62,7 +62,7 @@ UnifiedRescUID HostMemMgr::GetUID() const {
 template<>
 Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinned>(ResourceType type, size_t bytes, bool required){
     if(!required){
-        auto used = _->used_mem_bytes.fetch_add(bytes);
+        auto used = _->used_mem_bytes += bytes;
         if (used > _->max_mem_bytes) {
             _->used_mem_bytes.fetch_sub(bytes);
             throw ViserResourceCreateError(
@@ -75,7 +75,7 @@ Handle<CUDAHostBuffer> HostMemMgr::AllocHostMem<CUDAHostBuffer, HostMemMgr::Pinn
 template<>
 Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(ResourceType type, size_t bytes, bool required){
     if(!required){
-        auto used = _->used_mem_bytes.fetch_add(bytes);
+        auto used = _->used_mem_bytes += bytes;
         if (used > _->max_mem_bytes) {
             _->used_mem_bytes.fetch_sub(bytes);
             throw ViserResourceCreateError(
@@ -88,7 +88,7 @@ Handle<HostBuffer> HostMemMgr::AllocHostMem<HostBuffer, HostMemMgr::Paged>(Resou
 UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const FixedHostMemMgrCreateInfo &info) {
     try{
         size_t alloc_size = info.fixed_block_size * info.fixed_block_num;
-        auto used = _->used_mem_bytes.fetch_add(alloc_size);
+        auto used = _->used_mem_bytes += alloc_size;
         if(used > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");

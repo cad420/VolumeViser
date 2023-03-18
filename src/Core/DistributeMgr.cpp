@@ -6,12 +6,12 @@ VISER_BEGIN
 
 class MPI{
   public:
-     inline static int world_rank = 0;
-     inline static int world_size = 1;
-     inline static char process_name[256];
-     inline static int process_name_length = 256;
+    inline static int world_rank = 0;
+    inline static int world_size = 1;
+    inline static char process_name[256];
+    inline static int process_name_length = 256;
 
-     inline static int root_rank = 0;
+    inline static int root_rank = 0;
 };
 
 DistributeMgr::DistributeMgr()
@@ -41,6 +41,7 @@ UnifiedRescUID DistributeMgr::GetUID() const
 
 void DistributeMgr::WaitForSync()
 {
+
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
@@ -64,9 +65,9 @@ bool DistributeMgr::IsRoot()
     return MPI::world_rank == MPI::root_rank;
 }
 
-void DistributeMgr::SetWorldRank(int rank)
+void DistributeMgr::SetRootRank(int rank)
 {
-    MPI::world_rank = rank;
+    MPI::root_rank = rank;
 }
 
 struct _MPI_Init{
@@ -89,6 +90,18 @@ DistributeMgr &DistributeMgr::GetInstance()
 {
     static DistributeMgr mgr;
     return mgr;
+}
+void DistributeMgr::Bcast(void *data, int count, int type)
+{
+    MPI_Bcast(data, count, type, 0, MPI_COMM_WORLD);
+}
+template <> void DistributeMgr::Bcast<float>(float *data, int count)
+{
+    MPI_Bcast(data, count, MPI_FLOAT, 0, MPI_COMM_WORLD);
+}
+template <> void DistributeMgr::Bcast<int>(int *data, int count)
+{
+    MPI_Bcast(data, count, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
 VISER_END

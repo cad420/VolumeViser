@@ -32,7 +32,7 @@ VUTIL_GL_BEGIN
         const float PI = PI_f;
         while(hori_rad < 0) hori_rad += 2 * PI;
         while(hori_rad >= 2 * PI) hori_rad -= 2 * PI;
-        vert_rad = std::clamp(vert_rad,-PI * 0.5f + 0.01f,PI * 0.5f + 0.01f);
+        vert_rad = std::clamp(vert_rad,-PI * 0.5f + 0.3f,PI * 0.5f - 0.3f);
 
         const auto dir = get_xyz_direction();
         const auto front = vec3(dir.x,0,dir.z).normalized();

@@ -118,11 +118,19 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                 if (_->freed.empty()) {
                     auto [block_uid, tex_coord] = _->lru->back();
                     auto [tid, coord] = tex_coord;
+                    if(_->tex_table[tid][coord].rw_lk.is_write_locked() || _->tex_table[tid][coord].rw_lk.is_read_locked()){
+                        LOG_CRITICAL("lock write is write locked");
+
+                        _->tex_table[tid][coord].rw_lk.unlock_all();
+
+                    }
+
                     _->tex_table[tid][coord].rw_lk.lock_write();
+                    _->tex_table[tid][coord].block_uid = key;
                     _->record_block_mp.erase(block_uid);
                     _->record_block_mp[key] = tex_coord;
-                    _->lru->emplace_back(key, {tid, coord});
-
+//                    _->lru->emplace_back(key, {tid, coord});
+                    _->lru->replace(block_uid, key);
                     LOG_DEBUG("using lru for freed empty");
 
                     items.push_back({key, {.sx = coord.x,
@@ -134,6 +142,7 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                     auto [tid, coord] = _->freed.front();
                     _->freed.pop();
                     _->tex_table[tid][coord].rw_lk.lock_write();
+                    _->tex_table[tid][coord].block_uid = key;
                     _->record_block_mp[key] = {tid, coord};
                     _->lru->emplace_back(key, {tid, coord});
                     items.push_back({key, {.sx = coord.x,
@@ -152,12 +161,27 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
 
 void GPUPageTableMgr::Release(const std::vector<Key>& keys, bool readonly) {
     for(auto& key : keys){
+        if(_->record_block_mp.count(key) == 0) continue;
         auto& [tid, coord] = _->record_block_mp.at(key);
         auto& lk = _->tex_table[tid][coord].rw_lk;
         if(lk.is_read_locked())
             lk.unlock_read();
-        else if(!readonly && lk.is_write_locked())
-            lk.unlock_write();
+        else if(!readonly && lk.is_write_locked()){
+            Discard({key});
+        }
+    }
+}
+
+void GPUPageTableMgr::Discard(const std::vector<Key>& keys)
+{
+    for(auto& key : keys){
+        if(_->record_block_mp.count(key)){
+            auto& [tid, coord] = _->record_block_mp.at(key);
+            _->tex_table[tid][coord].rw_lk.unlock_all();
+            _->tex_table[tid][coord].block_uid.w = 11;
+            _->record_block_mp.erase(key);
+            _->lru->remove(key);
+        }
     }
 }
 
@@ -167,8 +191,10 @@ HashPageTable& GPUPageTableMgr::GetPageTable(bool update) {
         _->hpt->Clear();
         for(auto& [block_uid, tex_coord] : _->record_block_mp){
             auto& [tid, coord] = tex_coord;
-            if(_->tex_table[tid][coord].rw_lk.is_write_locked()){
+            auto& lk = _->tex_table[tid][coord].rw_lk;
+            if(lk.is_write_locked()){
                 _->hpt->Append({block_uid, {coord.x, coord.y, coord.z, (uint16_t)tid, 0}});
+                LOG_DEBUG("has write locked block in tex");
             }
             else{
                 uint16_t flag = TexCoordFlag_IsValid;
@@ -186,26 +212,41 @@ void GPUPageTableMgr::Promote(const Key &key) {
     auto& [tid, coord] = _->record_block_mp.at(key);
     LOG_DEBUG("promote start");
     auto& lk = _->tex_table[tid][coord].rw_lk;
-    if(lk.is_write_locked())
+    auto& uid = _->tex_table[tid][coord].block_uid;
+    if(lk.is_write_locked()){
         lk.converse_write_to_read();
+        LOG_DEBUG("promote lk right, key is: {} {} {} {}, cached block uid: {} {} {} {}",
+                  key.x, key.y, key.z, key.GetLOD(),
+                  uid.x, uid.y, uid.z, uid.GetLOD()
+        );
+    }
     else if(lk.is_read_locked()){
-        LOG_ERROR("promote lk is read locked");
-//        throw std::runtime_error("promote lk is read locked");
+        LOG_ERROR("promote lk is read locked, key is: {} {} {} {}, cached block uid: {} {} {} {}",
+                  key.x, key.y, key.z, key.GetLOD(),
+                  uid.x, uid.y, uid.z, uid.GetLOD()
+                  );
     }
     else{
-        LOG_ERROR("promote lk is not locked");
-//        throw std::runtime_error("promote lk is not locked");
+        LOG_ERROR("promote lk is not locked, key is: {} {} {} {}, cached block uid: {} {} {} {}",
+                  key.x, key.y, key.z, key.GetLOD(),
+                  uid.x, uid.y, uid.z, uid.GetLOD()
+        );
     }
 
     //暂时不更新缓存优先级
-    LOG_ERROR("promote ok");
+    LOG_DEBUG("promote ok");
 
 }
 bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableMgr::Value &value)
 {
+    if(value.flag == TexCoordFlag_IsValid){
+        LOG_CRITICAL("invalid flag");
+        throw std::runtime_error("invalid flag");
+    }
     if(_->record_block_mp.count(key) == 0) return false;
     auto& record_val = _->record_block_mp.at(key);
     if(record_val.tid != value.tid || record_val.coord != UInt3{value.sx, value.sy, value.sz}) return false;
+    // check write?
     return true;
 }
 void GPUPageTableMgr::Reset()
@@ -237,5 +278,6 @@ void GPUPageTableMgr::ClearWithOption(std::function<bool(const Key& key)> ok)
             it++;
     }
 }
+
 
 VISER_END

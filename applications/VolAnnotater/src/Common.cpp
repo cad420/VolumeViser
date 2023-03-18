@@ -216,9 +216,11 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
     render_params.tf.tf_pts.pts[0.6f] = Float4(0.3f, 0.6f, 0.9f, 1.f);
     render_params.tf.tf_pts.pts[0.96f] = Float4(0.f, 0.5f, 1.f, 1.f);
 //    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
+    render_params.raycast.updated = true;
+    render_params.raycast.ray_step = render_base_space * 0.5;
+    render_params.raycast.max_ray_dist = 6.f;
     render_params.other.updated = true;
-    render_params.other.ray_step = render_base_space * 0.5;
-    render_params.other.max_ray_dist = 6.f;
+
     render_params.other.inv_tex_shape = Float3(1.f / AppSettings::VTexShape.x,
                                                1.f / AppSettings::VTexShape.y,
                                                1.f / AppSettings::VTexShape.z);
