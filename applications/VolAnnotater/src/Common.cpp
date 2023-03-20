@@ -212,9 +212,9 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
     render_params.lod.leve_of_dist = lod;
     render_params.tf.updated = true;
 //    render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
-    render_params.tf.tf_pts.pts[0.25f] = Float4(0.f, 0.1f, 0.2f, 0.f);
-    render_params.tf.tf_pts.pts[0.6f] = Float4(0.3f, 0.6f, 0.9f, 1.f);
-    render_params.tf.tf_pts.pts[0.96f] = Float4(0.f, 0.5f, 1.f, 1.f);
+    render_params.tf.tf_pts.pts.push_back({0.25f, Float4(0.f, 0.1f, 0.2f, 0.f)});
+    render_params.tf.tf_pts.pts.push_back({0.6f, Float4(0.3f, 0.6f, 0.9f, 1.f)});
+    render_params.tf.tf_pts.pts.push_back({0.96f, Float4(0.f, 0.5f, 1.f, 1.f)});
 //    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
     render_params.raycast.updated = true;
     render_params.raycast.ray_step = render_base_space * 0.5;
@@ -236,10 +236,7 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
 void VolRenderRescPack::UpdateTransferFunc(const std::vector<std::pair<float, Float4>>& pts){
     RenderParams render_params;
     render_params.tf.updated = true;
-    for (auto &pt : pts)
-    {
-        render_params.tf.tf_pts.pts[pt.first] = pt.second;
-    }
+    render_params.tf.tf_pts.pts = pts;
     crt_vol_renderer->SetRenderParams(render_params);
 }
 

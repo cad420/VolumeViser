@@ -102,7 +102,7 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         size_t alloc_size = (size_t)info.vtex_count * info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z
                 * info.bits_per_sample * info.samples_per_channel / 8;
         auto used = _->used_mem_bytes += alloc_size;
-        if(used + alloc_size > _->max_mem_bytes){
+        if(used > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
