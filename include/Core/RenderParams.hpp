@@ -71,23 +71,27 @@ struct RenderParams{
         light.updated   = false;
         lod.updated     = false;
         tf.updated      = false;
+        {
+            tf.tf_pts.pts.clear();
+        }
         distrib.updated = false;
         other.updated   = false;
+        raycast.updated = false;
     }
     struct {
-        bool updated = false;
+        int updated = false;
     }light;
     struct {
-        bool updated = false;
+        int updated = false;
         LevelOfDist leve_of_dist;
     }lod;
     struct {
-        bool updated = false;
+        int updated = false;
         TransferFunc tf_pts;
         int dim = 256;
     }tf;
     struct{
-        bool updated = false;
+        int updated = false;
         int node_x_offset = 0;//in pixels
         int node_y_offset = 0;
         int world_row_count = 1;
@@ -99,14 +103,13 @@ struct RenderParams{
         float ray_step = 0.f;
         float max_ray_dist = 0.f;
         float render_space = 1.f;
+        int updated = false;
     }raycast;
     struct {
-        bool updated = false;
-        bool use_2d_tf = false;
-        bool gamma_correct = true;
-        bool output_depth = true;
-        float ray_step = 0.f;
-        float max_ray_dist = 0.f;
+        int updated = false;
+        int use_2d_tf = false;
+        int gamma_correct = true;
+        int output_depth = true;
         Float3 inv_tex_shape;
     }other;
 };
@@ -116,13 +119,14 @@ struct PerFrameParams{
     Float3 cam_pos;
     float fov;
     Float3 cam_dir;
-    int frame_width;
+    float frame_width;
     Float3 cam_right;
-    int frame_height;
+    float frame_height;
     Float3 cam_up;
     float frame_w_over_h;
-    int debug_mode = 0;
+//    int debug_mode = 0;
     Mat4 proj_view;
 };
+static_assert(sizeof(PerFrameParams) == 32 * 4,"");
 
 VISER_END

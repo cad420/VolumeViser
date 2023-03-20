@@ -354,6 +354,13 @@ class VolViewWindow {
         {
             ImGui::Begin("Settings");
             if(ImGui::TreeNode("Vol Render Setting")){
+                if(ImGui::TreeNode("PerFrameParams")){
+                    ImGui::Text("Camera Pos: %.5f %.5f %.5f", per_frame_params->cam_pos.x,
+                                per_frame_params->cam_pos.y, per_frame_params->cam_pos.z);
+                    ImGui::Text("Camera Dir: %.5f %.5f %.5f", per_frame_params->cam_dir.x,
+                                per_frame_params->cam_dir.y, per_frame_params->cam_dir.z);
+                    ImGui::TreePop();
+                }
                 if(ImGui::TreeNode("Raycast")){
                     bool update = false;
                     update |= ImGui::InputFloat("Ray Step", &render_params->raycast.ray_step,
@@ -615,7 +622,7 @@ class VolViewWindow {
 
         std::shared_ptr<RenderParams> render_params;
 
-        PerFrameParams per_frame_params;
+        std::shared_ptr<PerFrameParams> per_frame_params;
 
         std::unique_ptr<NeuronRenderer> neuron_renderer;
     };
@@ -711,7 +718,7 @@ public:
 
     struct{
         std::shared_ptr<RenderParams> g_render_params;
-        PerFrameParams g_per_frame_params;
+        std::shared_ptr<PerFrameParams> g_per_frame_params;
         fps_camera_t camera;
     };
 
@@ -746,7 +753,7 @@ std::vector<std::string> LoadVolumeInfos(const std::string& filename){
 }
 
 VolViewer::VolViewer(const VolViewerCreateInfo &info) {
-    SET_LOG_LEVEL_DEBUG
+    SET_LOG_LEVEL_INFO
 
 
     if(glfwInit() != GLFW_TRUE){
@@ -838,6 +845,9 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     _->g_render_params->distrib.world_row_count = info.global_window_rows;
     _->g_render_params->distrib.world_col_count = info.global_window_cols;
 
+    _->g_per_frame_params = std::make_shared<PerFrameParams>();
+    _->g_per_frame_params->frame_w_over_h = (float)info.global_frame_width / info.global_frame_height;
+
     // create renderer
     for(int i = 0; i < _->node_window_count; i++){
         auto gpu_mem_mgr_uid = ResourceMgr::GetInstance().RegisterResourceMgr({
@@ -860,6 +870,7 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
         });
         resc.window->Initialize();
         resc.window->render_params = _->g_render_params;
+        resc.window->per_frame_params = _->g_per_frame_params;
 
         RTVolumeRenderer::RTVolumeRendererCreateInfo rt_info{
             .host_mem_mgr = host_mem_mgr_ref.LockRef(),
@@ -978,10 +989,11 @@ void VolViewer::run()
         _->camera.update(u_params);
         u_params = fps_camera_t::UpdateParams{};
         _->camera.recalculate_matrics();
-        auto& params = _->g_per_frame_params;
+        auto& params = *_->g_per_frame_params;
         params.frame_width = _->info.node_frame_width;
         params.frame_height = _->info.node_frame_height;
-        params.frame_w_over_h = (float)params.frame_width / (float)params.frame_height;
+        //need to set global_window_w / global_window_h before
+        //params.frame_w_over_h = (float)params.frame_width / (float)params.frame_height;
         params.fov = vutil::deg2rad(_->camera.get_fov_deg());
         params.cam_pos = _->camera.get_position();
         params.cam_dir = _->camera.get_xyz_direction();

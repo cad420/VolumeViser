@@ -31,8 +31,6 @@ VISER_BEGIN
             for(auto y = idx_beg.y; y < idx_end.y; y++){
                 for(auto x = idx_beg.x; x < idx_end.x; x++){
                     GridVolume::BlockUID block_uid = {x, y, z, 0};
-                    // 36 36 32
-                    // 39 39 35
                     BoundingBox3D block_box = {{
                         volume_box.low.x + x * block_space.x,
                         volume_box.low.y + y * block_space.y,
@@ -43,11 +41,6 @@ VISER_BEGIN
                         volume_box.low.z + (z + 1) * block_space.z
                     }};
                     if(GetBoxVisibility(frustum, block_box) != BoxVisibility::Invisible){
-                        if(x >= 36 && x <= 39
-                            && y >= 36 && y <= 39
-                            && z >= 32 && z <= 35){
-                            LOG_DEBUG("find");
-                        }
                         lod0_blocks.emplace_back(block_uid, block_box);
                     }
                     else{
@@ -59,14 +52,6 @@ VISER_BEGIN
         LOG_DEBUG("Lod0 intersect blocks count : {}", lod0_blocks.size());
         std::unordered_set<GridVolume::BlockUID> res;
         for(auto& b : lod0_blocks){
-            auto x = b.first.x;
-            auto y = b.first.y;
-            auto z = b.first.z;
-            if(x >= 36 && x <= 39
-                && y >= 36 && y <= 39
-                && z >= 32 && z <= 35){
-                LOG_DEBUG("find");
-            }
             uint32_t l = lod(b.second);
             UInt3 idx = {b.first.x, b.first.y, b.first.z};
             for(int i = 0; i < l; ++i){

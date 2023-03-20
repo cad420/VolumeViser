@@ -408,13 +408,13 @@ namespace{
         Ray ray;
         ray.o = params.cu_per_frame_params.cam_pos;
         float scale = tanf(0.5f * params.cu_per_frame_params.fov);
-        float ix = (x + params.cu_render_params.mpi_node_offset.x + 0.5f) /
-                       (params.cu_per_frame_params.frame_width * params.cu_render_params.world_shape.x) - 0.5f;
-        float iy = (y + params.cu_render_params.mpi_node_offset.y + 0.5f) /
-                       (params.cu_per_frame_params.frame_height * params.cu_render_params.world_shape.y) - 0.5f;
+        float ix = (x - params.cu_per_frame_params.frame_width / 2 + params.cu_render_params.mpi_node_offset.x + 0.5f) /
+                       (params.cu_per_frame_params.frame_width * params.cu_render_params.world_shape.x);
+        float iy = (y - params.cu_per_frame_params.frame_height / 2 + params.cu_render_params.mpi_node_offset.y + 0.5f) /
+                       (params.cu_per_frame_params.frame_height * params.cu_render_params.world_shape.y);
         ray.d = params.cu_per_frame_params.cam_dir + params.cu_per_frame_params.cam_up * scale * iy
                 + params.cu_per_frame_params.cam_right * scale * ix * params.cu_per_frame_params.frame_w_over_h;
-
+        ray.d = normalize(ray.d);
 
         auto [color, depth] = RayCastVolume(params, hash_table, ray);
 
@@ -562,28 +562,28 @@ class RTVolumeRendererPrivate{
             aq.cur_block_infos_mp = std::move(dummy);
         }
 
+
         auto task = aq.async_loading_queue.create_task([&, missed_blocks = std::move(missed_blocks)]{
             std::vector<Handle<CUDAHostBuffer>> buffers;
-//            std::lock_guard<std::mutex> lk(aq.block_infos_mtx);
-            fixed_host_mem_mgr_ref._get_ptr()->Lock();
-            for(auto& block_uid : missed_blocks){
-                LOG_DEBUG("start loading block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-                auto hd = fixed_host_mem_mgr_ref._get_ptr()->GetBlock(block_uid.ToUnifiedRescUID());
-//                if(!hd.IsValid()){
-////                    LOG_DEBUG("Invalid erase block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-//                    aq.cur_block_infos_mp.erase(block_uid);
-//
-//                    continue;
-//                }
+            {
+                //lock the entire but not a buffer can provide more safe and more correct results
+                auto _lk = fixed_host_mem_mgr_ref.AutoLock();
+                for (auto &block_uid : missed_blocks)
+                {
+                    LOG_DEBUG("start loading block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z,
+                              block_uid.GetLOD());
+                    auto hd = fixed_host_mem_mgr_ref._get_ptr()->GetBlock(block_uid.ToUnifiedRescUID());
 
-                auto& b = buffers.emplace_back(hd.SetUID(block_uid.ToUnifiedRescUID()));
+                    auto &b = buffers.emplace_back(hd.SetUID(block_uid.ToUnifiedRescUID()));
 
-                LOG_DEBUG("loading block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
-                if(!b.IsLocked()){
-                    LOG_ERROR("no locked block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
+                    LOG_DEBUG("loading block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
+                    if (!b.IsLocked())
+                    {
+                        LOG_ERROR("no locked block: {} {} {} {}", block_uid.x, block_uid.y, block_uid.z,
+                                  block_uid.GetLOD());
+                    }
                 }
             }
-            fixed_host_mem_mgr_ref._get_ptr()->UnLock();
             _AQ_AppendTask(std::move(buffers));
         });
         aq.async_loading_queue.submit(task);
@@ -651,8 +651,7 @@ class RTVolumeRendererPrivate{
             && aq.async_decoding_queue.is_idle()
             && aq.async_transfer_queue.is_idle();
         };
-        while(!all_is_ok())
-            AQ_Commit(false);
+        while(!all_is_ok()) AQ_Commit(false);
         AQ_Commit(true);
     }
 
@@ -667,10 +666,12 @@ class RTVolumeRendererPrivate{
                auto lk = volume.AutoLocker();
                volume->ReadBlock(block_uid, *buffer);
            }
-           //            buffer.SetUID(block_uid.ToUnifiedRescUID());
+
+           VISER_WHEN_DEBUG(
             if(!buffer.IsWriteLocked()){
                 LOG_ERROR("buffer not write locked");
-            }
+            })
+
             buffer.ConvertWriteToReadLock();
             LOG_DEBUG("decoding finish, {} {} {} {}", block_uid.x, block_uid.y, block_uid.z, block_uid.GetLOD());
             _AQ_AppendTransferTask(std::move(buffer));
@@ -688,8 +689,7 @@ class RTVolumeRendererPrivate{
                 if (aq.cur_block_infos_mp.count(block_uid))
                 {
                     auto dst = aq.cur_block_infos_mp.at(block_uid).second;
-                    auto ret = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, buffer,
-                                            dst);
+                    auto ret = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, buffer, dst);
                     if(ret){
                         aq.cur_block_infos_mp.erase(block_uid);
                         gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, std::vector<BlockUID>{block_uid}, false);
@@ -830,7 +830,6 @@ void RTVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
         }
     }
 
-
     {
         //bind vtex
         auto texes = _->gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetAllTextures);
@@ -892,14 +891,6 @@ void RTVolumeRenderer::SetRenderParams(const RenderParams &render_params)
         cub::memory_transfer_info info;
         info.width_bytes = sizeof(TransferFunc::Value) * render_params.tf.dim;
         info.height = info.depth = 1;
-//        VISER_WHEN_DEBUG({
-//            auto v = _->tf1d->view_1d<float4>(256);
-//            for (int i = 0; i < 256; i++)
-//            {
-//                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w
-//                          << std::endl;
-//            }
-//        });
         cub::cu_memory_transfer(*_->tf1d, *_->cu_tf_tex, info).launch(_->stream);
         info.height = render_params.tf.dim;
         cub::cu_memory_transfer(*_->tf2d, *_->cu_2d_tf_tex, info).launch(_->stream);
@@ -969,20 +960,20 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
             ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
             return ret;
         };
-//        auto& o_corners = camera_view_frustum.frustum_corners;
-//        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
-//        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
-//        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
-//        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
-//        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
-//        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
-//        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
-//        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
-//        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
-//        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
-//        std::array<Float3,8> corners;
-//        for(int i = 0; i < 8; i++) corners[i] = camera_view_frustum.frustum_corners[i];
-//        vutil::extract_frustum_from_corners(corners, camera_view_frustum);
+        auto& o_corners = camera_view_frustum.frustum_corners;
+        auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
+        auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
+        auto [n_lb, n_lt]   = _calc(_n_lb, _n_lt, _->world_rows, _->node_y_idx);
+        auto [n_rb, n_rt]   = _calc(_n_rb, _n_rt, _->world_rows, _->node_y_idx);
+        auto [_f_lb, _f_rb] = _calc(o_corners[4], o_corners[5], _->world_cols, _->node_x_idx);
+        auto [_f_lt, _f_rt] = _calc(o_corners[6], o_corners[7], _->world_cols, _->node_x_idx);
+        auto [f_lb, f_lt]   = _calc(_f_lb, _f_lt, _->world_rows, _->node_y_idx);
+        auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
+        o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
+        o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
+        std::array<Float3,8> corners;
+        for(int i = 0; i < 8; i++) corners[i] = camera_view_frustum.frustum_corners[i];
+        vutil::extract_frustum_from_corners(corners, camera_view_frustum);
     }
 
     // compute current intersect blocks
