@@ -118,18 +118,17 @@ void GPUPageTableMgr::GetAndLock(const std::vector<Key> &keys, std::vector<PageT
                 if (_->freed.empty()) {
                     auto [block_uid, tex_coord] = _->lru->back();
                     auto [tid, coord] = tex_coord;
+#ifdef VISER_DEBUG
                     if(_->tex_table[tid][coord].rw_lk.is_write_locked() || _->tex_table[tid][coord].rw_lk.is_read_locked()){
                         LOG_CRITICAL("lock write is write locked");
-
                         _->tex_table[tid][coord].rw_lk.unlock_all();
-
                     }
+#endif
 
                     _->tex_table[tid][coord].rw_lk.lock_write();
                     _->tex_table[tid][coord].block_uid = key;
                     _->record_block_mp.erase(block_uid);
                     _->record_block_mp[key] = tex_coord;
-//                    _->lru->emplace_back(key, {tid, coord});
                     _->lru->replace(block_uid, key);
                     LOG_DEBUG("using lru for freed empty");
 
@@ -220,6 +219,7 @@ void GPUPageTableMgr::Promote(const Key &key) {
                   uid.x, uid.y, uid.z, uid.GetLOD()
         );
     }
+#ifdef VISER_DEBUG
     else if(lk.is_read_locked()){
         LOG_ERROR("promote lk is read locked, key is: {} {} {} {}, cached block uid: {} {} {} {}",
                   key.x, key.y, key.z, key.GetLOD(),
@@ -232,11 +232,13 @@ void GPUPageTableMgr::Promote(const Key &key) {
                   uid.x, uid.y, uid.z, uid.GetLOD()
         );
     }
+#endif
 
     //暂时不更新缓存优先级
     LOG_DEBUG("promote ok");
 
 }
+
 bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableMgr::Value &value)
 {
     if(value.flag == TexCoordFlag_IsValid){
@@ -249,6 +251,7 @@ bool GPUPageTableMgr::Check(const GPUPageTableMgr::Key &key, const GPUPageTableM
     // check write?
     return true;
 }
+
 void GPUPageTableMgr::Reset()
 {
     _->record_block_mp.clear();
@@ -268,6 +271,7 @@ void GPUPageTableMgr::Reset()
 
     _->hpt->Clear();
 }
+
 void GPUPageTableMgr::ClearWithOption(std::function<bool(const Key& key)> ok)
 {
     for(auto it = _->record_block_mp.begin(); it != _->record_block_mp.end();){

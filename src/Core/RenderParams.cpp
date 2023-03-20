@@ -6,13 +6,16 @@ VISER_BEGIN
     template<typename Key, typename Value>
     void Gen1DTFImpl(const TransferFuncT<Key, Value>& tf, Value* ptr, int dim){
         if(tf.pts.empty()) return;
+        std::map<Key, Value> tf_mp_pts;
         std::memset(ptr, 0, sizeof(Value) * dim);
         double dt = 1.0 / dim;
         bool first = true;
         int last = -1;
-        tf.pts[0] = tf.pts.begin()->second;
-        tf.pts[1.f] = std::prev(tf.pts.end())->second;
-        for(auto& pt : tf.pts){
+        // first and last key and point
+        tf_mp_pts[0] = tf.pts.begin()->second;
+        tf_mp_pts[1.f] = std::prev(tf.pts.end())->second;
+        for(auto& [k, v] : tf.pts) tf_mp_pts[k] = v;
+        for(auto& pt : tf_mp_pts){
             int cur = std::max<int>(0, std::floor<int>(static_cast<int>(pt.first * dim) - 0.5));
             ptr[cur] = pt.second;
             if(first){

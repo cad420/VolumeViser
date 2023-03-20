@@ -57,27 +57,22 @@ UnifiedRescUID FixedHostMemMgr::GetUID() const {
 Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlock(UnifiedRescUID uid) {
     try {
         auto value = _->lru->get_value(uid);
-        LOG_DEBUG("000 {}", uid);
         if (value.has_value()) {
-            LOG_DEBUG("GetBlock 111 {}", uid);
             return value.value().AddReadLock();//多线程交叉互锁
         } else {
             if (_->freed.empty()) {
                 // wait for unlock
                 auto& t = _->lru->back();
-                //                while(t.second.IsLocked());
                 t.second.AddWriteLock();
                 auto oid = t.first;
                 _->lru->replace(oid, uid);
                 auto ret =  _->lru->get_value(uid);
                 assert(ret.has_value());
-                LOG_DEBUG("GetBlock 222 {} {}", uid,ret.has_value());
                 return ret.value();
 
             } else {
                 _->lru->emplace_back(uid, std::move(_->freed.front()));
                 _->freed.pop();
-                LOG_DEBUG("GetBlock 333 {}", uid);
                 return _->lru->get_value(uid).value().AddWriteLock();
             }
 
@@ -92,31 +87,25 @@ Handle<CUDAHostBuffer> FixedHostMemMgr::GetBlockIM(UnifiedRescUID uid)
 {
     try {
         auto value = _->lru->get_value(uid);
-        LOG_DEBUG("000 {}", uid);
         if (value.has_value()) {
-            LOG_DEBUG("GetBlock 111 {}", uid);
             if(value->IsWriteLocked()) return {};
-            return value.value().AddReadLock();//多线程交叉互锁
+            return value.value().AddReadLock();
         } else {
             if (_->freed.empty()) {
                 // wait for unlock
                 auto& t = _->lru->back();
-                //                while(t.second.IsLocked());
                 t.second.AddWriteLock();
                 auto oid = t.first;
                 _->lru->replace(oid, uid);
                 auto ret =  _->lru->get_value(uid);
                 assert(ret.has_value());
-                LOG_DEBUG("GetBlock 222 {} {}", uid,ret.has_value());
                 return ret.value();
 
             } else {
                 _->lru->emplace_back(uid, std::move(_->freed.front()));
                 _->freed.pop();
-                LOG_DEBUG("GetBlock 333 {}", uid);
                 return _->lru->get_value(uid).value().AddWriteLock();
             }
-
         }
     } catch (const std::exception& err) {
         auto id = GridVolume::BlockUID(uid);

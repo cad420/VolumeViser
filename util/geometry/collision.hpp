@@ -94,9 +94,8 @@ VUTIL_BEGIN
     }
 
     template<typename T>
-    inline void extract_frustum_from_corners(const std::array<tvec3<T>, 8>& corners, frustum_ext_t<T>& frustum_ext){
-        for(int i = 0; i < 8; i++) frustum_ext.frustum_corners[i] = corners[i];
-
+    inline void extract_frustum_from_corners(frustum_ext_t<T>& frustum_ext){
+        auto& corners = frustum_ext.frustum_corners;
         auto calc_plane = [&](int A, int B, int C){
             plane_t<T> plane;
             const auto& a = corners[A];
@@ -114,6 +113,13 @@ VUTIL_BEGIN
         frustum_ext.top_plane = calc_plane(2, 6, 3);
         frustum_ext.near_plane = calc_plane(0, 2, 1);
         frustum_ext.far_plane = calc_plane(4, 5, 6);
+    }
+
+    template<typename T>
+    inline void extract_frustum_from_corners(const std::array<tvec3<T>, 8>& corners, frustum_ext_t<T>& frustum_ext){
+        for(int i = 0; i < 8; i++) frustum_ext.frustum_corners[i] = corners[i];
+
+        extract_frustum_from_corners(frustum_ext);
     }
 
     template <typename T>

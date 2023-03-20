@@ -25,7 +25,6 @@ public:
         dirty = false;
     }
 
-
     uint32_t GetHashValue(const HashTableKey& key){
         static_assert(sizeof(HashTableKey) == sizeof(int) * 4, "");
         auto p = reinterpret_cast<const uint32_t*>(&key);
@@ -35,6 +34,7 @@ public:
         }
         return v;
     }
+
     void Update(const HashTableItem& item){
         uint32_t hash_v = GetHashValue(item.first);
         auto pos = hash_v % HashTableSize;

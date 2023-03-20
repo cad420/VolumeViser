@@ -195,7 +195,6 @@ template<typename T>
 class Ref {
 public:
 
-
     Ref() = default;
 
     Ref(T* p, bool safe = false)
@@ -211,20 +210,15 @@ public:
         Release();
     }
 
-    T* _get_ptr() {
-        return obj;
-    }
+    T* _get_ptr() { return obj; }
 
+    T* operator->() { assert(obj); return obj; }
 
-    T& operator*(){
-        assert(obj);
-        return *obj;
-    }
+    const T* operator->() const { assert(obj); return obj; }
 
-    const T& operator*() const {
-        assert(obj);
-        return *obj;
-    }
+    T& operator*() { assert(obj); return *obj; }
+
+    const T& operator*() const { assert(obj); return *obj; }
 
     template<typename F, typename... Args>
     decltype(auto) Invoke(F&& f, Args&&... args){
@@ -233,34 +227,25 @@ public:
     }
 
 
-    Ref<T>& LockRef() {
-        thread_safe = true;
-        return *this;
-    }
+    Ref<T>& LockRef() { thread_safe = true; return *this; }
 
-    void Release(){
-        if(obj)
-            obj = nullptr;
-    }
+    void Release(){ if(obj) obj = nullptr; }
 
-    bool IsThreadSafe() const {
-        return thread_safe;
-    }
+    bool IsThreadSafe() const { return thread_safe; }
 
-    bool IsValid() const {
-        return obj;
-    }
+    bool IsValid() const { return obj; }
+
     auto AutoLock() const {
         if constexpr(std::is_base_of_v<UnifiedRescBase, T>){
             if(thread_safe){
                 obj->Lock();
             }
-            return vutil::scope_bomb_t([this]{
+            return vutil::scope_bomb_t([*this]{
                 if(thread_safe) obj->UnLock();
             });
         }
         else{
-            return ;//vutil::scope_bomb_t([this]{});
+            return ;
         }
     }
   private:
@@ -273,7 +258,6 @@ enum class AccessType{
     Write
 };
 
-
 template<typename T>
 class Handle{
     struct Inner{
@@ -284,6 +268,7 @@ class Handle{
         UnifiedRescUID uid = INVALID_RESC_ID;
     };
     std::shared_ptr<Inner> _;
+
 public:
     Handle() = default;
 
@@ -317,7 +302,6 @@ public:
         return *this;
     }
 
-    //加互斥锁
     auto AutoLocker() const {
         if constexpr(std::is_base_of_v<UnifiedRescBase,T>){
             _->resc->Lock();
@@ -333,81 +317,39 @@ public:
         }
     }
 
-    UnifiedRescUID GetUID() const{
-        return _->uid;
-    }
+    UnifiedRescUID GetUID() const{ return _->uid; }
 
-    Handle<T>& SetUID(UnifiedRescUID uid) {
-        _->uid = uid;
-        return *this;
-    }
+    Handle<T>& SetUID(UnifiedRescUID uid) { _->uid = uid; return *this; }
 
-    T* operator->(){
-        return _->resc.get();
-    }
+    T* operator->(){ return _->resc.get(); }
 
-    const T* operator->() const{
-        return _->resc.get();
-    }
+    const T* operator->() const { return _->resc.get(); }
 
-    T& operator*(){
-        return *_->resc;
-    }
+    T& operator*(){ return *_->resc; }
 
-    const T& operator*() const {
-        return *_->resc;
-    }
+    const T& operator*() const { return *_->resc; }
 
-    void Destroy(){
-        _.reset();
-    }
+    void Destroy(){ _.reset(); }
 
-    bool IsValid() const{
-        return _ && _->resc.get();
-    }
+    bool IsValid() const { return _ && _->resc.get();}
 
-    bool IsLocked(){
-        return IsReadLocked() || IsWriteLocked();
-    }
+    bool IsLocked(){ assert(IsValid()); return IsReadLocked() || IsWriteLocked(); }
 
-    bool IsReadLocked(){
-        return _->rw_lk.is_read_locked();
-    }
-    bool IsWriteLocked(){
-        return _->rw_lk.is_write_locked();
-    }
+    bool IsReadLocked(){ return _->rw_lk.is_read_locked(); }
 
-    Handle<T>& AddReadLock(){
-        _->rw_lk.lock_read();
-        return *this;
-    }
+    bool IsWriteLocked(){ return _->rw_lk.is_write_locked(); }
 
-    Handle<T>& AddWriteLock(){
-        _->rw_lk.lock_write(true);
-        return *this;
-    }
+    Handle<T>& AddReadLock(){ _->rw_lk.lock_read(); return *this; }
 
-    Handle<T>& ReleaseReadLock(){
-        _->rw_lk.unlock_read();
-        return *this;
-    }
+    Handle<T>& AddWriteLock(){ _->rw_lk.lock_write(); return *this; }
 
-    Handle<T>& ReleaseWriteLock(){
-        _->rw_lk.unlock_write();
-        return *this;
-    }
+    Handle<T>& ReleaseReadLock(){ _->rw_lk.unlock_read(); return *this;}
 
-    Handle<T>& ConvertWriteToReadLock(){
-        LOG_DEBUG("call handle wr");
-        _->rw_lk.converse_write_to_read(true);
-        LOG_DEBUG("call handle wr ok");
-        return *this;
-    }
-    auto GetResourceType() const {
-        return _->type;
-    }
-private:
+    Handle<T>& ReleaseWriteLock(){ _->rw_lk.unlock_write(); return *this; }
 
+    Handle<T>& ConvertWriteToReadLock(){ _->rw_lk.converse_write_to_read(); return *this; }
+
+    auto GetResourceType() const { return _->type; }
 
 };
 
@@ -427,9 +369,9 @@ inline BoxVisibility GetBoxVisibility(const Frustum& frustum, const BoundingBox3
 inline BoundingBox3D FrustumToBoundingBox3D(const Frustum& frustum){
     BoundingBox3D box;
     for(int i = 0; i < 8; i++){
-        box.low.x = std::min(box.low.x, frustum.frustum_corners[i].x);
-        box.low.y = std::min(box.low.y, frustum.frustum_corners[i].y);
-        box.low.z = std::min(box.low.z, frustum.frustum_corners[i].z);
+        box.low.x  = std::min(box.low.x,  frustum.frustum_corners[i].x);
+        box.low.y  = std::min(box.low.y,  frustum.frustum_corners[i].y);
+        box.low.z  = std::min(box.low.z,  frustum.frustum_corners[i].z);
         box.high.x = std::max(box.high.x, frustum.frustum_corners[i].x);
         box.high.y = std::max(box.high.y, frustum.frustum_corners[i].y);
         box.high.z = std::max(box.high.z, frustum.frustum_corners[i].z);

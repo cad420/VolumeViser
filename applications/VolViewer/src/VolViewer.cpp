@@ -544,14 +544,14 @@ class VolViewWindow {
                     ImGui::TreePop();
 
                     if(tf_update){
-                        static std::vector<std::pair<float, Float4>> pts; pts.clear();
+                        std::vector<std::pair<float, Float4>> pts;
 
                         for(auto& [x, c] : pt_mp){
                             pts.emplace_back((float)x / (float)canvas_sz.x, c);
                         }
-                        for(auto& pt : pts){
-                            render_params->tf.tf_pts.pts[pt.first] = pt.second;
-                        }
+
+                        render_params->tf.tf_pts.pts = std::move(pts);
+
                         render_params->tf.updated = true;
                     }
                 }
@@ -830,9 +830,9 @@ VolViewer::VolViewer(const VolViewerCreateInfo &info) {
     _->g_render_params->lod.leve_of_dist.LOD[i] *= 1.5f;
 
     _->g_render_params->tf.updated = true;
-    _->g_render_params->tf.tf_pts.pts[119.f/255.f] = Float4(0.f, 0.f, 0.f, 0.f);
-    _->g_render_params->tf.tf_pts.pts[142.f/255.f] = Float4(0.5f, 0.48443f, 0.36765f, 0.3412f);
-    _->g_render_params->tf.tf_pts.pts[238.f/255.f] = Float4(0.853f, 0.338f, 0.092f, 0.73333f);
+    _->g_render_params->tf.tf_pts.pts.push_back({119.f/255.f, Float4(0.f, 0.f, 0.f, 0.f)});
+    _->g_render_params->tf.tf_pts.pts.push_back({142.f/255.f, Float4(0.5f, 0.48443f, 0.36765f, 0.3412f)});
+    _->g_render_params->tf.tf_pts.pts.push_back({238.f/255.f, Float4(0.853f, 0.338f, 0.092f, 0.73333f)});
 
 
     _->g_render_params->raycast.updated = true;
@@ -984,7 +984,7 @@ void VolViewer::run()
 
     fps_camera_t::UpdateParams u_params;
     static double ox, oy;
-    bool render_params_updated = false;
+    int render_params_updated = false;
     auto update_per_frame_params = [&]{
         _->camera.update(u_params);
         u_params = fps_camera_t::UpdateParams{};

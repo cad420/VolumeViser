@@ -1,5 +1,7 @@
 #include <Core/Distribute.hpp>
 
+
+
 #include <mpi.h>
 
 VISER_BEGIN
@@ -91,18 +93,20 @@ DistributeMgr &DistributeMgr::GetInstance()
     static DistributeMgr mgr;
     return mgr;
 }
+
 void DistributeMgr::Bcast(void *data, int count, int type)
 {
-    MPI_Bcast(data, count, type, 0, MPI_COMM_WORLD);
-}
-template <> void DistributeMgr::Bcast<float>(float *data, int count)
-{
-    MPI_Bcast(data, count, MPI_FLOAT, 0, MPI_COMM_WORLD);
-}
-template <> void DistributeMgr::Bcast<int>(int *data, int count)
-{
-    MPI_Bcast(data, count, MPI_INT, 0, MPI_COMM_WORLD);
+    static int table[] = {
+      MPI_UNSIGNED_CHAR,
+        MPI_CHAR,
+        MPI_INT,
+        MPI_UNSIGNED,
+        MPI_FLOAT,
+        MPI_INT64_T,
+        MPI_UNSIGNED_LONG_LONG,
+        MPI_DOUBLE
+    };
+    MPI_Bcast(data, count, table[type], GetRootRank(), MPI_COMM_WORLD);
 }
 
 VISER_END
-

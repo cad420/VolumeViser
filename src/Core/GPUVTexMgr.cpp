@@ -154,32 +154,17 @@ bool GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     //使用异步的memcpy，要不要同步等待其全部完成，可以之后测试
     //因为可能渲染启动的时候，拷贝没有完成，内部也会做一些同步，比如读之前必须等待写完成
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
-//    {
-//        auto s = src->get_size();
-//        uint8_t* d = static_cast<uint8_t*>(src->get_data());
-//        size_t c = 0;
-//        for(size_t i = 0; i < s; i++)
-//            if(d[i]) c++;
-//        if(c > 0){
-//            LOG_DEBUG("buffer is ok");
-//        }
-//    }
-//    auto pt_mgr_ref = GetGPUPageTableMgrRef().LockRef();
 
     //还是要检查上传的数据是否仍需要 是否有效
     auto block_uid = GridVolume::BlockUID(src.GetUID());
-    _->pt_mgr->Lock();
-    vutil::scope_bomb_t __ ([this](){
-        _->pt_mgr->UnLock();
-    });
+    auto __ = GetGPUPageTableMgrRef().LockRef().AutoLock();
     if(_->pt_mgr->Check(block_uid, dst)){
         cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
         _->pt_mgr->Promote(block_uid);
-//        _->pt_mgr->GetPageTable().Update({block_uid, dst});
         return true;
     }
     else{
-        LOG_DEBUG("block upload to vtex but not needed any more");
+        LOG_ERROR("block upload to vtex but not needed any more");
         return false;
     }
 }
@@ -227,4 +212,3 @@ void GPUVTexMgr::Clear(UnifiedRescUID uid, TexCoord dst) {
 
 
 VISER_END
-

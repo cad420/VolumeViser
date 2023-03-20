@@ -14,13 +14,13 @@ struct LevelOfDist{
     static constexpr int MaxLevelCount = 16;
     float LOD[MaxLevelCount] = {std::numeric_limits<float>::max()};
 };
+
 template<typename K, typename V>
 struct TransferFuncT{
     using Key = K;
     using Value = V;
-    mutable std::map<Key, Value> pts;
-
-    //todo add vector
+    using Item = std::pair<Key, Value>;
+    mutable std::vector<Item> pts;
 
     std::vector<Value> Gen1DTF(int dim = 256) const ;
 
@@ -59,6 +59,7 @@ struct Camera{
     }
 
 };
+
 struct VolumeParams{
     BoundingBox3D bound;
     uint32_t block_length;
@@ -66,6 +67,7 @@ struct VolumeParams{
     UInt3 voxel_dim;
     Float3 space;
 };
+
 struct RenderParams{
     void Reset(){
         light.updated   = false;

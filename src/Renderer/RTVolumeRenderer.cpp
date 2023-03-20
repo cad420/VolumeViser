@@ -7,6 +7,7 @@
 #include "Common.hpp"
 #include "../Common/helper_math.h"
 #include <array>
+
 #define Transform(t) t.x, t.y, t.z
 
 VISER_BEGIN
@@ -126,11 +127,7 @@ namespace{
             if(hash_table[pos][0].w == 0xffu){
                 return INVALID_VALUE;
             }
-//            if(i > 0){
-//                printf("multi times query: %d\n", i * 2 + positive);
-//            }
-//            printf("key not find: %d %d %d %d, i : %d, positive : %d\n", key.x, key.y, key.z, key.w,
-//                   i, int(positive));
+
             if(positive)
                 ++i;
             positive = !positive;
@@ -174,21 +171,12 @@ namespace{
         uint4 key = make_uint4(block_uid, sampling_lod);
         uint4 tex_coord = Query(key, hash_table);
         uint32_t tid = (tex_coord.w >> 16) & 0xffff;
-        //            printf("sampling tid : %d, %d %d %d %d\n", tid, tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w & 0xffff);
         uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
         VirtualSamplingResult ret{0, 0};
         if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
-            //                printf("sampling tex\n");
-            // valid
             float3 sampling_pos = (coord * params.cu_volume.block_size + offset_in_block + params.cu_volume.padding) * params.cu_render_params.inv_tex_shape;
 
             ret.scalar = tex3D<float>(params.cu_vtex[tid], sampling_pos.x, sampling_pos.y, sampling_pos.z);
-            //                cudaSurfaceObject_t sur;
-            //                int data;
-            //                surf2Dread(&data, sur, 1, 1);
-            //                printf("sampling pos %f %f %f, value %f",
-            //                       sampling_pos.x, sampling_pos.y, sampling_pos.z,
-            //                       ret.scalar);
 
             ret.flag = tex_coord.w & 0xffff;
         }
@@ -202,18 +190,11 @@ namespace{
 
     CUB_GPU float4 ScalarToRGBA(const RTVolumeRenderKernelParams & params,
                                 float scalar, uint32_t lod){
-        //            if(scalar > 0.3f){
-        //                return make_float4(1.f,0.5f,0.25f,0.6f);
-        //            }
-        //            else return make_float4(0.f);
         if(scalar < 0.3f) return make_float4(0.f);
         if(params.cu_per_frame_params.debug_mode == 3){
             return make_float4(scalar, scalar, scalar, 1.f);
         }
         auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.5f, 0.5f);
-        //            if(scalar >= 1.f){
-        //                printf("scalar 0 to rgba %f %f %f %f\n", color.x, color.y, color.z, color.w);
-        //            }
         return color;
     }
     CUB_GPU float4 CalcShadingColor(const RTVolumeRenderKernelParams & params,
@@ -305,8 +286,6 @@ namespace{
         float3 prev_lod_samping_pos = ray_cast_pos;
         uint32_t steps = 0;
         float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
-        //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
-        //            return ret;
 
         while(ray_cast_dist < ray_max_cast_dist){
             float3 cur_ray_pos = ray_cast_pos;// + 0.5f * dt * ray.d;
@@ -332,9 +311,7 @@ namespace{
             // compute and accumulate color
             // always assert scalar = 0.f has no meanings
             if(scalar > 0.f){
-                //                    printf("sampling scalar %.5f\n", scalar);
                 float4 mapping_color = ScalarToRGBA(params, scalar, cur_lod);
-                //                    printf("sampling scalar %.5f, color %f %f %f %f\n",scalar, mapping_color.x, mapping_color.y, mapping_color.z, mapping_color.w);
                 // always assert alpha = 0.f has no contribution
                 if(mapping_color.w > 0.f){
                     if(params.cu_per_frame_params.debug_mode != 4)
@@ -360,7 +337,6 @@ namespace{
         return ret;
     }
 
-
     CUB_GPU uint32_t Float4ToUInt(const float4& f){
         uint32_t ret = (uint32_t)(saturate(f.x) * 255u)
                        | ((uint32_t)(saturate(f.y) * 255u) << 8)
@@ -368,6 +344,7 @@ namespace{
                        | ((uint32_t)(saturate(f.w) * 255u) << 24);
         return ret;
     }
+
     CUB_GPU float3 PostProcessing(const float4& color){
         float3 ret;
         ret.x = pow(color.x, 1.f / 2.2f);
@@ -400,11 +377,7 @@ namespace{
         }
 
         __syncthreads();
-//        {
-//            float4 color = {1.f, 0.f, 0.f, 1.f};
-//            surf2Dwrite(Float4ToUInt(color), params.framebuffer._color, x * sizeof(uint32_t), y);
-//            return;
-//        }
+
         Ray ray;
         ray.o = params.cu_per_frame_params.cam_pos;
         float scale = tanf(0.5f * params.cu_per_frame_params.fov);
@@ -422,13 +395,11 @@ namespace{
             color = make_float4(PostProcessing(color), color.w);
             // exposure gamma color-grading tone-mapping...
         }
-        //            y = params.cu_per_frame_params.frame_height - 1 - y;
+
         if(params.framebuffer.color.data())
             params.framebuffer.color.at(x, y) = Float4ToUInt(color);
         else{
-
             surf2Dwrite(Float4ToUInt(color), params.framebuffer._color, x * sizeof(uint32_t), y);
-//            printf("using surface to output color\n");
         }
 
         if(params.cu_render_params.output_depth){
@@ -448,7 +419,6 @@ class RTVolumeRendererPrivate{
         CUDAStream stream;
         RTVolumeRenderKernelParams kernel_params;
     };
-
 
     struct{
         Handle<CUDAHostBuffer> tf1d;
@@ -511,6 +481,7 @@ class RTVolumeRendererPrivate{
         int node_x_idx;
         int node_y_idx;
     };
+
     // data sts for loading blocks
     struct{
         bool async;
@@ -525,9 +496,6 @@ class RTVolumeRendererPrivate{
         vutil::thread_group_t async_transfer_queue;
         std::mutex decoding_queue_mtx;
         std::mutex transfer_queue_mtx;
-//        std::vector<Handle<CUDAHostBuffer>> cached_host_blocks;
-//        std::vector<Handle<CUDAHostBuffer>> missed_host_blocks;
-//        std::unordered_set<BlockUID> cur_blocks_st;
         std::unordered_map<BlockUID, GPUPageTableMgr::PageTableItem> cur_block_infos_mp;
         std::mutex block_infos_mtx;
         std::map<int, std::vector<std::function<void()>>> tasks;
@@ -542,7 +510,6 @@ class RTVolumeRendererPrivate{
     void AQ_Update(const std::vector<BlockUID>& intersect_blocks){
         std::vector<BlockUID> missed_blocks;
         std::vector<GPUPageTableMgr::PageTableItem> block_infos;
-//        aq.cur_block_infos_mp.clear();
         {
             std::lock_guard<std::mutex> lk(aq.block_infos_mtx);
 
@@ -949,7 +916,6 @@ void RTVolumeRenderer::SetRenderMode(bool async)
 void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
 {
     // get camera view frustum from per-frame-params
-
     Frustum camera_view_frustum;
     {
         // calc world camera corners
@@ -960,6 +926,7 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
             ret.second = a + (b - a) * static_cast<float>(i + 1) / static_cast<float>(n);
             return ret;
         };
+        // calc node camera corners
         auto& o_corners = camera_view_frustum.frustum_corners;
         auto [_n_lb, _n_rb] = _calc(o_corners[0], o_corners[1], _->world_cols, _->node_x_idx);
         auto [_n_lt, _n_rt] = _calc(o_corners[2], o_corners[3], _->world_cols, _->node_x_idx);
@@ -971,9 +938,8 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
         auto [f_rb, f_rt]   = _calc(_f_rb, _f_rt, _->world_rows, _->node_y_idx);
         o_corners[0] = n_lb, o_corners[1] = n_rb, o_corners[2] = n_lt, o_corners[3] = n_rt;
         o_corners[4] = f_lb, o_corners[5] = f_rb, o_corners[6] = f_lt, o_corners[7] = f_rt;
-        std::array<Float3,8> corners;
-        for(int i = 0; i < 8; i++) corners[i] = camera_view_frustum.frustum_corners[i];
-        vutil::extract_frustum_from_corners(corners, camera_view_frustum);
+        // calc node camera view frustum
+        vutil::extract_frustum_from_corners(camera_view_frustum);
     }
 
     // compute current intersect blocks
@@ -996,13 +962,7 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
                                                 return max_lod;
                                             });
 
-
-    // query from gpu page table
-//    auto& block_infos = _->block_infos; block_infos.clear();
-//    _->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetAndLock, intersect_blocks, block_infos);
-
-
-    // add missed blocks into async-loading-queue
+    // update current intersect blocks for async-loading-queue
     _->AQ_Update(intersect_blocks);
 
     _->AQ_Commit();
@@ -1010,36 +970,39 @@ void RTVolumeRenderer::Render(Handle<FrameBuffer> frame)
     if(!_->async){
         _->AQ_Wait();
     }
+
     // start render kernel
     {
         const dim3 tile = {16u, 16u, 1u};
+
         _->kernel_params.framebuffer.color = frame->color;
         _->kernel_params.framebuffer.depth = frame->depth;
         _->kernel_params.framebuffer._color = frame->_color->_get_handle();
         if(_->kernel_params.cu_render_params.output_depth)
             _->kernel_params.framebuffer._depth = frame->_depth->_get_handle();
 
+        // use c++ 20 grammar({.block_dim = tile}) will cause nvcc compile error
         cub::cu_kernel_launch_info launch_info;
-        launch_info.shared_mem_bytes = 0;//CRTVolumeRendererPrivate::shared_mem_size;
+        launch_info.shared_mem_bytes = 0;//shared memory size in kernel params is not for __shared__ ?
         launch_info.block_dim = tile;
         launch_info.grid_dim = {(frame->frame_width + tile.x - 1) / tile.x,
                                 (frame->frame_height + tile.y - 1) / tile.y, 1};
+
         void* params[] = {&_->kernel_params};
 
         auto render_task = cub::cu_kernel::pending(launch_info, &RTVolumeRenderKernel, params);
+
         try{
             render_task.launch(_->stream).check_error_on_throw();
         }
         catch (const std::exception& err) {
-            LOG_ERROR("RTVolumeRenderer render frame failed : {}", err.what());
+            LOG_ERROR("RTVolumeRenderer CUDA render kernel run failed : {}", err.what());
         }
 
     }
 
     // post-process
     _->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, intersect_blocks, true);
-
-
 
 }
 

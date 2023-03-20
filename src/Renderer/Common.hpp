@@ -5,22 +5,27 @@
 VISER_BEGIN
 
 namespace cuda{
+
     struct AABB{
         float3 low;
         float3 high;
     };
+
     struct AABB_UI{
         uint3 low;
         uint3 high;
     };
+
     struct AABB_I{
         int3 low;
         int3 high;
     };
+
     struct Ray{
         float3 o;
         float3 d;
     };
+
     //返回光线与AABB相交的两个时刻
     //相交的话满足 t1 < t2 and t2 > 0
     CUB_CPU_GPU inline float2 RayIntersectAABB(const float3& low, const float3& high, const float3& o, const float3& inv_dir){
@@ -52,6 +57,7 @@ namespace cuda{
         ret.y = min(t_max_x, min(t_max_y, t_max_z));
         return ret;
     }
+
     CUB_CPU_GPU inline float2 RayIntersectAABB(const float3& low, const float3 high, const Ray& ray){
         return RayIntersectAABB(low, high, ray.o, 1.f / ray.d);
     }

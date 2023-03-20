@@ -9,6 +9,17 @@
 
 VISER_BEGIN
 
+enum class DistrType: int {
+    UINT8 = 0,
+    INT8,
+    INT32,
+    UINT32,
+    FLOAT32,
+    INT64,
+    UINT64,
+    FLOAT64
+};
+
 class DistributeMgr : public UnifiedRescBase{
 
     DistributeMgr();
@@ -24,17 +35,8 @@ class DistributeMgr : public UnifiedRescBase{
 
     UnifiedRescUID GetUID() const override;
 
-
     template<typename T>
     void Bcast(T* data, int count);
-
-    template<>
-    void Bcast<float>(float* data, int count);
-
-    template<>
-    void Bcast<int>(int* data, int count);
-
-    void Bcast(void* data, int count, int type);
 
     void WaitForSync();
 
@@ -48,8 +50,41 @@ class DistributeMgr : public UnifiedRescBase{
 
     bool IsRoot();
 
+  private:
+    void Bcast(void* data, int count, int type);
+
 };
 
+template <typename T>
+void DistributeMgr::Bcast(T *data, int count)
+{
+    if constexpr(std::is_same_v<T, int>){
+        Bcast(data, count, static_cast<int>(DistrType::INT32));
+    }
+    else if constexpr(std::is_same_v<T, uint64_t>){
+        Bcast(data, count, static_cast<int>(DistrType::UINT64));
+    }
+    else if constexpr(std::is_same_v<T, int64_t>){
+        Bcast(data, count, static_cast<int>(DistrType::INT64));
+    }
+    else if constexpr(std::is_same_v<T, uint32_t>){
+        Bcast(data, count, static_cast<int>(DistrType::UINT32));
+    }
+    else if constexpr(std::is_same_v<T, float>){
+        Bcast(data, count, static_cast<int>(DistrType::FLOAT32));
+    }
+    else if constexpr(std::is_same_v<T, double>){
+        Bcast(data, count, static_cast<int>(DistrType::FLOAT64));
+    }
+    else if constexpr(std::is_same_v<T, uint8_t>){
+        Bcast(data, count, static_cast<int>(DistrType::UINT8));
+    }
+    else if constexpr(std::is_same_v<T, char>){
+        Bcast(data, count, static_cast<int>(DistrType::INT8));
+    }
+    else{
+        LOG_ERROR("type not implied for Bcast");
+    }
+}
 
 VISER_END
-
