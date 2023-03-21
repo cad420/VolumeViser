@@ -8,7 +8,7 @@
 
 //============================================================================================
 void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
-    LOG_TRACE("AppSettings Initialize...");
+    LOG_DEBUG("AppSettings Initialize...");
     AppSettings::MaxHostMemBytes = info.max_host_mem_bytes;
     AppSettings::MaxRenderGPUMemBytes = info.max_render_gpu_mem_bytes;
     AppSettings::MaxComputeGPUMemBytes = info.max_compute_gpu_mem_bytes;
@@ -23,7 +23,7 @@ void AppSettings::Initialize(const VolAnnotaterCreateInfo &info) {
 //============================================================================================
 
 void ViserRescPack::Initialize() {
-    LOG_TRACE("ViserRescPack Initialize start...");
+    LOG_DEBUG("ViserRescPack Initialize start...");
 
     auto& resc_ins = ResourceMgr::GetInstance();
     auto host_mem_mgr_uid = resc_ins.RegisterResourceMgr({.type = ResourceMgr::Host,
@@ -51,22 +51,23 @@ void ViserRescPack::Initialize() {
 
     thread_group.start(AppSettings::ThreadsGroupWorkerCount);
 
-    LOG_TRACE("ViserRescPack Initialize finish...");
+    LOG_DEBUG("ViserRescPack Initialize finish...");
 }
 
 void ViserRescPack::LoadVolume(const std::string &filename) {
 
-    LOG_TRACE("Load Volume Lod File : {}", filename);
+    LOG_DEBUG("Load Volume Lod File : {}", filename);
 
     std::ifstream in(filename);
     if(!in.is_open()){
-        throw std::runtime_error("Open LOD Volume Data File failed : " + filename);
+        LOG_ERROR("Open LOD Volume Data File failed : {}", filename.c_str());
+        return;
     }
     nlohmann::json j;
     in >> j;
     uint32_t levels = j.at("levels");
     if(levels > LevelOfDist::MaxLevelCount){
-        LOG_WARN("Invalid levels for lod volume: {}", levels);
+        LOG_ERROR("Invalid levels for lod volume: {}", levels);
         levels = LevelOfDist::MaxLevelCount;
     }
 
@@ -77,7 +78,7 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
     };
     for(uint32_t lod = 0; lod < levels; lod++){
         std::string lod_path = j.at("lod" + std::to_string(lod));
-        LOG_TRACE("Load LOD({}) : {}", lod, lod_path);
+        LOG_DEBUG("Load LOD({}) : {}", lod, lod_path);
 
         vol_info.lod_vol_file_io[lod] = Handle<VolumeIOInterface>(ResourceType::Object, CreateVolumeFileByFileName(lod_path));
     }
@@ -88,7 +89,7 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
 
     auto volume_desc = vol_priv_data.volume->GetDesc();
 
-    LOG_TRACE("Load LOD Volume({}) successfully", volume_desc.volume_name);
+    LOG_DEBUG("Load LOD Volume({}) successfully", volume_desc.volume_name);
     VISER_WHEN_DEBUG(std::cout << volume_desc << std::endl)
 
     float volume_base_space = std::min({volume_desc.voxel_space.x,
@@ -96,7 +97,7 @@ void ViserRescPack::LoadVolume(const std::string &filename) {
                                         volume_desc.voxel_space.z});
 
     if(volume_base_space == 0){
-        LOG_WARN("Volume base space is zero");
+        LOG_ERROR("Volume base space is zero");
         vol_priv_data.volume_space_ratio = Float3(1.f);
     }
     else
@@ -131,7 +132,7 @@ void ViserRescPack::InitializeVolumeResc() {
 
     auto host_pool_uid = host_mem_mgr_ref.Invoke(&HostMemMgr::RegisterFixedHostMemMgr, host_pool_info);
     host_block_pool_ref = host_mem_mgr_ref.Invoke(&HostMemMgr::GetFixedHostMemMgrRef, host_pool_uid).LockRef();
-    LOG_TRACE("Successfully Create FixedHostMemMgr...");
+    LOG_DEBUG("Successfully Create FixedHostMemMgr...");
 
     GPUMemMgr::GPUVTexMgrCreateInfo vtex_info{
             .gpu_mem_mgr = Ref<GPUMemMgr>(render_gpu_mem_mgr_ref._get_ptr(), false),
@@ -147,15 +148,15 @@ void ViserRescPack::InitializeVolumeResc() {
     auto vtex_uid = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::RegisterGPUVTexMgr, vtex_info);
     gpu_vtex_mgr_ref = render_gpu_mem_mgr_ref.Invoke(&GPUMemMgr::GetGPUVTexMgrRef, vtex_uid);
     gpu_pt_mgr_ref = gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::GetGPUPageTableMgrRef);
-    LOG_TRACE("Successfully Create GPUVTexMgr...");
+    LOG_DEBUG("Successfully Create GPUVTexMgr...");
 
-    LOG_TRACE("InitializeVolumeResc finish...");
+    LOG_DEBUG("InitializeVolumeResc finish...");
 }
 
 //============================================================================================
 
 void VolRenderRescPack::Initialize(ViserRescPack& _) {
-    LOG_TRACE("VolRenderRescPack Initialize start...");
+    LOG_DEBUG("VolRenderRescPack Initialize start...");
 
     CRTVolumeRenderer::CRTVolumeRendererCreateInfo renderer_info{
             .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
@@ -173,7 +174,7 @@ void VolRenderRescPack::Initialize(ViserRescPack& _) {
     vol_query_priv_data.query_info_view = vol_query_priv_data.query_info->view_1d<float>(sizeof(float)*8);
 
 
-    LOG_TRACE("VolRenderRescPack Initialize finish...");
+    LOG_DEBUG("VolRenderRescPack Initialize finish...");
 }
 
 void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
@@ -211,14 +212,14 @@ void VolRenderRescPack::OnVolumeLoaded(ViserRescPack& _) {
     render_params.lod.updated = true;
     render_params.lod.leve_of_dist = lod;
     render_params.tf.updated = true;
-//    render_params.tf.tf_pts.pts[0.f] = Float4(0.f);
+
     render_params.tf.tf_pts.pts.push_back({0.25f, Float4(0.f, 0.1f, 0.2f, 0.f)});
     render_params.tf.tf_pts.pts.push_back({0.6f, Float4(0.3f, 0.6f, 0.9f, 1.f)});
     render_params.tf.tf_pts.pts.push_back({0.96f, Float4(0.f, 0.5f, 1.f, 1.f)});
-//    render_params.tf.tf_pts.pts[1.f] = Float4(0.f);
+
     render_params.raycast.updated = true;
     render_params.raycast.ray_step = render_base_space * 0.5;
-    render_params.raycast.max_ray_dist = 6.f;
+    render_params.raycast.max_ray_dist = 10.f;
     render_params.other.updated = true;
 
     render_params.other.inv_tex_shape = Float3(1.f / AppSettings::VTexShape.x,
@@ -409,18 +410,6 @@ void SWCRescPack::SelectSWC(SWCUID swc_id) {
     }
 
     ResetSWCRenderer();
-//    swc_renderer->Reset();
-//    auto lines = swc->PackLines();
-//    for(auto& line : lines){
-//        int n = line.size();
-//        int root = swc->GetNodeRoot(line[0].id);
-//        auto neuron_id = swc_priv_data.pt_to_neuron_mp[root];
-//        for(int i = 1; i < n; i++){
-//            vec4f prev_vert = vec4f(line[i - 1].x, line[i - 1].y, line[i - 1].z, vutil::intBitsToFloat(line[i - 1].id));
-//            vec4f cur_vert = vec4f(line[i].x, line[i].y, line[i].z, vutil::intBitsToFloat(line[i].id));
-//            swc_renderer->AddLine(prev_vert, cur_vert, neuron_id);
-//        }
-//    }
 
     //如果有绑定mesh uid 那么调用切换函数
     if(swc_mesh_mp.count(selected_swc_uid))
@@ -437,7 +426,6 @@ void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
     }
     else{
         if(pt.pid != 0){
-//            swc_priv_data.last_picked_swc_pt_id = pt.pid;
             AddPickedSWCPoint(pt.pid);
         }
 
@@ -477,7 +465,6 @@ void SWCRescPack::InsertSWCPoint(SWC::SWCPoint pt) {
     }
     //更新最新一次选中的点
     //默认当成功插入一个点后 该点成为最新一次选中的点
-//    swc_priv_data.last_picked_swc_pt_id = pt.id;
     AddPickedSWCPoint(pt.id);
 }
 
@@ -562,6 +549,7 @@ void SWCRescPack::BindMeshToSWC(MeshUID mesh_id) {
     swc_mesh_mp[selected_swc_uid] = mesh_id;
 
 }
+
 void SWCRescPack::DeleteSWCMesh() {
     assert(Selected());
     swc_mesh_mp.erase(selected_swc_uid);
@@ -572,6 +560,7 @@ void SWCRescPack::Commit() {
     assert(Selected());
     loaded_swc.at(selected_swc_uid).swc->Commit();
 }
+
 void SWCRescPack::AddPickedSWCPoint(SWCPointKey id){
     assert(id > 0);
     swc_priv_data.picked_swc_pt_q.push(id);
@@ -584,6 +573,7 @@ void SWCRescPack::AddPickedSWCPoint(SWCPointKey id){
     swc_priv_data.last_picked_swc_pt_id = id;
 
 }
+
 void SWCRescPack::SetSWCPointPickSize(int s)
 {
     swc_priv_data.picked_count = s;
@@ -597,10 +587,12 @@ void SWCRescPack::SetSWCPointPickSize(int s)
     if(!swc_priv_data.picked_swc_pt_q.empty())
         swc_renderer->Set(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
 }
+
 void SWCRescPack::UpdatePickedSWCSegmentPoints()
 {
     swc_priv_data.swc_draw_tree.SelSegPoints(swc_priv_data.picked_swc_pt_q.front(), swc_priv_data.picked_swc_pt_q.back());
 }
+
 void SWCRescPack::AddPickedSWCSegPtsToRenderer()
 {
     auto id1 = swc_priv_data.picked_swc_pt_q.front();
@@ -614,6 +606,7 @@ void SWCRescPack::AddPickedSWCSegPtsToRenderer()
     }
     swc_renderer->AddVertex(vertices);
 }
+
 void SWCRescPack::ResetSWCRenderer(bool init)
 {
     swc_renderer->Reset();
@@ -891,6 +884,7 @@ struct TreeNode{
     float longest_path_length = 0.f;
     std::vector<TreeNode*> kids;
 };
+
 struct DrawTreeNode{
     Float2 pos;
     TreeNode* swc_node;
@@ -898,8 +892,6 @@ struct DrawTreeNode{
     std::vector<DrawTreeNode*> up;//往上的子节点
     std::vector<DrawTreeNode*> down;//往下的子节点
 };
-
-
 
 void SWCDrawTree::Build(Handle<SWC> swc) {
 
@@ -1091,6 +1083,7 @@ std::vector<DrawPoint> SWCDrawTree::CalcDrawSWCPoints() {
 
     return ret;
 }
+
 void SWCDrawTree::SelSegPoints(SWCPointKey a, SWCPointKey b){
     assert(swc.IsValid());
 
@@ -1128,5 +1121,4 @@ void SWCDrawTree::SelSegPoints(SWCPointKey a, SWCPointKey b){
             }
         }
     }
-
 }

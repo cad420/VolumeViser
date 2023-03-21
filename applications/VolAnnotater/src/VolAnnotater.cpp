@@ -30,14 +30,10 @@ VolAnnotater::VolAnnotater(const VolAnnotaterCreateInfo &info) {
     else if(info.log_level == LOG_LEVEL_INFO){
         SET_LOG_LEVEL_INFO
     }
-    else if(info.log_level == LOG_LEVEL_ERROR){
+    else{
         SET_LOG_LEVEL_ERROR
     }
-    else{
-        SET_LOG_LEVEL_CRITICAL
-    }
 
-    SET_LOG_LEVEL_TRACE
 
     try{
         AppSettings::Initialize(info);

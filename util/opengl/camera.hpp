@@ -40,11 +40,13 @@ VUTIL_GL_BEGIN
 
         void recalculate_matrics() noexcept;
 
-        float get_near_z() const noexcept;
+        float& get_near_z() noexcept;
 
-        float get_far_z() const noexcept;
+        float& get_far_z() noexcept;
 
         const vec3f &get_position() const noexcept;
+
+        vec3f& get_position() noexcept;
 
         /**
          * @return {hori_radians,vert_radians}

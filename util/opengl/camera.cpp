@@ -68,11 +68,11 @@ VUTIL_GL_BEGIN
         proj = transform::perspective(deg2rad(fov_deg * 0.5f),w_over_h,near_z,far_z);
         view_proj = proj * view;
     }
-    float fps_camera_t::get_near_z() const noexcept
+    float& fps_camera_t::get_near_z() noexcept
     {
         return near_z;
     }
-    float fps_camera_t::get_far_z() const noexcept
+    float& fps_camera_t::get_far_z() noexcept
     {
         return far_z;
     }
@@ -111,6 +111,9 @@ VUTIL_GL_BEGIN
     float fps_camera_t::get_w_over_h() const noexcept {
         return w_over_h;
     }
+    vec3f &fps_camera_t::get_position() noexcept
+    {
+        return pos;
+    }
 
-
-VUTIL_GL_END
+    VUTIL_GL_END

@@ -3,8 +3,8 @@ set(ENABLE_OPENGL ON)
 file(
         GLOB_RECURSE
         VolAnnotater_SRCS
-        "*.hpp"
-        "*.cpp"
+        "src/*.hpp"
+        "src/*.cpp"
 )
 
 add_executable(VolAnnotater ${VolAnnotater_SRCS})

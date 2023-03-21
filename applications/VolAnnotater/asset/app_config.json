@@ -5,7 +5,8 @@
   "render_gpu_index": 0,
   "compute_gpu_index":0,
   "max_fixed_host_mem_gb": 3,
-  "async_decoding_threads_count":2,
+  "cpu_decoding_threads_count":2,
   "virtual_texture_count": 10,
-  "virtual_texture_shape": [1024,1024,1024]
+  "virtual_texture_shape": [1024,1024,1024],
+  "log_level": 0
 }

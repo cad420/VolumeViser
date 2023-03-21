@@ -95,7 +95,6 @@ private:
 
     bool can_start_annotating();
 
-    //todo rename to is_editing
     bool is_annotating();
 
     void check_and_add_swc_pt();

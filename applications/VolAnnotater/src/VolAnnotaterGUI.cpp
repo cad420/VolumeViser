@@ -69,8 +69,6 @@ void VolAnnotaterGUI::initialize() {
         swc2mesh_resc->Select(uid);
     };
 
-//    viser_resc->render_gpu_mem_mgr_ref->_get_cuda_context()->set_ctx();
-
     init_ui_func();
 }
 
@@ -135,9 +133,7 @@ void VolAnnotaterGUI::handle_events() {
     vol_camera_changed |= window_priv_data.vol_render_resize;
 
 
-    if(
-//        is_annotating() &&
-        mouse->is_pressed(mouse_button_t::Mouse_Button_Left)){
+    if(mouse->is_pressed(mouse_button_t::Mouse_Button_Left)){
         auto [x, y] = ImGui::GetIO().MouseClickedPos[0];
         x = x - window_priv_data.vol_render_window_pos.x - 1;
         y = y - window_priv_data.vol_render_window_pos.y - 22;
@@ -154,57 +150,32 @@ void VolAnnotaterGUI::handle_events() {
 }
 
 void VolAnnotaterGUI::show_editor_ui() {
-    Timer timer;
-    timer.start();
     show_editor_menu(&editor_menu_window_open);
-    timer.stop();
-//    timer.print_duration("editor menu");
-    timer.start();
+
     show_editor_vol_render_info_window(&vol_render_info_window_open);
-    timer.stop();
-//    timer.print_duration("editor vol render info window");
-    timer.start();
+
     show_editor_vol_info_window(&vol_info_window_open);
-    timer.stop();
-//    timer.print_duration("editor vol info window");
-    timer.start();
+
     show_editor_vol_render_window(&vol_render_window_open);
-    timer.stop();
-//    timer.print_duration("editor vol render window");
-    timer.start();
+
     show_editor_mesh_render_info_window(&mesh_render_info_window_open);
-    timer.stop();
-//    timer.print_duration("editor mesh render info window");
-    timer.start();
+
     show_editor_mesh_render_window(&mesh_render_window_open);
-    timer.stop();
-//    timer.print_duration("editor mesh render window");
-    timer.start();
+
     show_editor_swc_window(&swc_info_window_open);
-    timer.stop();
-//    timer.print_duration("editor swc window");
-    timer.start();
 
     show_editor_swc_op_window(&swc_op_window_open);
 
     show_editor_swc_tree_window(&swc_tree_window_open);
-    timer.stop();
-//    timer.print_duration("editor swc tree window");
-    timer.start();
+
     show_editor_neuron_mesh_window(&neuron_mesh_window_open);
-    timer.stop();
-//    timer.print_duration("editor neuron mesh window");
-    timer.start();
+
     show_smooth_mesh_window(&smooth_mesh_window_open);
-    timer.stop();
-//    timer.print_duration("smooth mesh window");
 
     show_swc_load_window(&swc_load_window_open);
 
-    timer.start();
     show_debug_window(nullptr);
-    timer.stop();
-//    timer.print_duration("debug window");
+
 }
 
 void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
@@ -236,7 +207,6 @@ void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
         ImGui::DockBuilderSetNodeSize(main_docking_id,
                                       ImVec2(window->get_window_width(), window->get_window_height() - 18.0f));
 
-
         ImGui::DockBuilderFinish(main_docking_id);
     }
 
@@ -259,6 +229,7 @@ void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
 
             ImGui::EndMenu();
         }
+
         if(ImGui::BeginMenu("Edit")){
             if(ImGui::MenuItem(" Annotate ", nullptr, is_annotating(), can_start_annotating())){
                 if(!is_annotating()){
@@ -275,6 +246,7 @@ void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
 
             ImGui::EndMenu();
         }
+
         if(ImGui::BeginMenu("Window")){
             ImGui::MenuItem("Vol Info", nullptr, &vol_info_window_open);
             ImGui::MenuItem("Render Info", nullptr, &vol_render_info_window_open);
@@ -289,7 +261,6 @@ void VolAnnotaterGUI::show_editor_menu(bool* p_open) {
 
         ImGui::EndMenuBar();
     }
-
 
     ImGui::End();
 }
@@ -346,20 +317,20 @@ void VolAnnotaterGUI::show_editor_vol_info_window(bool *p_open) {
 }
 
 void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_None | ImGuiWindowFlags_HorizontalScrollbar;
 
     if(p_open && !*p_open) return;
 
     if(ImGui::Begin("Vol Render Info", p_open, window_flags)){
         ImGui::BulletText("Vol Render Frame Time: %s", vol_render_timer.duration_str().c_str());
 
-
         if(ImGui::TreeNode("Camera Setting")){
-            auto pos = camera.get_position();
-            ImGui::BulletText("Camera Pos %.3f %.3f %.3f", pos.x, pos.y, pos.z);
             auto dir = camera.get_xyz_direction();
             ImGui::BulletText("Camera Dir %.3f %.3f %.3f", dir.x, dir.y, dir.z);
-            bool update = false;
+            auto& pos = camera.get_position();
+            bool update = ImGui::InputFloat3("Camera Pos %.5f %.5f %.5f", &pos.x);
+            update |= ImGui::InputFloat("Camera Near Plane %.5f", &camera.get_near_z());
+            update |= ImGui::InputFloat("Camera Far  Plane %.5f", &camera.get_far_z());
             update |= ImGui::InputFloat("Move Speed", &vol_camera_move_speed, 0.f, 0.f, "%.5f");
             update |= ImGui::InputFloat("Rotate Speed", &vol_camera_view_ratation_speed, 0.f, 0.f, "%.5f");
             if(update){
@@ -395,8 +366,6 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
                     }
                 }
 
-
-
                 ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
                 ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
                 const int ysize = 255;
@@ -429,8 +398,6 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
                     return ysize - alpha * ysize;
                 };
 
-
-
                 if(is_active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
                     bool pick = false;
                     for(auto& [x_pos, color] : pt_mp){
@@ -444,8 +411,6 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
                     }
                     if(!pick) selected_pt = false;
                 }
-
-
 
                 if(!selected_pt && check_add){
                     auto it = pt_mp.upper_bound(mouse_pos_in_canvas.x);
@@ -484,14 +449,12 @@ void VolAnnotaterGUI::show_editor_vol_render_info_window(bool *p_open) {
                     tf_update = true;
                 }
 
-
                 //add
                 if(is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Left)
                     && selected_pt){
                     int nx = sel_pos + io.MouseDelta.x;
                     auto c = pt_mp.at(sel_pos);
                     int ny = alpha_to_canvas_y(c.w) + io.MouseDelta.y;
-//                    LOG_DEBUG("ny : {}, delta y: {}", ny, io.MouseDelta.y);
                     ny = (std::min)(ny, ysize);
                     ny = (std::max)(ny, 0);
                     if(nx == sel_pos || pt_mp.count(nx) == 0){
@@ -585,7 +548,6 @@ void VolAnnotaterGUI::show_editor_vol_render_window(bool *p_open) {
 
     if(p_open && !*p_open) return;
 
-
     if(ImGui::Begin("Vol Render", p_open, window_flags)){
         auto [px, py] = ImGui::GetWindowPos();
         window_priv_data.vol_render_window_pos = vec2i(px, py);
@@ -601,7 +563,6 @@ void VolAnnotaterGUI::show_editor_vol_render_window(bool *p_open) {
         window_priv_data.vol_mesh_render_hovered = ImGui::IsItemHovered();
 
          frame_vol_render();
-
 
     }
 
@@ -663,7 +624,7 @@ void VolAnnotaterGUI::show_editor_mesh_render_window(bool *p_open) {
             ImGui::End();
             return;
         }
-//        AutoTimer t("frame mesh render");
+
         ImGui::InvisibleButton("mesh-render", ImVec2(x, y));
         window_priv_data.vol_mesh_render_hovered |= ImGui::IsItemHovered();
         frame_mesh_render();
@@ -706,7 +667,6 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
         }
 
 
-
         if(ImGui::Button("New SWC", ImVec2(120, 18))){
             swc_resc->CreateSWC();
 
@@ -729,7 +689,6 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
 
         if(ImGui::Button("Load", ImVec2(120, 18))){
             swc_load_window_open = true;
-//            swc_file_dialog.Open();
         }
 
         ImGui::SameLine();
@@ -758,15 +717,11 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
                 auto& sel_swc = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).swc;
                 auto sel_swc_pt_id = swc_resc->swc_priv_data.last_picked_swc_pt_id;
                 static char buffer[64] = {'\0'};
-//                const int max_display_item = 32;
-//                int display_items = 0;
                 for(auto it = sel_swc->begin(); it != sel_swc->end(); ++it){
-//                    if(display_items++ > max_display_item) break;
                     ImGui::TableNextRow();
                     bool sel = it->first == sel_swc_pt_id;
                     ImGui::TableSetColumnIndex(0);
                     if(ImGui::Selectable(std::to_string(it->first).c_str(), sel)){
-//                        swc_resc->swc_priv_data.last_picked_swc_pt_id = it->first;
                         swc_resc->AddPickedSWCPoint(it->first);
                     }
                     sprintf(buffer, "%d %d %.5f %.5f %.5f %.5f", it->second.tag, it->second.pid,
@@ -783,22 +738,6 @@ void VolAnnotaterGUI::show_editor_swc_window(bool *p_open) {
 
     ImGui::End();
 
-//    swc_file_dialog.Display();
-//    if(swc_file_dialog.HasSelected()){
-//        swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
-//        //第一次从文件中加载swc后 因为所有的swc点都是新插入的 因此需要更新受影响的block
-//        swc2mesh_resc->SetMeshStatus(SWC2MeshRescPack::Blocked);
-//
-//        std::string neuron_name = swc_resc->loaded_swc.at(swc_resc->selected_swc_uid).name
-//                                  + "_neuron";
-//        swc2mesh_resc->CreateMesh(neuron_name);
-//
-//        swc_resc->BindMeshToSWC(swc2mesh_resc->selected_mesh_uid);
-//
-//        update_swc_influenced_blocks();
-//
-//        swc_file_dialog.ClearSelected();
-//    }
 }
 
 void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
@@ -878,9 +817,9 @@ void VolAnnotaterGUI::show_editor_swc_op_window(bool *p_open) {
                 }
 
 
-
                 ImGui::EndTabItem();
             }
+
             if(ImGui::BeginTabItem("Segment")){
                 swc_op = SWC_OP_Segment;
 
@@ -949,12 +888,11 @@ void VolAnnotaterGUI::show_editor_swc_tree_window(bool *p_open) {
         ImGui::InvisibleButton("swc-tree-view",
                                ImVec2(x,y),
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-//        ImGui::SetItemUsingMouseWheel();
+
         ImGuiIO& io = ImGui::GetIO();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
         draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(30, 30, 30, 255));
-//        draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
 
         const bool is_hovered = ImGui::IsItemHovered(); // Hovered
         const bool is_active = ImGui::IsItemActive();   // Held
@@ -1072,7 +1010,7 @@ void VolAnnotaterGUI::show_editor_neuron_mesh_window(bool *p_open) {
                 if(ImGui::Selectable(_.name.c_str(), select)){
                     swc2mesh_resc->Select(id);
 
-                    LOG_TRACE("Select Neuron Mesh : {}, {}", id, _.name);
+                    LOG_DEBUG("Select Neuron Mesh : {}, {}", id, _.name);
                 }
             }
 
@@ -1222,8 +1160,6 @@ void VolAnnotaterGUI::show_swc_load_window(bool *p_open)
 
     swc_file_dialog.Display();
     if(swc_file_dialog.HasSelected()){
-//        swc_resc->LoadSWCFile(swc_file_dialog.GetSelected().string());
-
         std::memcpy(swc_filename, swc_file_dialog.GetSelected().string().c_str(),
                     swc_file_dialog.GetSelected().string().length());
 
@@ -1334,7 +1270,6 @@ void VolAnnotaterGUI::frame_vol_render() {
 
 
     if(status_flags & VOL_DRAW_SWC){
-//        AutoTimer timer("render swc");
         render_swc();
     }
 
@@ -1372,12 +1307,10 @@ void VolAnnotaterGUI::frame_mesh_render() {
     }
 
     if(swc2mesh_resc->DrawMesh()){
-//        AutoTimer t("draw mesh");
         mesh_render_framebuffer.fbo.bind();
         GL_EXPR(glViewport(0, 0, w, h));
         mesh_render_framebuffer.fbo.attach(GL_COLOR_ATTACHMENT0, mesh_render_framebuffer.color);
         vutil::gl::framebuffer_t::clear_color_depth_buffer();
-
 
 
         if(debug_priv_data.mesh_render_line_mode){ GL_EXPR(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)); }
@@ -1473,18 +1406,13 @@ void VolAnnotaterGUI::render_volume() {
     for(auto& block : blocks_info){
         if(!block.second.Missed()) continue;
         auto block_hd = viser_resc->host_block_pool_ref.Invoke(&FixedHostMemMgr::GetBlock, block.first.ToUnifiedRescUID());
-        LOG_DEBUG("ok111 {}", block_hd.GetUID());
         assert(block_hd.IsLocked());
         if(block_hd.IsReadLocked()){
-            LOG_DEBUG("ok222");
             host_blocks[block.first] = std::move(block_hd);
-            LOG_DEBUG("okok222");
         }
         else{
-            LOG_DEBUG("ok333");
             block_hd.SetUID(block.first.ToUnifiedRescUID());
             missed_host_blocks[block.first] = std::move(block_hd);
-            LOG_DEBUG("okok333");
         }
     }
 
@@ -1499,16 +1427,7 @@ void VolAnnotaterGUI::render_volume() {
                         block_handle = std::move(missed_block.second)
                 ]()mutable{
                     this->viser_resc->vol_priv_data.volume->ReadBlock(block, *block_handle);
-                    if constexpr (false){
-                        std::vector<int> table(256, 0);
-                        auto v = block_handle->view_1d<uint8_t>(256 * 256 * 256);
-                        for(int i = 0; i < 1 << 24; i++){
-                            table[v.at(i)]++;
-                        }
-//                        for(int i = 0; i < 256; i++)
-//                            std::cout << "(" << i << "," << table[i] << ")  ";
-//                        std::cout << std::endl;
-                    }
+
                     block_handle.SetUID(block.ToUnifiedRescUID());
                     block_handle.ConvertWriteToReadLock();
                     this->vol_render_resc->vol_render_priv_data.host_blocks[block] = std::move(block_handle);
@@ -1543,25 +1462,30 @@ void VolAnnotaterGUI::render_volume() {
     //同步，等待所有解压任务完成
     viser_resc->thread_group.wait_idle();
 
+#ifdef VISER_DEBUG
     static size_t t_cnt = 0;
     START_TIMER
+#endif
+
     //将数据块上传到虚拟纹理
     for(auto& missed_block : blocks_info){
         if(!missed_block.second.Missed()) continue;
         auto& handle = host_blocks[missed_block.first];
         //这部分已经在CPU的数据块，调用异步memcpy到GPU
-        viser_resc->gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTex, handle, missed_block.second);
+        viser_resc->gpu_vtex_mgr_ref.Invoke(&GPUVTexMgr::UploadBlockToGPUTexAsync, handle, missed_block.second);
     }
 
-//    viser_resc->gpu_vtex_mgr_ref->Flush();
+    viser_resc->gpu_vtex_mgr_ref->Flush();
 
     for(auto& [_, handle] : host_blocks){
         handle.ReleaseReadLock();
     }
 
+#ifdef VISER_DEBUG
     STOP_TIMER("flush")
     t_cnt += __t.count();
     std::cerr << "t cnt : " << t_cnt << std::endl;
+#endif
 
     vol_render_resc->crt_vol_renderer->BindPTBuffer(viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::GetPageTable, true).GetHandle());
 
@@ -1583,7 +1507,7 @@ bool VolAnnotaterGUI::query_volume() {
     auto h = window_priv_data.vol_render_window_size.y;
     auto [x, y] = vol_render_resc->vol_query_priv_data.query_pos;
     if(x < 0 || x >= w || y < 0 || y > h){
-        LOG_TRACE("query pos out of frame: {} {} for frame size {} {}", x, y, w, h);
+        LOG_DEBUG("query pos out of frame: {} {} for frame size {} {}", x, y, w, h);
         return false;
     }
 
@@ -1594,10 +1518,19 @@ bool VolAnnotaterGUI::query_volume() {
 }
 
 void VolAnnotaterGUI::load_volume(const std::string &filename) {
-    LOG_TRACE("load_volume start...");
-    LOG_TRACE("load volume filename : {}", filename.c_str());
+    LOG_DEBUG("load_volume start...");
+    LOG_DEBUG("load volume filename : {}", filename.c_str());
 
-    viser_resc->LoadVolume(filename);
+    try
+    {
+        viser_resc->LoadVolume(filename);
+    }
+    catch (const std::exception& err)
+    {
+        LOG_ERROR("{}", err.what());
+        LOG_DEBUG("load_volume failed...");
+        return;
+    }
 
     vol_render_resc->OnVolumeLoaded(*viser_resc);
 
@@ -1611,7 +1544,7 @@ void VolAnnotaterGUI::load_volume(const std::string &filename) {
 
     update_vol_camera_setting(true);
 
-    LOG_TRACE("load_volume finish...");
+    LOG_DEBUG("load_volume finish...");
 }
 
 void VolAnnotaterGUI::update_per_frame() {
@@ -1888,10 +1821,11 @@ void VolAnnotaterGUI::generate_modified_mesh() {
 
     size_t count = swc_segments.size();
     if(count > MaxSegmentCount){
-        throw std::runtime_error("SWC segments' size large than MaxSegmentCount : " + std::to_string(count));
+        LOG_ERROR("SWC segments' size large than MaxSegmentCount : {}", count);
+        return;
     }
 
-    LOG_TRACE("start voxelize swc segments count : {}", count);
+    LOG_DEBUG("start voxelize swc segments count : {}", count);
 
     auto gen_box = [](const Float4& f){
         BoundingBox3D box;
@@ -1899,17 +1833,18 @@ void VolAnnotaterGUI::generate_modified_mesh() {
         box |= Float3(f.x + f.w, f.y + f.w, f.z + f.w);
         return box;
     };
+
     //重新生成真正涉及到的数据数据块 wrong!
     //不需要了 已经拿到了受影响的swc segments和真正受影响的blocks 前者的涉及的blocks可能比后者要多
+    //    for(auto& seg : swc_segments){
+    //        auto box = gen_box(seg.first) | gen_box(seg.second);
+    //        std::vector<BlockUID> tmp;
+    //        ComputeIntersectedBlocksWithBoundingBox(tmp, vol_render_resc->render_vol.lod0_block_length_space,
+    //                                                vol_render_resc->render_vol.lod0_block_dim,
+    //                                                vol_render_resc->render_vol.volume_bound, box);
+    //        for(auto& b : tmp) seg_blocks.insert(b);
+    //    }
 
-//    for(auto& seg : swc_segments){
-//        auto box = gen_box(seg.first) | gen_box(seg.second);
-//        std::vector<BlockUID> tmp;
-//        ComputeIntersectedBlocksWithBoundingBox(tmp, vol_render_resc->render_vol.lod0_block_length_space,
-//                                                vol_render_resc->render_vol.lod0_block_dim,
-//                                                vol_render_resc->render_vol.volume_bound, box);
-//        for(auto& b : tmp) seg_blocks.insert(b);
-//    }
     //获取页表
     std::vector<BlockUID> seg_blocks_; seg_blocks_.reserve(seg_blocks.size());
     for(auto& b : seg_blocks){
@@ -1957,12 +1892,13 @@ void VolAnnotaterGUI::generate_modified_mesh() {
                   uid.x, uid.y, uid.z, uid.w, tri_num);
 
         //从mc_params.gen_host_vertices_ret中拷贝结果 并且生成normal 即转换为MeshData0
-
         auto mesh = NewHandle<Mesh>(ResourceType::Object);
         auto view = mc_params.gen_host_vertices_ret;
+
         mesh->Insert(MeshData0(tri_num, [&](int vert_idx)->const Float3&{
             return view.at(vert_idx);
         }), 0);
+
         swc2mesh_resc->UpdateBlockMesh(uid, std::move(mesh));
     }
     //有一些被标记为modified的block其实不会被体素化 这部分也更更新为Updated 虽然这部分可能没有mesh
@@ -1994,6 +1930,7 @@ void VolAnnotaterGUI::update_vol_camera_setting(bool init) {
 
     camera.set_move_speed(vol_camera_move_speed);
     camera.set_view_rotation_speed(vol_camera_view_ratation_speed);
+    camera.recalculate_matrics();
 }
 
 bool VolAnnotaterGUI::pick_swc_point(){
@@ -2005,8 +1942,7 @@ bool VolAnnotaterGUI::pick_swc_point(){
                       vol_swc_render_framebuffer.m_hash_id.get_raw_data()));
     GL_EXPR(glFinish());
     auto [x, y] = vol_render_resc->vol_query_priv_data.query_pos;
-//    x += 1;
-//    y += 22;
+
     auto id = vol_swc_render_framebuffer.m_hash_id.at(x, y);
 
 
@@ -2020,17 +1956,13 @@ bool VolAnnotaterGUI::pick_swc_point(){
         swc_resc->AddPickedSWCSegPtsToRenderer();
     }
 
-    //    VISER_WHEN_DEBUG(
-    //        vutil::save_rgb_to_png_file("test.png",vol_swc_render_framebuffer.m_hash_id.map([](int x){
-    //                                                                                        return color3b(x);
-    //                                                                                    }).get_data());)
-
     return true;
 }
 
 void VolAnnotaterGUI::process_picked_swc_point(){
 
 }
+
 void VolAnnotaterGUI::init_ui_func()
 {
     auto picked_pt_in_vol_render_frame = [&]()->bool{
@@ -2181,4 +2113,3 @@ void VolAnnotaterGUI::init_ui_func()
         }
     };
 }
-

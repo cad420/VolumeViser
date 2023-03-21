@@ -1,6 +1,7 @@
 #include <Model/SWC.hpp>
 #include <unordered_set>
 #include <stack>
+
 VISER_BEGIN
 
 class SWCPrivate{
@@ -286,16 +287,6 @@ public:
                 }
             }
             else{
-//                if(op == Old_UpdateR){
-//                    for(auto& pt : pts){
-//                        //更新半径前后的点都会影响最后的范围
-//                        st.insert(pt);
-//                        if(QueryNode(pt.id)){
-//                            st.insert(GetNode(pt.id));
-//                        }
-//                    }
-//                    //半径还会影响相邻的点
-//                }
                 for(auto& pt : pts){
                     st.insert(pt);
                     if(QueryNode(pt.id)){
@@ -350,6 +341,8 @@ public:
     void SWC::UpdateRadius(SWCPointKey id, float r) noexcept
     {
         if(!QueryNode(id)) return;
+
+        _->direct_influenced_pts[Old_UpdateR].push_back(_->swc_point_mp.at(id));
         _->swc_point_mp.at(id).radius = r;
         _->direct_influenced_pts[Old_UpdateR].push_back(_->swc_point_mp.at(id));
     }
@@ -390,4 +383,4 @@ public:
         _->node_mp.at(id0).children.insert(id1);
     }
 
-    VISER_END
+VISER_END

@@ -1,5 +1,6 @@
 ## VolAnnotater
 体数据的标注和修改系统
 
-### 问题
-神经元一定是树型结构嘛
+### offline neuron 3d surface mesh reconstruct tool
+* source files in directory `./cmd`
+
