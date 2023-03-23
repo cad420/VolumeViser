@@ -35,6 +35,10 @@ VUTIL_BEGIN
         return stream.str();
     }
 
+    inline void replace(std::string& str, const char o, const char n){
+        for(auto& c : str) if(c == o) c = n;
+    }
+
     inline std::vector<std::string> split(const std::string& str,const char* delim,bool allow_empty = false){
         if (str.empty())
             return {};

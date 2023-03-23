@@ -13,5 +13,6 @@ target_link_libraries(
         VolAnnotater PRIVATE VolumeViserLib
 )
 
-target_compile_definitions(VolViewer PRIVATE cxx_std_20)
+target_compile_definitions(VolAnnotater PRIVATE cxx_std_20)
 
+add_subdirectory(tool)

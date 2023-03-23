@@ -95,6 +95,11 @@ void MeshFile::WriteMeshData(const MeshData0& data) {
         for(int j = 0; j < 3; j++){
             auto k = i * 3 + j;
             auto idx = data.indices[k];
+            if(idx == INVALID_INDEX){
+                assert(j == 0);
+                tris.pop_back();
+                break;
+            }
             auto& pos = data.vertices[idx].pos;
             auto& norm = data.vertices[idx].normal;
             tri.pos[j] = idx + 1;
@@ -204,13 +209,16 @@ MeshData0 Merge(const std::vector<MeshData0>& meshes){
         for(int i = 0; i < tri_count; i++){
             for(int j = 0; j < 3; j++){
                 uint32_t vert_idx = mesh.indices[i * 3 + j];
+                if(vert_idx == INVALID_INDEX){
+                    assert(j == 0);
+                    break;
+                }
                 auto& vert = mesh.vertices[vert_idx];
                 if(vert_mp.count(vert) == 0){
                     vert_mp[vert] = idx++;
                     ret.vertices.push_back(vert);
 
                 }
-
                 ret.indices.push_back(vert_mp.at(vert));
             }
         }

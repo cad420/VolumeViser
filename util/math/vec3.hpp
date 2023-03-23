@@ -28,6 +28,8 @@ VUTIL_BEGIN
 
         bool is_finite() const noexcept;
 
+        bool is_nan() const noexcept;
+
         auto length() const noexcept;
 
         auto length_square() const noexcept;

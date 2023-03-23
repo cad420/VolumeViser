@@ -1808,6 +1808,7 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     };
 
 
+    //todo: maybe use octree to optimize
     for(auto& pt : pts){
         if(pt_mp.count(pt.pid) == 0) continue;
         auto& prev_pt = pt_mp.at(pt.pid);
@@ -1911,6 +1912,7 @@ void VolAnnotaterGUI::generate_modified_mesh() {
     //跑完mc后再释放pt
     viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::Release, seg_blocks_, true);
 
+    //因为修改半径后需要重新体素化
     viser_resc->gpu_pt_mgr_ref.Invoke(&GPUPageTableMgr::ClearWithOption, [](const BlockUID& uid){
         return uid.IsSWC();
     });

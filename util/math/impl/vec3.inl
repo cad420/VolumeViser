@@ -58,7 +58,7 @@ VUTIL_BEGIN
     template <typename T>
     bool tvec3<T>::is_finite() const noexcept
     {
-        return is_finite(x) && is_finite(y) && is_finite(z);
+        return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
     }
 
     template <typename T>
@@ -179,6 +179,10 @@ VUTIL_BEGIN
         y /= rhs;
         z /= rhs;
         return *this;
+    }
+    template <typename T> bool tvec3<T>::is_nan() const noexcept
+    {
+        return std::isnan(x) || std::isnan(y) || std::isnan(z);
     }
 
     template <typename T>

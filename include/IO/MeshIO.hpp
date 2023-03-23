@@ -8,6 +8,9 @@ VISER_BEGIN
 using PosType = Float3;
 using NormalType = Float3;
 using IndexType = uint32_t;
+
+#define INVALID_INDEX 0xffffffffu
+
 struct Vertex{
     Vertex() = default;
     Vertex(const PosType& pos, const NormalType& normal)
