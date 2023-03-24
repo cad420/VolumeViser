@@ -9,4 +9,28 @@ void MeshSmoothing(MeshData0& mesh, float lambda, float mu, int iterations, int 
 
 void MeshSmoothing(MeshData0& mesh, float lambda, float mu, int iterations, vutil::thread_group_t& threads);
 
+class MeshSmootherPrivate;
+class MeshSmoother : public UnifiedRescBase{
+  public:
+    struct MeshSmootherCreateInfo{
+        Ref<HostMemMgr> host_mem_mgr;
+        Ref<GPUMemMgr> gpu_mem_mgr;
+    };
+
+    explicit MeshSmoother(const MeshSmootherCreateInfo& );
+
+    ~MeshSmoother();
+
+    void Lock() override;
+
+    void UnLock() override;
+
+    UnifiedRescUID GetUID() const override;
+
+    void Smoothing(MeshData0& mesh, float lambda, float mu, int iterations);
+
+  private:
+    std::unique_ptr<MeshSmootherPrivate> _;
+};
+
 VISER_END

@@ -24,6 +24,7 @@ set_source_files_properties(
         ${PROJECT_SOURCE_DIR}/src/Renderer/LVolumeRenderer.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/MarchingCube.cpp
         ${PROJECT_SOURCE_DIR}/src/Algorithm/Voxelization.cpp
+        ${PROJECT_SOURCE_DIR}/src/Algorithm/MeshSmoother.cpp
         PROPERTIES LANGUAGE CUDA
 )
 
