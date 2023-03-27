@@ -50,6 +50,8 @@ public:
     using GPUVTexMgrCreateInfo = GPUVTexMgr::GPUVTexMgrCreateInfo;
     UnifiedRescUID RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo& info);
 
+    void ReleaseGPUVTexMgr(UnifiedRescUID uid);
+
     Ref<GPUVTexMgr> GetGPUVTexMgrRef(UnifiedRescUID uid);
 
     CUDAContext _get_cuda_context() const ;

@@ -650,6 +650,12 @@ void SWC2MeshRescPack::Initialize(ViserRescPack& _) {
     };
     mc_algo = NewHandle<MarchingCubeAlgo>(ResourceType::Object, mc_info);
 
+    MeshSmoother::MeshSmootherCreateInfo ms_info{
+            .gpu_mem_mgr = Ref<GPUMemMgr>(_.render_gpu_mem_mgr_ref._get_ptr(), false),
+            .host_mem_mgr = Ref<HostMemMgr>(_.host_mem_mgr_ref._get_ptr(), false)
+    };
+    mesh_smoother = NewHandle<MeshSmoother>(ResourceType::Object, ms_info);
+
     neuron_renderer = std::make_unique<NeuronRenderer>(NeuronRenderer::NeuronRendererCreateInfo{});
 }
 
@@ -869,7 +875,15 @@ void SWC2MeshRescPack::SmoothMesh(float lambda, float mu, int iterations) {
         LOG_ERROR("SmoothMesh must set selected and merged before");
         return;
     }
-    GetSelected().mesh->Smooth(lambda, mu, iterations);
+
+    AutoTimer timer("mesh smoothing");
+    if(!mesh_smoother.IsValid()){
+        GetSelected().mesh->Smooth(lambda, mu, iterations);// swc1 45s
+    }
+    else{
+        // swc1 0.587s
+        mesh_smoother->Smoothing(GetSelected().mesh->GetPackedMeshDataRef(), lambda, mu, iterations);
+    }
 
     MeshUpdated();
 }

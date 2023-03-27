@@ -1,10 +1,10 @@
 {
-  "max_host_mem_gb" : 6,
+  "max_host_mem_gb" : 10,
   "max_render_gpu_mem_gb" : 16,
   "max_compute_gpu_mem_gb" : 12,
   "render_gpu_index": 0,
   "compute_gpu_index":0,
-  "max_fixed_host_mem_gb": 3,
+  "max_fixed_host_mem_gb": 6,
   "cpu_decoding_threads_count":2,
   "virtual_texture_count": 10,
   "virtual_texture_shape": [1024,1024,1024],

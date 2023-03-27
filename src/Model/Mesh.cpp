@@ -63,6 +63,14 @@ Mesh::MeshData Mesh::GetPackedMeshData() const {
     return ::viser::Merge(ret);
 }
 
+Mesh::MeshData &Mesh::GetPackedMeshDataRef()
+{
+    if(_->shapes.size() > 1){
+        MergeShape();
+    }
+    assert(_->shapes.count(0));
+    return _->shapes.at(0);
+}
 
 int Mesh::GetMeshShapeCount() const {
     return _->shapes.size();

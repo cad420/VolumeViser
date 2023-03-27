@@ -70,7 +70,10 @@ Handle<CUDABuffer> GPUMemMgr::AllocBuffer(ResourceType type, size_t bytes) {
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
     }
-    return NewHandle<CUDABuffer>(type, bytes, cub::cu_memory_type::e_cu_device, _->ctx);
+    return NewHandle<CUDABuffer>(type, bytes, cub::cu_memory_type::e_cu_device, _->ctx).AddCallback([this, bytes = bytes]{
+        LOG_DEBUG("Release Buffer for GPUMemMgr with bytes : {}", bytes);
+        _->used_mem_bytes -= bytes;
+    });
 }
 
 Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_t width, size_t height, size_t ele_size) {
@@ -80,7 +83,10 @@ Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
     }
-    return NewHandle<CUDAPitchedBuffer>(type, width, height, ele_size, _->ctx);
+    return NewHandle<CUDAPitchedBuffer>(type, width, height, ele_size, _->ctx).AddCallback([this, bytes = bytes]{
+        LOG_DEBUG("Release Pitched Buffer for GPUMemMgr with bytes : {}", bytes);
+        _->used_mem_bytes -= bytes;
+    });
 }
 
 Handle<CUDATexture> GPUMemMgr::AllocTexture(ResourceType type, const TextureCreateInfo& info) {
@@ -90,7 +96,10 @@ Handle<CUDATexture> GPUMemMgr::AllocTexture(ResourceType type, const TextureCrea
         _->used_mem_bytes.fetch_sub(bytes);
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
     }
-    return NewHandle<CUDATexture>(type, info.resc_info, info.view_info, _->ctx);
+    return NewHandle<CUDATexture>(type, info.resc_info, info.view_info, _->ctx).AddCallback([this, bytes = bytes]{
+        LOG_DEBUG("Release Texture for GPUMemMgr with bytes : {}", bytes);
+        _->used_mem_bytes -= bytes;
+    });
 }
 
 Handle<CUDATexture> GPUMemMgr::_AllocTexture(ResourceType type, const TextureCreateInfo& info) {
@@ -137,6 +146,10 @@ Ref<GPUVTexMgr> GPUMemMgr::GetGPUVTexMgrRef(UnifiedRescUID uid) {
 
 CUDAContext GPUMemMgr::_get_cuda_context() const {
     return _->ctx;
+}
+void GPUMemMgr::ReleaseGPUVTexMgr(UnifiedRescUID uid)
+{
+    //todo
 }
 
 VISER_END

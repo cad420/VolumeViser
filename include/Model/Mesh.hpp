@@ -58,6 +58,8 @@ public:
      */
     MeshData GetPackedMeshData() const;
 
+    MeshData& GetPackedMeshDataRef();
+
     bool Empty() const ;
 protected:
     std::unique_ptr<MeshPrivate> _;

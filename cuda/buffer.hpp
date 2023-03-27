@@ -55,7 +55,7 @@ CUB_BEGIN
         CUB_CPU_GPU T& at(size_t x) {
             return reinterpret_cast<T*>(this->ptr)[x];
         }
-
+        // bytes
         CUB_CPU_GPU size_t size() const {
             return this->pitched_info.xsize;
         }
@@ -155,7 +155,7 @@ CUB_BEGIN
                 CUB_CHECK(cuMemFreeHost(ptr));
             }
         }
-
+        // bytes
         template<typename T>
         buffer_view<T,1> view_1d(size_t len, size_t offset = 0) const {
             auto view = buffer_view<T,1>(reinterpret_cast<uint8_t*>(ptr) + offset, len);

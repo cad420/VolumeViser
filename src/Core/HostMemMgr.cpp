@@ -91,7 +91,7 @@ UnifiedRescUID HostMemMgr::RegisterFixedHostMemMgr(const FixedHostMemMgrCreateIn
         auto used = _->used_mem_bytes += alloc_size;
         if(used > _->max_mem_bytes){
             _->used_mem_bytes.fetch_sub(alloc_size);
-            throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
+            throw std::runtime_error("No free GPU memory to register FixedHostMemMgr");
         }
 
         LOG_DEBUG("Register FixedHostMemMgr cost free memory: {}, remain free: {}",

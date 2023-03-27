@@ -288,6 +288,7 @@ int main(int argc, char** argv){
         int idx = 0;
 
         {
+            AutoTimer timer("swc2mesh");
             auto get_box = [](const SWC::SWCPoint& pt){
                 BoundingBox3D box;
                 box |= Float3(pt.x - pt.radius, pt.y - pt.radius, pt.z - pt.radius);

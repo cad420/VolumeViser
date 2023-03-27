@@ -139,6 +139,7 @@ enum class UnifiedRescType : uint8_t{
     PBVolRenderer,
     MCAlgo,
     SWCVoxelizeAlgo,
+    MeshSmoother,
     SWC,
     Mesh,
     General,
@@ -266,6 +267,11 @@ class Handle{
         ResourceType type;
         std::shared_ptr<T> resc;
         UnifiedRescUID uid = INVALID_RESC_ID;
+        std::function<void()> callback;
+
+        ~Inner(){
+            if(callback) callback();
+        }
     };
     std::shared_ptr<Inner> _;
 
@@ -299,6 +305,12 @@ public:
     Handle& operator=(Handle&& other) noexcept{
         Destroy();
         new(this) Handle(std::move(other));
+        return *this;
+    }
+
+    Handle& AddCallback(std::function<void()> callback){
+        assert(IsValid());
+        _->callback = std::move(callback);
         return *this;
     }
 

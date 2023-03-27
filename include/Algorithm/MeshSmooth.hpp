@@ -13,8 +13,9 @@ class MeshSmootherPrivate;
 class MeshSmoother : public UnifiedRescBase{
   public:
     struct MeshSmootherCreateInfo{
-        Ref<HostMemMgr> host_mem_mgr;
         Ref<GPUMemMgr> gpu_mem_mgr;
+        Ref<HostMemMgr> host_mem_mgr;
+        size_t reserved_pinned_host_mem_bytes = 1ull << 30;
     };
 
     explicit MeshSmoother(const MeshSmootherCreateInfo& );

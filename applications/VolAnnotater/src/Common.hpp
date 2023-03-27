@@ -3,6 +3,7 @@
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Algorithm/MarchingCube.hpp>
 #include <Algorithm/Voxelization.hpp>
+#include <Algorithm/MeshSmooth.hpp>
 #include <Core/Renderer.hpp>
 #include <Core/HashPageTable.hpp>
 #include <Model/SWC.hpp>
@@ -382,6 +383,9 @@ public:
     Handle<SWCVoxelizer> swc_voxelizer;
 
     Handle<MarchingCubeAlgo> mc_algo;
+
+    //gpu mesh smoothing
+    Handle<MeshSmoother> mesh_smoother;
 
     std::unique_ptr<NeuronRenderer> neuron_renderer;
 
