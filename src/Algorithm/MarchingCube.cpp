@@ -150,14 +150,36 @@ VISER_BEGIN
             uint4 tex_coord = Query(key, hash_table);
             uint32_t tid = (tex_coord.w >> 16) & 0xffff;
             uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
-            float ret;
+            float ret = 0.f;
             if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
                 uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
                 auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
                 ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
             }
             else{
-                ret = 0.f;
+                auto padding = params.cu_vol_params.padding;
+                auto block_length = params.cu_vol_params.block_length;
+                if(offset_in_block.x < padding && block_uid.x > 0){
+                    --block_uid.x;
+                    offset_in_block.x += block_length;
+                }
+                if(offset_in_block.y < padding && block_uid.y > 0){
+                    --block_uid.y;
+                    offset_in_block.y += block_length;
+                }
+                if(offset_in_block.z < padding && block_uid.z > 0){
+                    --block_uid.z;
+                    offset_in_block.z += block_length;
+                }
+                key = make_uint4(block_uid, lod | (VolumeBlock_IsSWC << 8));
+                tex_coord = Query(key, hash_table);
+                tid = (tex_coord.w >> 16) & 0xffff;
+                coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+                if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
+                    uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
+                    auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+                    ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+                }
             }
             return ret;
         }

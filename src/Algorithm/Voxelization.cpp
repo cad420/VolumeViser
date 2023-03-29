@@ -108,31 +108,84 @@ VISER_BEGIN
                                   uint8_t val,
                                   uint3 voxel_coord,
                                   uint32_t lod){
-            uint32_t lod_block_length = params.cu_vol_params.block_length << lod;
+            uint32_t block_length = params.cu_vol_params.block_length;
+            uint32_t lod_block_length = block_length << lod;
             uint3 block_uid = voxel_coord / lod_block_length;
-            uint3 offset_in_block = (voxel_coord - block_uid * lod_block_length) / (1 << lod);
-            uint4 key = make_uint4(block_uid, lod | (VolumeBlock_IsSWC << BlockUIDLodBits));
-            uint4 tex_coord = Query(key, hash_table);
-            uint32_t tid = (tex_coord.w >> 16) & 0xffff;
-            uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
-            if((tex_coord.w & 0xffff & TexCoordFlag_IsValid)
-            //下面的判断条件其实可以不用也没事 如果前面获取真正需要mc的数据块正确的话
-            && (tex_coord.w & 0xffff & TexCoordFlag_IsSWC)){
-                uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
-                auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
-//                printf("block %d %d %d %d tex_coord %d %d %d, %d pos %d %d %d",key.x, key.y, key.z, key.w,
-//                       tex_coord.x, tex_coord.y, tex_coord.z, tid,
-//                       pos.x, pos.y, pos.z);
-//                return;
-                surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
-                if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
-                    tex_coord.w |= TexCoordFlag_IsSWCV;
-                    //lock
-                    lk.lock();
-                    Update(key, tex_coord, hash_table);
-                    lk.unlock();
+            auto padding = params.cu_vol_params.padding;
+            uint3 offset_in_block = (voxel_coord - block_uid * lod_block_length) / (1 << lod) + padding;
+
+            auto voxel_store = [&](uint3 block_uid, uint3 offset_in_block){
+                uint4 key = make_uint4(block_uid, lod | (VolumeBlock_IsSWC << BlockUIDLodBits));
+                uint4 tex_coord = Query(key, hash_table);
+                uint32_t tid = (tex_coord.w >> 16) & 0xffff;
+                uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+                if((tex_coord.w & 0xffff & TexCoordFlag_IsValid)
+                    //下面的判断条件其实可以不用也没事 如果前面获取真正需要mc的数据块正确的话
+                    && (tex_coord.w & 0xffff & TexCoordFlag_IsSWC)){
+                    uint32_t block_size = params.cu_vol_params.block_length + padding * 2;
+                    auto pos = coord * block_size + offset_in_block;// !! + params.cu_vol_params.padding;
+                    //                printf("block %d %d %d %d tex_coord %d %d %d, %d pos %d %d %d",key.x, key.y, key.z, key.w,
+                    //                       tex_coord.x, tex_coord.y, tex_coord.z, tid,
+                    //                       pos.x, pos.y, pos.z);
+                    //                return;
+                    surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
+                    if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
+                        tex_coord.w |= TexCoordFlag_IsSWCV;
+                        //lock
+                        lk.lock();
+                        Update(key, tex_coord, hash_table);
+                        lk.unlock();
+                    }
                 }
+            };
+
+            auto lod_block_dim = (params.cu_vol_params.voxel_dim + lod_block_length - 1) / lod_block_length;
+
+            auto block_uid_valid = [&](uint3 block_uid){
+                return block_uid.x < lod_block_dim.x
+                    && block_uid.y < lod_block_dim.y
+                    && block_uid.z < lod_block_dim.z;
+            };
+
+            if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
+
+            if(offset_in_block.x >= block_length){
+                auto uid = block_uid; ++uid.x;
+                auto offset = offset_in_block;
+                offset.x -= block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
             }
+            if(offset_in_block.y >= block_length){
+                auto uid = block_uid; ++uid.y;
+                auto offset = offset_in_block;
+                offset.y -= block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            }
+            if(offset_in_block.z >= block_length){
+                auto uid = block_uid; ++uid.z;
+                auto offset = offset_in_block;
+                offset.z -= block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            }
+            if(offset_in_block.x < 2u * padding && block_uid.x > 0){
+                auto uid = block_uid; --uid.x;
+                auto offset = offset_in_block;
+                offset.x += block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            }
+            if(offset_in_block.y < 2u * padding && block_uid.y > 0){
+                auto uid = block_uid; --uid.y;
+                auto offset = offset_in_block;
+                offset.y += block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            }
+            if(offset_in_block.z < 2u * padding && block_uid.z > 0){
+                auto uid = block_uid; --uid.z;
+                auto offset = offset_in_block;
+                offset.z += block_length;
+                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            }
+
         }
         CUB_GPU cuda::AABB_UI ComputeSegmentAABB(const SWCVoxelizeKernelParams& params,
                                               float3 pt_a_pos, float pt_a_r,
@@ -141,8 +194,11 @@ VISER_BEGIN
             cuda::AABB_UI ret;
             float3 low = fminf(pt_a_pos, pt_b_pos);
             float3 high = fmaxf(pt_a_pos, pt_b_pos);
-            low -= pt_a_r;
-            high += pt_b_r;
+            low = fminf(low,  pt_a_pos - pt_a_r);
+            low = fminf(low,  pt_b_pos - pt_b_r);
+            high = fmaxf(high + pt_a_r, high + pt_b_r);
+            high = fmaxf(high, pt_a_pos + pt_a_r);
+            high = fmaxf(high, pt_b_pos + pt_b_r);
             low = (low - params.cu_vol_params.bound.low) / (params.cu_vol_params.bound.high - params.cu_vol_params.bound.low);
             high = (high - params.cu_vol_params.bound.low) / (params.cu_vol_params.bound.high - params.cu_vol_params.bound.low);
             low *= params.cu_vol_params.voxel_dim - make_uint3(1);
@@ -203,21 +259,19 @@ VISER_BEGIN
 
             auto inside_segment = [&](uint3 voxel_coord)->bool{
                 float3 pt_c_pos = (voxel_coord + make_float3(0.5f)) * params.cu_vol_params.space;
+
+                float dist_a = length(pt_c_pos - pt_a_pos);
+                float dist_b = length(pt_c_pos - pt_b_pos);
+                if(dist_a <= pt_a_r) return true;
+                if(dist_b <= pt_b_r) return true;
+//                return false;
                 float proj_a_to_c = dot(pt_c_pos - pt_a_pos, ab);
                 bool between = proj_a_to_c > 0 && proj_a_to_c < ab_dist;
-                float R;
-                float c_to_ab_dist;
-                if(between){
-                    float u = proj_a_to_c / ab_dist;
-                    R = (1.f - u) * pt_a_r + u * pt_b_r;
-                    // 点到直线的距离公式 利用叉乘得到
-                    c_to_ab_dist = length(cross(pt_c_pos - pt_a_pos, ab));
-                }
-                else{
-                    R = proj_a_to_c <= 0 ? pt_a_r : pt_b_r;
-                    // 点到线段端点的距离
-                    c_to_ab_dist = proj_a_to_c <= 0 ? length(pt_c_pos - pt_a_pos) : length(pt_c_pos - pt_b_pos);
-                }
+                if(!between) return false;
+                float u = proj_a_to_c / ab_dist;
+                float R = (1.f - u) * pt_a_r + u * pt_b_r;
+                // 点到直线的距离公式 利用叉乘得到
+                float c_to_ab_dist = length(cross(pt_c_pos - pt_a_pos, ab));
                 return c_to_ab_dist <= R;
             };
 
@@ -228,12 +282,15 @@ VISER_BEGIN
 //                   pt_a_pos.x, pt_a_pos.y, pt_a_pos.z, pt_a_r,
 //                   pt_b_pos.x, pt_b_pos.y, pt_b_pos.z, pt_b_r);
             auto [low, high] = ComputeSegmentAABB(params, pt_a_pos, pt_a_r, pt_b_pos, pt_b_r);
-//            printf("low %d %d %d, high %d %d %d\n", low.x, low.y, low.z, high.x, high.y, high.z);
+//            if(pt_a_r == 0.01f)
+//                printf("low %d %d %d, high %d %d %d\n", low.x, low.y, low.z, high.x, high.y, high.z);
             uint3 box_dim = high - low + 1;
             uint32_t box_voxel_count = box_dim.x * box_dim.y * box_dim.z;
             uint32_t thread_voxel_num = (box_voxel_count + thread_count - 1) / thread_count;
-//            printf("threadIdx %d, thread_voxel_num %d, box_voxel_count %d\n",
+//            if(pt_a_r == 0.01f)
+//                printf("threadIdx %d, thread_voxel_num %d, box_voxel_count %d\n",
 //                   thread_idx, thread_voxel_num, box_voxel_count);
+
 
             for(uint32_t i = 0; i < thread_voxel_num; i++){
                 uint32_t box_voxel_idx = thread_idx * thread_voxel_num + i;
@@ -246,6 +303,7 @@ VISER_BEGIN
                 if(inside_segment(voxel_coord)){
                     VirtualStore(params, hash_table, lk, SWCVoxelVal, voxel_coord, params.cu_swc_v_params.lod);
                 }
+
             }
             __syncthreads();
             // write back from shared to global memory page table
