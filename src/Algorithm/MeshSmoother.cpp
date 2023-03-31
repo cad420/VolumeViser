@@ -213,13 +213,15 @@ void MeshSmoother::Smoothing(MeshData0 &mesh, float lambda, float mu, int iterat
         size_t mesh_indices_bytes = index_count * sizeof(uint32_t);
         size_t mesh_vertices_pos_bytes = vertex_count * sizeof(float3);
         size_t mesh_vertices_normal_bytes = vertex_count * sizeof(float3);
-        size_t vertex_triangle_offset_count = vertex_count * sizeof(uint64_t);
         size_t vertex_triangle_index_array = index_count * sizeof(uint32_t);
+        //must aligned for uint64_t
+        size_t vertex_triangle_offset_count = vertex_count * sizeof(uint64_t);
+
         return mesh_indices_bytes + mesh_vertices_pos_bytes * 2 + mesh_vertices_normal_bytes
                + vertex_triangle_offset_count + vertex_triangle_index_array;
     };
     size_t total_gpu_bytes = calc_total_gpu_bytes();
-    auto gpu_buffer = _->gpu_mem_mgr_ref->AllocBuffer(ResourceType::Buffer, total_gpu_bytes);
+    auto gpu_buffer = _->gpu_mem_mgr_ref.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, total_gpu_bytes);
 
 
     // copy to pinned buffer
@@ -248,6 +250,13 @@ void MeshSmoother::Smoothing(MeshData0 &mesh, float lambda, float mu, int iterat
     assert(indices.size() > 1);
     auto prev = indices.front();
     uint32_t count = 1;
+
+    // 每个顶点所属的三角形索引数组 数量与索引数量相同
+    // view first for aligned as 8 bytes for uint64_t
+    CUDABufferView1D<uint32_t> vertex_triangle_index_array = _->pinned_buffer->view_1d<uint32_t>(index_count * sizeof(uint32_t), _offset);
+    _->params.vertex_triangle_index_array = gpu_buffer->view_1d<uint32_t>(index_count * sizeof(uint32_t), _offset);
+    _offset += vertex_triangle_index_array.size();
+
     // 一个顶点属于几个三角形 长度与顶点数相同
     CUDABufferView1D<uint64_t> vertex_triangle_offset_count = _->pinned_buffer->view_1d<uint64_t>(vertex_count * sizeof(uint64_t), _offset);
     _->params.vertex_triangle_offset_count = gpu_buffer->view_1d<uint64_t>(vertex_count * sizeof(uint64_t), _offset);
@@ -274,12 +283,6 @@ void MeshSmoother::Smoothing(MeshData0 &mesh, float lambda, float mu, int iterat
         vertex_triangle_offset_count.at(i) |= offset << 32;
         offset +=  cnt;
     }
-
-    // 每个顶点所属的三角形索引数组 数量与索引数量相同
-    CUDABufferView1D<uint32_t> vertex_triangle_index_array = _->pinned_buffer->view_1d<uint32_t>(index_count * sizeof(uint32_t), _offset);
-    _->params.vertex_triangle_index_array = gpu_buffer->view_1d<uint32_t>(index_count * sizeof(uint32_t), _offset);
-    _offset += vertex_triangle_index_array.size();
-
 
     std::vector<uint32_t> index_offset(mesh.indices.size());
     for(int i = 0; i < triangle_count; i++){
