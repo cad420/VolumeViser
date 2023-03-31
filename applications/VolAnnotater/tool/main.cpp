@@ -5,6 +5,7 @@
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Algorithm/MarchingCube.hpp>
 #include <Algorithm/Voxelization.hpp>
+#include <Algorithm/MeshSmooth.hpp>
 #include <Core/Renderer.hpp>
 #include <Core/HashPageTable.hpp>
 #include <Model/SWC.hpp>
@@ -208,6 +209,14 @@ int main(int argc, char** argv){
         mc_algo->BindVTexture(handle, unit);
     }
 
+    MeshSmoother::MeshSmootherCreateInfo ms_info{
+        .gpu_mem_mgr = gpu_mem_mgr_ref.LockRef(),
+        .host_mem_mgr = host_mem_mgr_ref.LockRef()
+    };
+
+    auto mesh_smoother = NewHandle<MeshSmoother>(ResourceType::Object, ms_info);
+
+
     struct{
         std::thread worker;
         std::queue<std::function<void()>> tasks;
@@ -405,7 +414,8 @@ int main(int argc, char** argv){
         }
 
         mesh_postprocess_queue.append([&, mesh = std::move(mesh), filename = std::move(filename)] () mutable {
-            mesh->Smooth(algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
+//            mesh->Smooth(algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
+            mesh_smoother->Smoothing(mesh->GetPackedMeshDataRef(), algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
             MeshFile mesh_file;
             mesh_file.Open(filename, MeshFile::Write);
             mesh_file.WriteMeshData(mesh->GetPackedMeshData());
