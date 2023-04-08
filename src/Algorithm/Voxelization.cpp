@@ -148,42 +148,34 @@ VISER_BEGIN
             };
 
             if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
-
+            const auto _offset_in_block = offset_in_block;
+            const auto _block_uid = block_uid;
             if(offset_in_block.x >= block_length){
-                auto uid = block_uid; ++uid.x;
-                auto offset = offset_in_block;
-                offset.x -= block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
+                ++block_uid.x;
+                offset_in_block.x -= block_length;
+            }
+            else if(offset_in_block.x < 2u * padding && block_uid.x > 0){
+                --block_uid.x;
+                offset_in_block.x += block_length;
             }
             if(offset_in_block.y >= block_length){
-                auto uid = block_uid; ++uid.y;
-                auto offset = offset_in_block;
-                offset.y -= block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
+                ++block_uid.y;
+                offset_in_block.y -= block_length;
+            }
+            else if(offset_in_block.y < 2u * padding && block_uid.y > 0){
+                --block_uid.y;
+                offset_in_block.y += block_length;
             }
             if(offset_in_block.z >= block_length){
-                auto uid = block_uid; ++uid.z;
-                auto offset = offset_in_block;
-                offset.z -= block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
+                ++block_uid.z;
+                offset_in_block.z -= block_length;
             }
-            if(offset_in_block.x < 2u * padding && block_uid.x > 0){
-                auto uid = block_uid; --uid.x;
-                auto offset = offset_in_block;
-                offset.x += block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            else if(offset_in_block.z < 2u * padding && block_uid.z > 0){
+                --block_uid.z;
+                offset_in_block.z += block_length;
             }
-            if(offset_in_block.y < 2u * padding && block_uid.y > 0){
-                auto uid = block_uid; --uid.y;
-                auto offset = offset_in_block;
-                offset.y += block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
-            }
-            if(offset_in_block.z < 2u * padding && block_uid.z > 0){
-                auto uid = block_uid; --uid.z;
-                auto offset = offset_in_block;
-                offset.z += block_length;
-                if(block_uid_valid(uid)) voxel_store(uid, offset);
+            if(block_uid_valid(block_uid)){
+                voxel_store(block_uid, offset_in_block);
             }
 
         }

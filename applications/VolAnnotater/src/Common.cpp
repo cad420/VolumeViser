@@ -328,7 +328,7 @@ void SWCRescPack::LoadSWCFile(const std::string &filename, Float3 ratio) {
 
         CreateSWC(filename);
 
-        float s = (std::min)({ratio.x, ratio.y, ratio.z});
+        float s = ratio.length();
 
         for(auto& pt : swc_pts){
             pt.x *= ratio.x;
