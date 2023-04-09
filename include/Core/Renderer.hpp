@@ -151,6 +151,9 @@ class PBVolumeRendererPrivate;
 class PBVolumeRenderer: public Renderer{
   public:
     struct PBVolumeRendererCreateInfo{
+        Ref<HostMemMgr> host_mem_mgr_ref;
+        Ref<GPUMemMgr> gpu_mem_mgr_ref;
+
 
     };
     explicit PBVolumeRenderer(const PBVolumeRendererCreateInfo&);

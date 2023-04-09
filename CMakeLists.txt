@@ -53,3 +53,5 @@ target_link_libraries(VolumeViserLib PUBLIC
 add_subdirectory(applications/VolViewer)
 
 add_subdirectory(applications/VolAnnotater)
+
+add_subdirectory(applications/VolRenderer)

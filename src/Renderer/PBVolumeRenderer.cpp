@@ -8,21 +8,13 @@
 #include "Common.hpp"
 #include "../Common/helper_math.h"
 
+#include "PBR.hpp"
+
 #define Transform(t) t.x, t.y, t.z
 
 
 // from exposure render
-#define KRNL_SS_BLOCK_W		16
-#define KRNL_SS_BLOCK_H		8
-#define KRNL_SS_BLOCK_SIZE	KRNL_SS_BLOCK_W * KRNL_SS_BLOCK_H
-#define PI_F												3.141592654f
-#define INV_PI_F											0.31830988618379067154f
-#define INV_TWO_PI_F										0.15915494309189533577f
-#define FOUR_PI_F											4.0f * PI_F
-#define INV_4_PI_F											1.0f / FOUR_PI_F
-#define FLT_MAX                                             3.402823466e+38F        // max value
-#define	INF_MAX												FLT_MAX
-#define MAX_NO_LIGHTS                                       4
+
 VISER_BEGIN
 
 
@@ -116,6 +108,11 @@ namespace{
         int2 mpi_node_offset;
     };
 
+    struct CUDAPBParams{
+        int shadow_ray_lod;
+
+    };
+
     struct CUDAPerFrameParams{
         float3 cam_pos;
         float fov;
@@ -147,68 +144,21 @@ namespace{
     };
 
 
-    class Ray{
-        public:
-            float3 o;
-            float3 d;
-            float m_MinT;			/*!< Minimum parametric range */
-            float m_MaxT;			/*!< Maximum parametric range */
-            int m_PixelID;		/*!< Pixel ID associated with the ray */
 
+//    CUB_CPU_GPU inline float3 UniformSampleSphere(const float2& U)
+//    {
+//        float z = 1.f - 2.f * U.x;
+//        float r = sqrtf(max(0.f, 1.f - z*z));
+//        float phi = 2.f * PI_F * U.y;
+//        float x = r * cosf(phi);
+//        float y = r * sinf(phi);
+//        return make_float3(x, y, z);
+//    }
 
-            CUB_CPU_GPU Ray(void){
-
-            };
-
-            CUB_CPU_GPU Ray(float3 origin, float3 dir, float min, float max, int id = 0){
-                o = origin;
-                d = dir;
-                m_MinT = min;
-                m_MaxT = max;
-                m_PixelID = id;
-            }
-
-            CUB_CPU_GPU Ray& operator=(const Ray& Other){
-                o			= Other.o;
-                d			= Other.d;
-                m_MinT		= Other.m_MinT;
-                m_MaxT		= Other.m_MaxT;
-                m_PixelID	= Other.m_PixelID;
-
-                // By convention, always return *this
-                return *this;
-            }
-    };
-
-
-    CUB_CPU_GPU inline float3 UniformSampleSphere(const float2& U)
-    {
-        float z = 1.f - 2.f * U.x;
-        float r = sqrtf(max(0.f, 1.f - z*z));
-        float phi = 2.f * PI_F * U.y;
-        float x = r * cosf(phi);
-        float y = r * sinf(phi);
-        return make_float3(x, y, z);
-    }
-
-    inline CUB_CPU_GPU float Fmaxf(float a, float b)
-    {
-        return a > b ? a : b;
-    }
-
-    inline CUB_CPU_GPU float Fminf(float a, float b)
-    {
-        return a < b ? a : b;
-    }
-
-    CUB_CPU_GPU inline float Clamp(float f, float a, float b)
-    {
-        return Fmaxf(a, Fminf(f, b));
-    }
 
     CUB_CPU_GPU inline float SphericalTheta(const float3& Wl)
     {
-        return acosf(Clamp(Wl.y, -1.f, 1.f));
+        return acosf(clamp(Wl.y, -1.f, 1.f));
     }
 
     CUB_CPU_GPU inline float SphericalPhi(const float3& Wl)
@@ -224,11 +174,11 @@ namespace{
 	}
 
 
-    CUB_CPU_GPU static float3 FromRGB(float r, float g, float b)
+    CUB_CPU_GPU inline float3 FromRGB(float r, float g, float b)
 	{
-		const float CoeffX[3] = { 0.4124f, 0.3576f, 0.1805f };
-		const float CoeffY[3] = { 0.2126f, 0.7152f, 0.0722f };
-		const float CoeffZ[3] = { 0.0193f, 0.1192f, 0.9505f };
+		static float CoeffX[3] = { 0.4124f, 0.3576f, 0.1805f };
+		static float CoeffY[3] = { 0.2126f, 0.7152f, 0.0722f };
+		static float CoeffZ[3] = { 0.0193f, 0.1192f, 0.9505f };
 
 		float XYZ[3];
 
@@ -248,7 +198,7 @@ namespace{
 	}
 
 
-    CUB_CPU_GPU static float3 FromRGB(float3 c){
+    CUB_CPU_GPU inline float3 FromRGB(float3 c){
         FromRGB(c.x, c.y, c.z);
     }
 
@@ -262,7 +212,7 @@ namespace{
                 m_pSeed1 = pSeed1;
             }
 
-            CUB_CPU_GPU float Get1(void)
+            CUB_CPU_GPU float Get1()
             {
                 *m_pSeed0 = 36969 * ((*m_pSeed0) & 65535) + ((*m_pSeed0) >> 16);
                 *m_pSeed1 = 18000 * ((*m_pSeed1) & 65535) + ((*m_pSeed1) >> 16);
@@ -280,12 +230,12 @@ namespace{
                 return (res.f - 2.f) / 2.f;
             }
 
-            CUB_CPU_GPU float2 Get2(void)
+            CUB_CPU_GPU float2 Get2()
             {
                 return make_float2(Get1(), Get1());
             }
 
-            CUB_CPU_GPU float3 Get3(void)
+            CUB_CPU_GPU float3 Get3()
             {
                 return make_float3(Get1(), Get1(), Get1());
             }
@@ -294,14 +244,14 @@ namespace{
             unsigned int*	m_pSeed0;
             unsigned int*	m_pSeed1;
     };
-    
+
     class CLightSample
     {
     public:
         float2 m_Pos;
         float m_Component;
 
-        CUB_CPU_GPU CLightSample(void)
+        CUB_CPU_GPU CLightSample()
         {
             m_Pos	 	= make_float2(0.0f);
             m_Component	= 0.0f;
@@ -434,11 +384,11 @@ namespace{
         float			m_Distance;
         float			m_SkyRadius;
         float3			m_P;
-        float3			m_Target;	
-        float3			m_N;					
-        float3			m_U;					
-        float3			m_V;					
-        float			m_Area;					
+        float3			m_Target;
+        float3			m_N;
+        float3			m_U;
+        float3			m_V;
+        float			m_Area;
         float			m_AreaPdf;
         float3      	m_Color;
         float3      	m_ColorTop;
@@ -542,7 +492,7 @@ namespace{
         // }
 
         // Samples the light
-        CUB_CPU_GPU float3 SampleL(const float3& P, Ray& Rl, float& Pdf, CLightingSample& LS)
+        CUB_CPU_GPU float3 SampleL(const float3& P, RayExt& Rl, float& Pdf, CLightingSample& LS)
         {
             float3 L = make_float3(0);
 
@@ -556,20 +506,20 @@ namespace{
 
             if (m_T == 1)
             {
-                Rl.o	= m_P + m_SkyRadius * UniformSampleSphere(LS.m_LightSample.m_Pos);
+                Rl.o	= m_P + m_SkyRadius * cuda::UniformSampleSphere(LS.m_LightSample.m_Pos);
                 Rl.d	= normalize(P - Rl.o);
                 L		= Le(make_float2(1.0f) - 2.0f * LS.m_LightSample.m_Pos);
                 Pdf		= powf(m_SkyRadius, 2.0f) / m_Area;
             }
 
-            Rl.m_MinT	= 0.0f;
-            Rl.m_MaxT	= length(P - Rl.o);
+            Rl.min_t	= 0.0f;
+            Rl.max_t	= length(P - Rl.o);
 
             return L;
         }
 
         // Intersect ray with light
-        CUB_CPU_GPU bool Intersect(Ray& R, float& T, float3& L, float2* pUV = NULL, float* pPdf = NULL)
+        CUB_CPU_GPU bool Intersect(RayExt& R, float& T, float3& L, float2* pUV = NULL, float* pPdf = NULL)
         {
             if (m_T == 0)
             {
@@ -584,7 +534,7 @@ namespace{
                 T = (-m_Distance - dot(R.o, m_N)) / dotN; // ?????????
 
                 // Intersection is in ray's negative direction
-                if (T < R.m_MinT || T > R.m_MaxT)
+                if (T < R.min_t || T > R.max_t)
                     return false;
 
                 // Determine position on light
@@ -600,7 +550,7 @@ namespace{
                 if (UV.x > m_HalfWidth || UV.x < -m_HalfWidth || UV.y > m_HalfHeight || UV.y < -m_HalfHeight)
                     return false;
 
-                R.m_MaxT = T;
+                R.max_t = T;
 
                 if (pUV)
                     *pUV = UV;
@@ -619,12 +569,12 @@ namespace{
             if (m_T == 1)
             {
                 T = m_SkyRadius;
-                
+
                 // Intersection is in ray's negative direction
-                if (T < R.m_MinT || T > R.m_MaxT)
+                if (T < R.min_t || T > R.max_t)
                     return false;
-                
-                R.m_MaxT = T;
+
+                R.max_t = T;
 
                 float2 UV = make_float2(SphericalPhi(R.d) * INV_TWO_PI_F, SphericalTheta(R.d) * INV_PI_F);
 
@@ -645,12 +595,12 @@ namespace{
             float2 UV;
             float Pdf = 1.0f;
 
-            Ray Rl = Ray(P, Wi, 0.0f, INF_MAX);
+            RayExt Rl = RayExt(P, Wi, 0.0f, INF_MAX);
 
             if (m_T == 0)
             {
                 float T = 0.0f;
-                
+
                 if (!Intersect(Rl, T, L, NULL, &Pdf))
                     return 0.0f;
 
@@ -732,6 +682,10 @@ namespace{
         cudaTextureObject_t cu_tf_tex;
         cudaTextureObject_t cu_2d_tf_tex;
         CUDAFrameBuffer framebuffer;
+
+        CUDABufferView1D<BlockUID> missed_blocks;
+
+
         CLighting m_Lighting;
         unsigned int* randomseed1;
         unsigned int* randomseed2;
@@ -739,7 +693,7 @@ namespace{
         float m_GradientFactor;
     };
 
-    
+
 #define INVALID_VALUE uint4{0, 0, 0, 0}
 
     CUB_GPU uint32_t GetHashValue(const uint4& key){
@@ -900,7 +854,7 @@ namespace{
         }
         else
             N = -normalize(N);
-        
+
         return N;
     }
 
@@ -951,7 +905,7 @@ namespace{
         return ((float)SHRT_MAX * tex3D(gTexGradientMagnitude, P.x * gInvAaBbMax.x, P.y * gInvAaBbMax.y, P.z * gInvAaBbMax.z));
     }
 
-    
+
 
 
     CUB_GPU float3 GetEmission(const float& NormalizedIntensity)
@@ -960,13 +914,13 @@ namespace{
         return make_float3(Emission.x, Emission.y, Emission.z);
     }
 
-    CUB_GPU bool NearestLight(PBVolumeRenderKernelParams & params, Ray R, float3& LightColor, float3& Pl, CLight*& pLight, float* pPdf = NULL)
+    CUB_GPU bool NearestLight(PBVolumeRenderKernelParams & params, RayExt R, float3& LightColor, float3& Pl, CLight*& pLight, float* pPdf = NULL)
     {
         bool Hit = false;
-        
+
         float T = 0.0f;
 
-        Ray RayCopy = R;
+        RayExt RayCopy = R;
 
         float Pdf = 0.0f;
 
@@ -979,7 +933,7 @@ namespace{
                 Hit		= true;
             }
         }
-        
+
         if (pPdf)
             *pPdf = Pdf;
 
@@ -1005,7 +959,7 @@ namespace{
     CUB_GPU inline float PowerHeuristic(int nf, float fPdf, int ng, float gPdf)
     {
         float f = nf * fPdf, g = ng * gPdf;
-        return (f * f) / (f * f + g * g); 
+        return (f * f) / (f * f + g * g);
     }
 
 
@@ -1101,9 +1055,9 @@ namespace{
                             u.z * Wl.x + v.z * Wl.y + N.z * Wl.z);
     }
 
-    CUB_CPU_GPU inline float3 Cross(const float3 &v1, const float3 &v2)		
+    CUB_CPU_GPU inline float3 Cross(const float3 &v1, const float3 &v2)
     {
-        return make_float3((v1.y * v2.z) - (v1.z * v2.y), (v1.z * v2.x) - (v1.x * v2.z), (v1.x * v2.y) - (v1.y * v2.x)); 
+        return make_float3((v1.y * v2.z) - (v1.z * v2.y), (v1.z * v2.x) - (v1.x * v2.z), (v1.x * v2.y) - (v1.y * v2.x));
     };
 
 
@@ -1171,7 +1125,7 @@ namespace{
         CUB_CPU_GPU float3 Evaluate(float cosi)
         {
             // Compute Fresnel reflectance for dielectric
-            cosi = Clamp(cosi, -1.0f, 1.0f);
+            cosi = clamp(cosi, -1.0f, 1.0f);
 
             // Compute indices of refraction for dielectric
             bool entering = cosi > 0.0f;
@@ -1516,7 +1470,7 @@ namespace{
 
 
 
-    CUB_GPU bool IntersectBox(const Ray& R, float* pNearT, float* pFarT)
+    CUB_GPU bool IntersectBox(const RayExt& R, float* pNearT, float* pFarT)
     {
         const float3 InvR		= make_float3(1.0f, 1.0f, 1.0f) / R.d;
         const float3 BottomT	= InvR * (make_float3(gAaBbMin.x, gAaBbMin.y, gAaBbMin.z) - R.o);
@@ -1532,7 +1486,7 @@ namespace{
         return LargestMaxT > LargestMinT;
     }
 
-    CUB_GPU inline bool SampleDistanceRM(Ray& R, CRNG& RNG, float3& Ps)
+    CUB_GPU inline bool SampleDistanceRM(RayExt& R, CRNG& RNG, float3& Ps)
     {
         const int TID = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -1542,8 +1496,8 @@ namespace{
         if (!IntersectBox(R, &MinT[TID], &MaxT[TID]))
             return false;
 
-        MinT[TID] = max(MinT[TID], R.m_MinT);
-        MaxT[TID] = min(MaxT[TID], R.m_MaxT);
+        MinT[TID] = max(MinT[TID], R.min_t);
+        MaxT[TID] = min(MaxT[TID], R.max_t);
 
         const float S = -log(RNG.Get1()) / gDensityScale;
         float Sum = 0.0f;
@@ -1551,13 +1505,14 @@ namespace{
 
         MinT[TID] += RNG.Get1() * gStepSize;
 
+        // delta-tracking
         while (Sum < S)
         {
             Ps = R.o + MinT[TID] * R.d;
 
             if (MinT[TID] > MaxT[TID])
                 return false;
-            
+
             SigmaT	= gDensityScale * GetOpacity(GetNormalizedIntensity(Ps));
 
             Sum			+= SigmaT * gStepSize;
@@ -1568,7 +1523,7 @@ namespace{
     }
 
 
-    CUB_GPU inline bool FreePathRM(Ray& R, CRNG& RNG)
+    CUB_GPU inline bool FreePathRM(RayExt& R, CRNG& RNG)
     {
         const int TID = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -1579,8 +1534,8 @@ namespace{
         if (!IntersectBox(R, &MinT[TID], &MaxT[TID]))
             return false;
 
-        MinT[TID] = max(MinT[TID], R.m_MinT);
-        MaxT[TID] = min(MaxT[TID], R.m_MaxT);
+        MinT[TID] = max(MinT[TID], R.min_t);
+        MaxT[TID] = min(MaxT[TID], R.max_t);
 
         const float S	= -log(RNG.Get1()) / gDensityScale;
         float Sum		= 0.0f;
@@ -1588,13 +1543,14 @@ namespace{
 
         MinT[TID] += RNG.Get1() * gStepSizeShadow;
 
+        // delta-tracking
         while (Sum < S)
         {
             Ps[TID] = R.o + MinT[TID] * R.d;
 
             if (MinT[TID] > MaxT[TID])
                 return false;
-            
+
             SigmaT	= gDensityScale * GetOpacity(GetNormalizedIntensity(Ps[TID]));
 
             Sum			+= SigmaT * gStepSizeShadow;
@@ -1605,17 +1561,17 @@ namespace{
     }
 
 
-    CUB_GPU inline bool NearestIntersection(Ray R, PBVolumeRenderKernelParams params, float& T)
+    CUB_GPU inline bool NearestIntersection(RayExt R, PBVolumeRenderKernelParams params, float& T)
     {
         float MinT = 0.0f, MaxT = 0.0f;
 
         if (!IntersectBox(R, &MinT, &MaxT))
             return false;
 
-        MinT = max(MinT, R.m_MinT);
-        MaxT = min(MaxT, R.m_MaxT);
+        MinT = max(MinT, R.min_t);
+        MaxT = min(MaxT, R.max_t);
 
-        float3 Ps; 
+        float3 Ps;
 
         T = MinT;
 
@@ -1633,7 +1589,7 @@ namespace{
     }
 
 
-    
+
     CUB_GPU float3 EstimateDirectLight(PBVolumeRenderKernelParams & params, const CVolumeShader::EType& Type, const float& Density, CLight& Light, CLightingSample& LS, const float3& Wo, const float3& Pe, const float3& N, CRNG& RNG)
     {
         float3 Ld = make_float3(0), Li = make_float3(0), F = make_float3(0);
@@ -1641,27 +1597,28 @@ namespace{
         float3 tspecular = GetSpecular(Density);
 
         CVolumeShader Shader(Type, N, Wo, FromRGB(tdiffuse.x, tdiffuse.y, tdiffuse.z), FromRGB(tspecular.x, tspecular.y, tspecular.z), 2.5f/*params.m_IOR*/, GetRoughness(Density));
-        
-        Ray Rl; 
+
+        RayExt Rl;
 
         float LightPdf = 1.0f, ShaderPdf = 1.0f;
-        
+
         float3 Wi, P, Pl;
 
         Li = Light.SampleL(Pe, Rl, LightPdf, LS);
-        
+
         CLight* pLight = NULL;
 
         Wi = make_float3(0.0f) - Rl.d;
 
-        F = Shader.F(Wo, Wi); 
+        F = Shader.F(Wo, Wi);
 
         ShaderPdf = Shader.Pdf(Wo, Wi);
 
+        //todo: FreePathRM calc tr
         if (!IsBlack(Li) && ShaderPdf > 0.0f && LightPdf > 0.0f && !FreePathRM(Rl, RNG))
         {
             const float WeightMIS = PowerHeuristic(1.0f, LightPdf, 1.0f, ShaderPdf);
-            
+
             if (Type == CVolumeShader::Brdf)
                 Ld += F * Li * fabsf(dot(Wi, N)) * WeightMIS / LightPdf;
 
@@ -1673,10 +1630,10 @@ namespace{
 
         if (!IsBlack(F) && ShaderPdf > 0.0f)
         {
-            if (NearestLight(params, Ray(Pe, Wi, 0.0f, FLT_MAX), Li, Pl, pLight, &LightPdf))
+            if (NearestLight(params, RayExt(Pe, Wi, 0.0f, FLT_MAX), Li, Pl, pLight, &LightPdf))
             {
                 LightPdf = pLight->Pdf(Pe, Wi);
-                Ray tpray = Ray(Pl, normalize(Pe - Pl), 0.0f, length(Pe - Pl));
+                RayExt tpray = RayExt(Pl, normalize(Pe - Pl), 0.0f, length(Pe - Pl));
                 if (LightPdf > 0.0f && !IsBlack(Li) && !FreePathRM(tpray, RNG))
                 {
                     const float WeightMIS = PowerHeuristic(1.0f, ShaderPdf, 1.0f, LightPdf);
@@ -1747,34 +1704,34 @@ namespace{
         float3 Lv = make_float3(0), Li = make_float3(0);
 
 
-        
+
         const float2 UV = make_float2(x, y) + RNG.Get2();
 
 
-        Ray ray;
+        RayExt ray;
         ray.o = params.cu_per_frame_params.cam_pos;
         float scale = tanf(0.5f * params.cu_per_frame_params.fov);
         float ix = (UV.x + params.cu_render_params.mpi_node_offset.x + 0.5f) / params.cu_per_frame_params.frame_width - 0.5f;
         float iy = (UV.y + params.cu_render_params.mpi_node_offset.y + 0.5f) / params.cu_per_frame_params.frame_height - 0.5f;
-        
-        
 
 
-        
+
+
+
         ray.d = params.cu_per_frame_params.cam_dir + params.cu_per_frame_params.cam_up * scale * iy
                 + params.cu_per_frame_params.cam_right * scale * ix * params.cu_per_frame_params.frame_w_over_h;
 
 
-        ray.m_MinT = 0.0f; 
-	    ray.m_MaxT = 1500000.0f;
-        
+        ray.min_t = 0.0f;
+	    ray.max_t = 1500000.0f;
+
         float3 pe, pl;
 
         CLight* pLight = NULL;
 
         if (SampleDistanceRM(ray, RNG, pe))
         {
-            if (NearestLight(params, Ray(ray.o, ray.d, 0.0f, length(pe - ray.o)), Li, pl, pLight))
+            if (NearestLight(params, RayExt(ray.o, ray.d, 0.0f, length(pe - ray.o)), Li, pl, pLight))
             {
 
                 // pView->m_FrameEstimateXyza.Set(float3a(Lv.c[0], Lv.c[1], Lv.c[2]), X, Y);
@@ -1790,7 +1747,7 @@ namespace{
                 params.framebuffer.depth.at(x, y) = depth;
                 return;
             }
-            
+
             uint32_t cur_lod = 0;
             float3 sampling_pos = CalcVirtualSamplingPos(params, pe);
 
@@ -1803,7 +1760,7 @@ namespace{
             float3 gN = CalcN(params, hash_table, pe, ray.d, params.cu_volume.voxel_space, cur_lod);
 
 
-            
+
             const float D = scalar;
 
             float3 ge = GetEmission(D);
@@ -1817,7 +1774,7 @@ namespace{
                     Lv += UniformSampleOneLight(params, CVolumeShader::Brdf, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, true);
                     break;
                 }
-            
+
                 case 1:
                 {
                     Lv += 0.5f * UniformSampleOneLight(params, CVolumeShader::Phase, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, false);
@@ -1841,7 +1798,7 @@ namespace{
         }
         else
         {
-            if (NearestLight(params, Ray(ray.o, ray.d, 0.0f, INF_MAX), Li, pl, pLight))
+            if (NearestLight(params, RayExt(ray.o, ray.d, 0.0f, INF_MAX), Li, pl, pLight))
                 Lv = Li;
         }
 
@@ -1853,184 +1810,6 @@ namespace{
 
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-    CUB_GPU float4 CalcShadingColor(const PBVolumeRenderKernelParams & params,
-                                    uint4 hash_table[][2],
-                                    const float4& color, const float3& pos,
-                                    const float3& ray_dir,
-                                    const float3& dt, uint32_t lod){
-        //todo use texGrad???
-        float3 N;
-        float x1, x2;
-        int missed = 0;
-        float lod_t = 1 << lod;
-        auto ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(lod_t, 0.f, 0.f)), lod);
-        x1 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(-lod_t, 0.f, 0.f)), lod);
-        x2 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        N.x = x1 - x2;
-
-        ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, lod_t, 0.f)), lod);
-        x1 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, -lod_t, 0.f)), lod);
-        x2 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        N.y = x1 - x2;
-
-        ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, 0.f, lod_t)), lod);
-        x1 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        ret = VirtualSampling(params, hash_table, CalcVirtualSamplingPos(params,pos + dt * make_float3(0.f, 0.f, -lod_t)), lod);
-        x2 = ret.scalar;
-        if(ret.flag == 0){
-            ++missed;
-        }
-        N.z = x1 - x2;
-        if(missed == 6){
-            N = -ray_dir;
-        }
-        else
-            N = -normalize(N);
-        float3 albedo = make_float3(color);
-        float3 ambient = 0.05f * albedo;
-        float3 diffuse = max(dot(N, -ray_dir), 0.f) * albedo;
-        float3 view_dir = normalize(params.cu_per_frame_params.cam_pos - pos);
-        float3 specular = powf(max(0.f, dot(N, view_dir)), 24.f) * make_float3(0.2f);
-        return make_float4(ambient + diffuse + specular, color.w);
-    }
-
-    CUB_GPU RayCastResult RayCastVolume(const PBVolumeRenderKernelParams & params,
-                                        uint4 hash_table[][2],
-                                        Ray ray){
-        // default color is black and depth is 1.0
-        RayCastResult ret{make_float4(0), 1.f};
-//       auto [entry_t, exit_t] = cuda::RayIntersectAABB(params.cu_volume.bound, ray);
-        // ray has no intersection with volume
-        float entry_t = 0.0f;
-        float exit_t = 0.0f;
-
-       if(entry_t >= exit_t || exit_t <= 0.f)
-           return ret;
-
-        entry_t = max(0.f ,entry_t);
-        if(params.cu_per_frame_params.debug_mode == 1){
-            ret.color = make_float4(ray.o + ray.d * entry_t, 1.f);
-            return ret;
-        }
-        else if(params.cu_per_frame_params.debug_mode == 2){
-            ret.color = make_float4(ray.o + ray.d * exit_t, 1.f);
-            return ret;
-        }
-
-        float entry_to_exit_dist = exit_t - entry_t;
-        // 注意浮点数的有效位数只有6位
-        float3 ray_cast_pos = params.cu_per_frame_params.cam_pos + entry_t * ray.d;
-        float dt = params.cu_render_params.ray_step;
-        float ray_cast_dist = 0.f;
-
-        uint32_t prev_lod = ComputeLod(params, ray_cast_pos);
-        uint32_t pre_lod_sampling_steps = 0;
-        float3 prev_lod_samping_pos = ray_cast_pos;
-        uint32_t steps = 0;
-        float ray_max_cast_dist = min(params.cu_render_params.max_ray_dist, entry_to_exit_dist);
-        //            printf("ray_step : %.5f, ray_max_cast_dist : %.5f\n", dt, ray_max_cast_dist);
-        //            return ret;
-
-        while(ray_cast_dist < ray_max_cast_dist){
-            float3 cur_ray_pos = ray_cast_pos;// + 0.5f * dt * ray.d;
-            uint32_t cur_lod = ComputeLod(params, cur_ray_pos);
-            bool upgrade = false;
-            if(cur_lod > prev_lod){
-                upgrade = true;
-                prev_lod = cur_lod;
-                prev_lod_samping_pos = cur_ray_pos;
-                pre_lod_sampling_steps = steps;
-            }
-            float3 sampling_pos = CalcVirtualSamplingPos(params, cur_ray_pos);
-
-            auto [flag, scalar] = VirtualSampling(params, hash_table, sampling_pos, cur_lod);
-
-            //                bool skip = (flag == 0) || (flag & TexCoordFlag_IsValid && flag & TexCoordFlag_IsBlack);
-            //                if(skip){
-            //                    ray_cast_pos = CalcSkipPos(params, ray_cast_pos, ray.d, cur_lod);
-            //
-            //                    continue;
-            //                }
-
-            // compute and accumulate color
-            // always assert scalar = 0.f has no meanings
-            if(scalar > 0.f){
-                //                    printf("sampling scalar %.5f\n", scalar);
-                float4 mapping_color = ScalarToRGBA(params, scalar, cur_lod);
-                //                    printf("sampling scalar %.5f, color %f %f %f %f\n",scalar, mapping_color.x, mapping_color.y, mapping_color.z, mapping_color.w);
-                // always assert alpha = 0.f has no contribution
-                if(mapping_color.w > 0.f){
-                    if(params.cu_per_frame_params.debug_mode != 4)
-                        mapping_color = CalcShadingColor(params, hash_table, mapping_color, cur_ray_pos, ray.d,
-                                                         params.cu_volume.voxel_space, cur_lod);
-                    // accumulate color radiance
-                    ret.color += mapping_color * make_float4(make_float3(mapping_color.w), 1.f) * (1.f - ret.color.w);
-                    if(ret.color.w > 0.99f){
-                        break;
-                    }
-                }
-            }
-            //                ray_cast_pos += dt * ray.d;
-            if(upgrade){
-                dt = (1 << cur_lod) * params.cu_render_params.ray_step;
-            }
-            ray_cast_pos = prev_lod_samping_pos + (++steps - pre_lod_sampling_steps) * ray.d * dt;
-            ray_cast_dist += dt;
-        }
-        // view space depth
-        // todo return proj depth
-        ret.depth = ray_cast_dist * dot(ray.d, params.cu_per_frame_params.cam_dir);
-        return ret;
-    }
 }
 
 
@@ -2044,6 +1823,7 @@ class PBVolumeRendererPrivate{
         CUDAStream stream;
         PBVolumeRenderKernelParams kernel_params;
     };
+
 
 
     struct{
@@ -2088,7 +1868,7 @@ class PBVolumeRendererPrivate{
 
     struct{
         float render_space_ratio;
-        bool use_shared_host_mem;
+        bool use_shared_host_mem = false;
         size_t fixed_host_mem_bytes;
         size_t vtex_cnt;
         Int3 vtex_shape;
@@ -2096,118 +1876,11 @@ class PBVolumeRendererPrivate{
 
     // data sts for loading blocks
     struct{
-        bool async;
         std::vector<BlockUID> intersect_blocks;
         std::vector<GPUPageTableMgr::PageTableItem> block_infos;
 
     };
 
-    struct{
-        vutil::thread_group_t async_loading_queue;
-        vutil::thread_group_t async_decoding_queue;
-        vutil::thread_group_t async_transfer_queue;
-//        std::vector<Handle<CUDAHostBuffer>> cached_host_blocks;
-//        std::vector<Handle<CUDAHostBuffer>> missed_host_blocks;
-//        std::unordered_set<BlockUID> cur_blocks_st;
-        std::unordered_map<BlockUID, GPUPageTableMgr::PageTableItem> cur_block_infos_mp;
-        std::map<int, std::vector<std::function<void()>>> tasks;
-    }aq;
-
-    void AQ_Init(){
-        aq.async_loading_queue.start(6);
-        aq.async_decoding_queue.start(3);
-        aq.async_transfer_queue.start(2);
-    }
-
-    void AQ_Update(const std::vector<GPUPageTableMgr::PageTableItem>& cur_intersect_blocks){
-        static std::vector<BlockUID> missed_blocks; missed_blocks.clear();
-        aq.cur_block_infos_mp.clear();
-        for(auto& [block_uid, tex_coord] : cur_intersect_blocks){
-            if(!tex_coord.Missed()) continue;
-            missed_blocks.emplace_back(block_uid);
-            aq.cur_block_infos_mp[block_uid] = {block_uid, tex_coord};
-        }
-
-        auto task = aq.async_loading_queue.create_task([&]{
-            std::vector<Handle<CUDAHostBuffer>> buffers;
-            for(auto& block_uid : missed_blocks){
-                buffers.emplace_back(fixed_host_mem_mgr_ref->GetBlock(block_uid.ToUnifiedRescUID()));
-            }
-            _AQ_AppendTask(buffers);
-        });
-        aq.async_loading_queue.submit(task);
-    }
-
-
-    void _AQ_AppendTask(std::vector<Handle<CUDAHostBuffer>> buffers){
-        // if read lock, then transfer
-        // if write lock, then loading and transfer
-        for(auto& buffer : buffers){
-            if(buffer.IsWriteLocked()){
-                _AQ_AppendDecodingTask(buffer);
-            }
-            else if(buffer.IsReadLocked()){
-                _AQ_AppendTransferTask(buffer);
-            }
-            else{
-                assert(false);
-            }
-        }
-    }
-
-    void AQ_Commit(){
-        // submit loading tasks
-        static std::map<int, vutil::task_group_handle_t> task_groups; task_groups.clear();
-        static std::vector<int> lods; lods.clear();
-        for(auto& [lod, tasks] : aq.tasks){
-              lods.emplace_back(lod);
-              auto task_group = aq.async_decoding_queue.create_task();
-              for(auto& task : tasks){
-                  task_group->enqueue_task(std::move(task));
-              }
-              task_groups[lod] = std::move(task_group);
-        }
-        int lod_count = lods.size();
-        for(int lod = 0; lod < lod_count - 1; ++lod){
-            int first = lods[lod], second = lods[lod + 1];
-            aq.async_decoding_queue.add_dependency(*task_groups[second], *task_groups[first]);
-        }
-        for(auto& [lod, task_group] : task_groups){
-            aq.async_decoding_queue.submit(task_group);
-        }
-
-        // wait all transfer tasks finished
-        aq.async_transfer_queue.wait_idle();
-    }
-
-    void AQ_Wait(){
-        aq.async_loading_queue.wait_idle();
-        aq.async_decoding_queue.wait_idle();
-        aq.async_transfer_queue.wait_idle();
-    }
-
-    void _AQ_AppendDecodingTask(Handle<CUDAHostBuffer> buffer){
-        auto block_uid = BlockUID(buffer.GetUID());
-        auto lod = block_uid.GetLOD();
-        aq.tasks[lod].emplace_back([this, block_uid = block_uid, buffer = std::move(buffer)]() mutable {
-            volume->ReadBlock(block_uid, *buffer);
-            buffer.SetUID(block_uid.ToUnifiedRescUID());
-            buffer.ConvertWriteToReadLock();
-            _AQ_AppendTransferTask(std::move(buffer));
-        });
-    }
-
-    void _AQ_AppendTransferTask(Handle<CUDAHostBuffer> buffer){
-        auto t = aq.async_transfer_queue.create_task([this, buffer = std::move(buffer)]() mutable {
-            auto block_uid = BlockUID(buffer.GetUID());
-            if(aq.cur_block_infos_mp.count(block_uid)){
-                gpu_vtex_mgr_ref->UploadBlockToGPUTex(buffer, aq.cur_block_infos_mp.at(block_uid).second);
-            }
-            //上传到显存后，不会再使用，释放读锁
-            buffer.ReleaseReadLock();
-        });
-        aq.async_transfer_queue.submit(t);
-    }
 
     struct{
         Float3 lod0_block_length_space;
@@ -2230,29 +1903,11 @@ class PBVolumeRendererPrivate{
     }
 };
 
-PBVolumeRenderer::PBVolumeRenderer(const PBVolumeRenderer::PBVolumeRendererCreateInfo &info)
+PBVolumeRenderer::PBVolumeRenderer(const PBVolumeRendererCreateInfo &info)
 {
     _ = std::make_unique<PBVolumeRendererPrivate>();
 
-    _->host_mem_mgr_ref = info.host_mem_mgr;
-    _->gpu_mem_mgr_ref = info.gpu_mem_mgr;
-    _->async = info.async;
-    if(info.use_shared_host_mem)
-        _->fixed_host_mem_mgr_ref = info.shared_fixed_host_mem_mgr_ref;
-    else{
-        //create fixed_host_mem_mgr until BindGridVolume
 
-    }
-
-    {
-        _->fixed_host_mem_bytes = info.fixed_host_mem_bytes;
-        _->vtex_cnt = info.vtex_cnt;
-        _->vtex_shape = info.vtex_shape;
-        _->render_space_ratio = info.render_space_ratio;
-        _->use_shared_host_mem = info.use_shared_host_mem;
-    }
-
-    _->AQ_Init();
 }
 
 PBVolumeRenderer::~PBVolumeRenderer()
@@ -2354,49 +2009,7 @@ void PBVolumeRenderer::BindGridVolume(Handle<GridVolume> volume)
 
 void PBVolumeRenderer::SetRenderParams(const RenderParams &render_params)
 {
-    if(render_params.light.updated){
 
-    }
-    if(render_params.lod.updated){
-        std::memcpy(_->kernel_params.cu_render_params.lod_policy, render_params.lod.leve_of_dist.LOD, sizeof(float) * MaxLodLevels);
-    }
-    if(render_params.tf.updated){
-        _->GenTFTex(render_params.tf.dim);
-        render_params.tf.tf_pts.Gen1DTF(_->tf1d, render_params.tf.dim);
-        render_params.tf.tf_pts.Gen2DTF(_->tf1d, _->tf2d, render_params.tf.dim);
-        // transfer to texture
-        cub::memory_transfer_info info;
-        info.width_bytes = sizeof(TransferFunc::Value) * render_params.tf.dim;
-        info.height = info.depth = 1;
-        VISER_WHEN_DEBUG({
-            auto v = _->tf1d->view_1d<float4>(256);
-            for (int i = 0; i < 256; i++)
-            {
-                std::cout << i << " : " << v.at(i).x << " " << v.at(i).y << " " << v.at(i).z << " " << v.at(i).w
-                          << std::endl;
-            }
-        });
-        cub::cu_memory_transfer(*_->tf1d, *_->cu_tf_tex, info).launch(_->stream);
-        info.height = render_params.tf.dim;
-        cub::cu_memory_transfer(*_->tf2d, *_->cu_2d_tf_tex, info).launch(_->stream);
-
-        _->kernel_params.cu_tf_tex = _->cu_tf_tex->_get_tex_handle();
-        _->kernel_params.cu_2d_tf_tex = _->cu_2d_tf_tex->_get_tex_handle();
-    }
-    if(render_params.distrib.updated){
-        _->kernel_params.cu_render_params.mpi_node_offset = {render_params.distrib.node_x_offset,
-                                                              render_params.distrib.node_y_offset};
-    }
-    if(render_params.other.updated){
-        _->kernel_params.cu_render_params.ray_step = render_params.raycast.ray_step;
-        _->kernel_params.cu_render_params.max_ray_dist = render_params.raycast.max_ray_dist;
-        _->kernel_params.cu_render_params.inv_tex_shape = float3{
-            render_params.other.inv_tex_shape.x,
-            render_params.other.inv_tex_shape.y,
-            render_params.other.inv_tex_shape.z
-        };
-        _->kernel_params.cu_render_params.use_2d_tf = render_params.other.use_2d_tf;
-    }
 }
 
 void PBVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
@@ -2412,79 +2025,34 @@ void PBVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
 //    _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
 }
 
-void PBVolumeRenderer::SetRenderMode(bool async)
-{
-    _->async = async;
-}
-
 void PBVolumeRenderer::Render(Handle<FrameBuffer> frame)
 {
-    // get camera view frustum from per-frame-params
 
-    Frustum camera_view_frustum;
+    bool render_frame_completed = false;
 
-    // compute current intersect blocks
-    auto& intersect_blocks = _->intersect_blocks; intersect_blocks.clear();
+    auto load_resource = [&](){
 
-    ComputeIntersectedBlocksWithViewFrustum(intersect_blocks,
-                                            _->lod0_block_length_space,
-                                            _->lod0_block_dim,
-                                            _->volume_bound,
-                                            camera_view_frustum,
-                                            [max_lod = _->max_lod,
-                                            camera_pos = _->camera_pos,
-                                            this](const BoundingBox3D& box){
-                                                auto center = (box.low + box.high) * 0.5f;
-                                                float dist = (center - camera_pos).length();
-                                                for(int i = 0; i <= max_lod; ++i){
-                                                    if(dist < _->lod.LOD[i])
-                                                        return i;
-                                                }
-                                                return max_lod;
-                                            });
+    };
+
+    auto render_pass = [&](){
+
+    };
 
 
-    // query from gpu page table
-    auto& block_infos = _->block_infos; block_infos.clear();
-    _->gpu_pt_mgr_ref->GetAndLock(intersect_blocks, block_infos);
-
-
-    // add missed blocks into async-loading-queue
-    _->AQ_Update(block_infos);
-
-    _->AQ_Commit();
-
-    if(!_->async){
-        _->AQ_Wait();
-    }
-    // start render kernel
+    try
     {
-        const dim3 tile = {16u, 16u, 1u};
-        _->kernel_params.framebuffer.color = frame->color;
-        _->kernel_params.framebuffer.depth = frame->depth;
+        while (render_frame_completed)
+        {
 
-        cub::cu_kernel_launch_info launch_info;
-        launch_info.shared_mem_bytes = 0;//PBVolumeRendererPrivate::shared_mem_size;
-        launch_info.block_dim = tile;
-        launch_info.grid_dim = {(frame->frame_width + tile.x - 1) / tile.x,
-                                (frame->frame_height + tile.y - 1) / tile.y, 1};
-        void* params[] = {&_->kernel_params};
+            load_resource();
 
-        auto render_task = cub::cu_kernel::pending(launch_info, &PBVolumeRenderKernel, params);
-        try{
-            render_task.launch(_->stream).check_error_on_throw();
+            render_pass();
 
-
-            
         }
-        catch (const std::exception& err) {
-            LOG_ERROR("PBVolumeRenderer render frame failed : {}", err.what());
-        }
-
     }
-
-    // post-process
-
+    catch(const std::exception err){
+        LOG_ERROR("PBVolumeRenderer::Render error for complete frame: {}", err.what());
+    }
 }
 
 VISER_END

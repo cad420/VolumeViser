@@ -6,24 +6,78 @@ VISER_BEGIN
 
 namespace cuda{
 
-    struct AABB{
-        float3 low;
-        float3 high;
+    template<typename T>
+    struct TVec3Helper;
+
+    template<>
+    struct TVec3Helper<float>{
+        using Type = float3;
     };
 
-    struct AABB_UI{
-        uint3 low;
-        uint3 high;
+    template<>
+    struct TVec3Helper<int>{
+        using Type = int3;
     };
 
-    struct AABB_I{
-        int3 low;
-        int3 high;
+    template<>
+    struct TVec3Helper<uint32_t>{
+        using Type = uint3;
     };
+
+    template<typename T>
+    struct TAABB{
+        using Vec3 = typename TVec3Helper<T>::Type;
+        Vec3 low;
+        Vec3 high;
+    };
+
+    using AABB = TAABB<float>;
+
+    using AABB_I = TAABB<int>;
+
+    using AABB_UI = TAABB<uint32_t>;
 
     struct Ray{
         float3 o;
         float3 d;
+
+        CUB_CPU_GPU Ray() = default;
+
+        CUB_CPU_GPU Ray(float3 origin, float3 dir)
+        :o(origin), d(dir)
+        {
+
+        }
+    };
+
+    struct RayExt : Ray{
+        float min_t;
+        float max_t;
+        size_t pixel_id;
+
+        CUB_CPU_GPU RayExt() = default;
+
+        CUB_CPU_GPU RayExt(float3 origin, float3 dir, float minT, float maxT, size_t id = 0)
+        :Ray(origin, dir), min_t(minT), max_t(maxT), pixel_id(id)
+        {
+
+        }
+
+        CUB_CPU_GPU RayExt(float3 origin, float3 dir)
+        : RayExt(origin, dir, 0.f, std::numeric_limits<float>::max(), 0)
+        {
+
+        }
+
+        CUB_CPU_GPU RayExt& operator=(const RayExt& other){
+            o = other.o;
+            d = other.d;
+            min_t = other.min_t;
+            max_t = other.max_t;
+            pixel_id = other.pixel_id;
+
+            return *this;
+        }
     };
 
     //返回光线与AABB相交的两个时刻

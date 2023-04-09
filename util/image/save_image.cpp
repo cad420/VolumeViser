@@ -9,4 +9,8 @@ VUTIL_BEGIN
         stbi_write_png( filename.c_str(), data.shape()[ 0 ], data.shape()[ 1 ], 3, data.raw_data(), 0 );
     }
 
+    void save_rgba_to_png_file(const std::string& filename, const tensor_t<color4b, 2>& data){
+        stbi_write_png(filename.c_str(), data.shape()[0], data.shape()[1], 4, data.raw_data(), 0);
+    }
+
 VUTIL_END
