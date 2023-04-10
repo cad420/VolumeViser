@@ -145,28 +145,6 @@ namespace{
 
 
 
-//    CUB_CPU_GPU inline float3 UniformSampleSphere(const float2& U)
-//    {
-//        float z = 1.f - 2.f * U.x;
-//        float r = sqrtf(max(0.f, 1.f - z*z));
-//        float phi = 2.f * PI_F * U.y;
-//        float x = r * cosf(phi);
-//        float y = r * sinf(phi);
-//        return make_float3(x, y, z);
-//    }
-
-
-    CUB_CPU_GPU inline float SphericalTheta(const float3& Wl)
-    {
-        return acosf(clamp(Wl.y, -1.f, 1.f));
-    }
-
-    CUB_CPU_GPU inline float SphericalPhi(const float3& Wl)
-    {
-        float p = atan2f(Wl.z, Wl.x);
-        return (p < 0.f) ? p + 2.f * PI_F : p;
-    }
-
     CUB_CPU_GPU bool IsBlack(float3 c)
 	{
 		if (c.x != 0 || c.y != 0 || c.z != 0 ) return false;
@@ -963,64 +941,6 @@ namespace{
     }
 
 
-    CUB_CPU_GPU inline float2 ConcentricSampleDisk(const float2& U)
-    {
-        float r, theta;
-        // Map uniform random numbers to $[-1,1]^2$
-        float sx = 2 * U.x - 1;
-        float sy = 2 * U.y - 1;
-        // Map square to $(r,\theta)$
-        // Handle degeneracy at the origin
-
-        if (sx == 0.0 && sy == 0.0)
-        {
-            return make_float2(0.0f);
-        }
-
-        if (sx >= -sy)
-        {
-            if (sx > sy)
-            {
-                // Handle first region of disk
-                r = sx;
-                if (sy > 0.0)
-                    theta = sy/r;
-                else
-                    theta = 8.0f + sy/r;
-            }
-            else
-            {
-                // Handle second region of disk
-                r = sy;
-                theta = 2.0f - sx/r;
-            }
-        }
-        else
-        {
-            if (sx <= sy)
-            {
-                // Handle third region of disk
-                r = -sx;
-                theta = 4.0f - sy/r;
-            }
-            else
-            {
-                // Handle fourth region of disk
-                r = -sy;
-                theta = 6.0f + sx/r;
-            }
-        }
-
-        theta *= PI_F / 4.f;
-
-        return make_float2(r*cosf(theta), r*sinf(theta));
-    }
-
-    CUB_CPU_GPU inline float3 CosineWeightedHemisphere(const float2& U)
-    {
-        const float2 ret = ConcentricSampleDisk(U);
-        return make_float3(ret.x, ret.y, sqrtf(max(0.f, 1.f - ret.x * ret.x - ret.y * ret.y)));
-    }
 
     CUB_CPU_GPU inline bool SameHemisphere(const float3& Ww1, const float3& Ww2)
     {
@@ -1049,16 +969,11 @@ namespace{
 
         const float3 u = normalize(cross(N, make_float3(0.0072f, 1.0f, 0.0034f)));
         const float3 v = normalize(cross(N, u));
-
         return make_float3(	u.x * Wl.x + v.x * Wl.y + N.x * Wl.z,
                             u.y * Wl.x + v.y * Wl.y + N.y * Wl.z,
                             u.z * Wl.x + v.z * Wl.y + N.z * Wl.z);
     }
 
-    CUB_CPU_GPU inline float3 Cross(const float3 &v1, const float3 &v2)
-    {
-        return make_float3((v1.y * v2.z) - (v1.z * v2.y), (v1.z * v2.x) - (v1.x * v2.z), (v1.x * v2.y) - (v1.y * v2.x));
-    };
 
 
 
@@ -1320,8 +1235,8 @@ namespace{
             m_Lambertian(Kd),
             m_Microfacet(Ks, Ior, Exponent),
             m_Nn(N),
-            m_Nu(normalize(Cross(N, Wo))),
-            m_Nv(normalize(Cross(N, m_Nu)))
+            m_Nu(normalize(cross(N, Wo))),
+            m_Nv(normalize(cross(N, m_Nu)))
         {
         }
 
