@@ -185,14 +185,6 @@ VISER_BEGIN
                         auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
                         ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
                     }
-//                    else{
-//                        printf("not find old block uid: %d %d %d, offset: %d %d %d,"
-//                               "new block uid: %d %d %d, offset: %d %d %d\n",
-//                               _block_uid.x, _block_uid.y, _block_uid.z,
-//                               _offset.x, _offset.y, _offset.z,
-//                               block_uid.x, block_uid.y, block_uid.z,
-//                               offset_in_block.x, offset_in_block.y, offset_in_block.z);
-//                    }
                 };
 
                 auto lod_block_dim = (params.cu_vol_params.voxel_dim + lod_block_length - 1) / lod_block_length;
@@ -451,7 +443,6 @@ VISER_BEGIN
             uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
 
             //采样得到一个cube对应的八个体素
-            //todo use shared memory
             float field[8];
 #define MAKE_XYZ(x, y, z) (( x << 2 ) | ( y << 1) | z)
             field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0));
@@ -777,11 +768,7 @@ VISER_BEGIN
 
             params.vol_code.at(x, y, z) = m_code;
             params.vertex_num.at(x, y, z) = vert_num;
-//            if(vert_num > 0){
-//                printf("voxel index %d %d %d has vert_num %d\n",
-//                       voxel_coord.x, voxel_coord.y, voxel_coord.z,
-//                       vert_num);
-//            }
+
 #ifdef SKIP_EMPTY_VOXELS
             params.cube_occupied.at(x, y, z) = vert_num > 0 ? 1 : 0;
 #endif
@@ -870,7 +857,7 @@ VISER_BEGIN
             vert[6] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
             vert[7] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
 
-            //todo use shared memory
+
             float field[8];
 #define MAKE_XYZ(x, y, z) (( x << 2 ) | ( y << 1) | z)
             field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0));
@@ -884,8 +871,6 @@ VISER_BEGIN
 
             //不需要生成法向量，因为之后会进行光滑操作，之后再合并重复顶点并生成索引，顶点法向量可以由面法向量插值得到，记录一个面所属的三个顶点，刚好与光滑的数据结构相同
 
-            // 12 kb
-//            __shared__ float3 vert_list[12 * ThreadsPerBlocks];
             float3 vert_list[13];
             vert_list[0] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[1], field[0], field[1]);
             vert_list[1] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[2], field[1], field[2]);
@@ -904,17 +889,15 @@ VISER_BEGIN
             vert_list[12] = make_float3(0.f);
             uint32_t code = params.vol_code.at(x, y, z);
 
-//            printf("ok2\n");
-
             const unsigned int m_case_idx = (code >> 8) & 0xff;
             const unsigned int tri_num = code & 0xff;
             const unsigned int config_idx_in_case = (code >> 16) & 0xff;
             const unsigned int subconfig13_val = (code >> 24) & 0xff;
             const char* edge_table = nullptr;
-//            printf("voxel index: %d (%d, %d, %d), tri_num: %d\n", voxel_index, x, y, z, tri_num);
+
             if(tri_num == 0) return;
             __syncthreads();
-//            printf("tri_num %u\n", tri_num);
+
             assert(tri_num == TriNumTable[m_case_idx]);
             assert(m_case_idx >= 0 && m_case_idx < 43);
 
@@ -952,15 +935,15 @@ VISER_BEGIN
                 case 31 : edge_table = tiling12_2_[config_idx_in_case]; break;
                 case 32 : edge_table = tiling12_1_1_[config_idx_in_case]; break;
                 case 33 : edge_table = tiling13_1[config_idx_in_case]; break;
-                case 34 : edge_table = tiling13_2[config_idx_in_case][subconfig13_val - 1];
-                case 35 : edge_table = tiling13_3[config_idx_in_case][subconfig13_val - 7];
-                case 36 : edge_table = tiling13_4[config_idx_in_case][subconfig13_val - 19];
-                case 37 : edge_table = tiling13_5_1[config_idx_in_case][subconfig13_val - 23];
-                case 38 : edge_table = tiling13_5_2[config_idx_in_case][subconfig13_val - 23];
-                case 39 : edge_table = tiling13_3_[config_idx_in_case][subconfig13_val - 27];
-                case 40 : edge_table = tiling13_2_[config_idx_in_case][subconfig13_val - 39];
-                case 41 : edge_table = tiling13_1_[config_idx_in_case];
-                case 42 : edge_table = tiling14[config_idx_in_case];
+                case 34 : edge_table = tiling13_2[config_idx_in_case][subconfig13_val - 1]; break;
+                case 35 : edge_table = tiling13_3[config_idx_in_case][subconfig13_val - 7]; break;
+                case 36 : edge_table = tiling13_4[config_idx_in_case][subconfig13_val - 19]; break;
+                case 37 : edge_table = tiling13_5_1[config_idx_in_case][subconfig13_val - 23]; break;
+                case 38 : edge_table = tiling13_5_2[config_idx_in_case][subconfig13_val - 23]; break;
+                case 39 : edge_table = tiling13_3_[config_idx_in_case][subconfig13_val - 27]; break;
+                case 40 : edge_table = tiling13_2_[config_idx_in_case][subconfig13_val - 39]; break;
+                case 41 : edge_table = tiling13_1_[config_idx_in_case]; break;
+                case 42 : edge_table = tiling14[config_idx_in_case]; break;
             }
 
             bool computed12 = false;
@@ -970,27 +953,18 @@ VISER_BEGIN
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i];
                         cnt += 1;
-//                        printf("idx %d 111: %d filed: %f, %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[(i + 1) % 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 4; i < 8; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[(i + 1) % 4 + 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i];
                         cnt += 1;
-//                        printf("idx %d 222: %d filed: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[(i + 1) % 4 + 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 for(int i = 0; i < 4; i++){
                     if((field[i] - params.cu_mc_params.isovalue) * (field[i + 4] - params.cu_mc_params.isovalue) < 0.f){
                         vert_list[12] += vert_list[i + 8];
                         cnt += 1;
-//                        printf("idx %d 333: %d field: %f %f, vert_list[12]: %f %f %f\n", idx, i,
-//                               field[i], field[i + 4],
-//                               vert_list[12].x, vert_list[12].y, vert_list[12].z);
                     }
                 }
                 if(cnt)
@@ -1005,13 +979,8 @@ VISER_BEGIN
 
                 //index表示这个体素之前已经有index个顶点生成
                 uint32_t index = params.num_verts_scanned.at(voxel_index) + i * 3;
-//                printf("tri_num %d i %d, a %d b %d c %d voxel_index %d index %d vert_num %d\n",
-//                       tri_num, i, a, b, c, voxel_index, index,
-//                       params.vertex_num.at(x, y, z));
+
                 if(index >= params.gen_vert_num){
-//                    printf("index %d, gen_vert_num %d, tri_num %d, m_case_idx %d,"
-//                           "vert_num %d\n", index, params.gen_vert_num, tri_num,
-//                           m_case_idx, params.vertex_num.at(x, y, z));
                     assert(false);
                 }
 
@@ -1025,23 +994,6 @@ VISER_BEGIN
                     params.vertex_pos.at(index) = vert_list[a];
                     params.vertex_pos.at(index + 1) = vert_list[b];
                     params.vertex_pos.at(index + 2) = vert_list[c];
-//                    if(index == 10941 * 3) {
-//                        printf("m_case_idx %d, gen tri index : %d, vert a %d: %f %f %f, vert b %d: %f %f %f, vert c %d: %f %f %f\n"
-//                               "filed0: %f, filed1: %f, field2: %f, filed3: %f\n"
-//                               "filed4: %f, filed5: %f, field6: %f, filed7: %f\n",
-//                               m_case_idx, index,
-//                               a, vert_list[a].x, vert_list[a].y, vert_list[a].z,
-//                               b, vert_list[b].x, vert_list[b].y, vert_list[b].z,
-//                               c, vert_list[c].x, vert_list[c].y, vert_list[c].z,
-//                               field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7]
-//                        );
-//                        for (int i = 0; i < 8; i++) {
-//                            printf("vert_pos: %d, %f %f %f\n", i, vert[i].x, vert[i].y, vert[i].z);
-//                        }
-//                        for(int i = 0; i < 13; i++){
-//                            printf("vert_list: %d, %f %f %f\n", i, vert_list[i].x, vert_list[i].y, vert_list[i].z);
-//                        }
-//                    }
                 }
             }
 
@@ -1257,9 +1209,7 @@ VISER_BEGIN
 
     void MarchingCubeAlgo::BindVTexture(VTextureHandle handle, TextureUnit unit) {
         assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
-//        if(_->params.cu_vtex[unit] != 0){
-//            cudaDestroyTextureObject(_->params.cu_vtex[unit]);
-//        }
+
         _->params.cu_vtex[unit] = handle->view_as({
             cub::e_clamp, cub::e_nearest, cub::e_normalized_float, false
         });
