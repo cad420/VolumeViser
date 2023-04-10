@@ -2,25 +2,27 @@
   "memory": {
     "gpu_index": 0,
     "max_host_mem_gb" : 16,
-    "max_gpu_mem_gb": 16,
-    "virtual_texture_count": 12,
+    "max_gpu_mem_gb": 20,
+    "virtual_texture_count": 10,
     "virtual_texture_shape": [1024, 1024, 1024]
   },
   "volume": {
-    "voxel_space": [0.00032,0.00032,0.001],
-    "voxel_dim": [23389,29581,10296]
+    "voxel_space": [0.001,0.001,0.001],
+    "voxel_dim": [2048,4096,128]
   },
   "algo": {
     "block_length": 126,
     "padding": 1,
     "lod": 0,
-    "smooth_count": 128,
+    "smooth_count": 0,
     "smooth_lambda": 0.3,
     "smooth_mu": -0.2,
     "partial_blocks_size": 128
   },
   "export_dir": "./test/",
+  "transform": "yes",
   "neurons": [
-    "../asset/SWC/SWC_7.swc"
+"G:\\gold166\\p_checked6_mouse_korea\\1201_01_s06b_L36_Sum_ch2/1201_01_s06b_L36_Sum_ch2.tif.v3dpbd.swc"
+
   ]
 }

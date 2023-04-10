@@ -150,34 +150,52 @@ VISER_BEGIN
             if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
             const auto _offset_in_block = offset_in_block;
             const auto _block_uid = block_uid;
-            if(offset_in_block.x >= block_length){
-                ++block_uid.x;
-                offset_in_block.x -= block_length;
-            }
-            else if(offset_in_block.x < 2u * padding && block_uid.x > 0){
-                --block_uid.x;
-                offset_in_block.x += block_length;
-            }
-            if(offset_in_block.y >= block_length){
-                ++block_uid.y;
-                offset_in_block.y -= block_length;
-            }
-            else if(offset_in_block.y < 2u * padding && block_uid.y > 0){
-                --block_uid.y;
-                offset_in_block.y += block_length;
-            }
-            if(offset_in_block.z >= block_length){
-                ++block_uid.z;
-                offset_in_block.z -= block_length;
-            }
-            else if(offset_in_block.z < 2u * padding && block_uid.z > 0){
-                --block_uid.z;
-                offset_in_block.z += block_length;
-            }
-            if(block_uid_valid(block_uid)){
-                voxel_store(block_uid, offset_in_block);
-            }
 
+            auto xyz_store = [_block_uid, _offset_in_block, padding, block_length,
+            &block_uid_valid, &voxel_store](int x, int y, int z) {
+                auto block_uid = _block_uid;
+                auto offset_in_block = _offset_in_block;
+                if(x){
+                    if(offset_in_block.x >= block_length){
+                        ++block_uid.x;
+                        offset_in_block.x -= block_length;
+                    }
+                    else if(offset_in_block.x < 2u * padding && block_uid.x > 0){
+                        --block_uid.x;
+                        offset_in_block.x += block_length;
+                    }
+                }
+                if(y){
+                    if(offset_in_block.y >= block_length){
+                        ++block_uid.y;
+                        offset_in_block.y -= block_length;
+                    }
+                    else if(offset_in_block.y < 2u * padding && block_uid.y > 0){
+                        --block_uid.y;
+                        offset_in_block.y += block_length;
+                    }
+                }
+                if(z){
+                    if(offset_in_block.z >= block_length){
+                        ++block_uid.z;
+                        offset_in_block.z -= block_length;
+                    }
+                    else if(offset_in_block.z < 2u * padding && block_uid.z > 0){
+                        --block_uid.z;
+                        offset_in_block.z += block_length;
+                    }
+                }
+                if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
+            };
+
+            xyz_store(0, 0, 0);
+            xyz_store(1, 0, 0);
+            xyz_store(0, 1, 0);
+            xyz_store(0, 0, 1);
+            xyz_store(0, 1, 1);
+            xyz_store(1, 0, 1);
+            xyz_store(1, 1 ,0);
+            xyz_store(1, 1, 1);
         }
         CUB_GPU cuda::AABB_UI ComputeSegmentAABB(const SWCVoxelizeKernelParams& params,
                                               float3 pt_a_pos, float pt_a_r,

@@ -6,6 +6,10 @@
 #include <thrust/device_vector.h>
 #include <thrust/scan.h>
 
+#define SKIP_EMPTY_VOXELS
+
+#define USE_SHARED_CUBE_VOXELS
+
 VISER_BEGIN
 
     namespace{
@@ -131,18 +135,25 @@ VISER_BEGIN
 
             CUDABufferView3D<uint32_t> vol_code;
             CUDABufferView3D<uint32_t> vertex_num;
+            CUDABufferView3D<uint32_t> cube_occupied;
             // 43 种情况对应的edge table起始地址
             CUDABufferView1D<float3> vertex_pos;
             uint32_t gen_vert_num;
-            //存储每一个体素之前总共产生的顶点数量
-            CUDABufferView1D<uint32_t> num_verts_scanned;
+
             uint32_t max_vert_num;
 
+            //存储每一个体素之前总共产生的顶点数量
+            CUDABufferView1D<uint32_t> num_verts_scanned;
+
+            uint32_t occupied_voxel_num;//实际生成三角形的体素数量
+
+            CUDABufferView1D<uint32_t> cube_occupied_scanned;
+            CUDABufferView1D<uint32_t> compacted_voxel_array;
         };
 
         CUB_GPU float VirtualSampling(const MCKernelParams& params,
                               uint4 hash_table[][2],
-                              uint3 voxel_coord, uint32_t lod){
+                              uint3 voxel_coord, uint32_t lod, uint32_t xyz){
             uint32_t lod_block_length = params.cu_vol_params.block_length << lod;
             uint3 block_uid = voxel_coord / lod_block_length;
             uint3 offset_in_block = (voxel_coord - block_uid * lod_block_length) / (1 << lod);
@@ -155,31 +166,60 @@ VISER_BEGIN
                 uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
                 auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
                 ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+
             }
             else{
+
                 auto padding = params.cu_vol_params.padding;
                 auto block_length = params.cu_vol_params.block_length;
-                if(offset_in_block.x < padding && block_uid.x > 0){
+                auto _block_uid = block_uid;
+                auto _offset = offset_in_block;
+
+                auto voxel_read = [&](uint3 block_uid, uint3 offset_in_block){
+                    key = make_uint4(block_uid, lod | (VolumeBlock_IsSWC << 8));
+                    tex_coord = Query(key, hash_table);
+                    tid = (tex_coord.w >> 16) & 0xffff;
+                    coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+                    if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
+                        uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
+                        auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+                        ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+                    }
+//                    else{
+//                        printf("not find old block uid: %d %d %d, offset: %d %d %d,"
+//                               "new block uid: %d %d %d, offset: %d %d %d\n",
+//                               _block_uid.x, _block_uid.y, _block_uid.z,
+//                               _offset.x, _offset.y, _offset.z,
+//                               block_uid.x, block_uid.y, block_uid.z,
+//                               offset_in_block.x, offset_in_block.y, offset_in_block.z);
+//                    }
+                };
+
+                auto lod_block_dim = (params.cu_vol_params.voxel_dim + lod_block_length - 1) / lod_block_length;
+
+                auto block_uid_valid = [&](uint3 block_uid){
+                    return block_uid.x < lod_block_dim.x
+                           && block_uid.y < lod_block_dim.y
+                           && block_uid.z < lod_block_dim.z;
+                };
+                uint32_t x = xyz & 0b100u;
+                uint32_t y = xyz & 0b010u;
+                uint32_t z = xyz & 0b001u;
+                if(x && offset_in_block.x < padding && block_uid.x > 0){
                     --block_uid.x;
                     offset_in_block.x += block_length;
                 }
-                if(offset_in_block.y < padding && block_uid.y > 0){
+                if(y && offset_in_block.y < padding && block_uid.y > 0){
                     --block_uid.y;
                     offset_in_block.y += block_length;
                 }
-                if(offset_in_block.z < padding && block_uid.z > 0){
+                if(z && offset_in_block.z < padding && block_uid.z > 0){
                     --block_uid.z;
                     offset_in_block.z += block_length;
                 }
-                key = make_uint4(block_uid, lod | (VolumeBlock_IsSWC << 8));
-                tex_coord = Query(key, hash_table);
-                tid = (tex_coord.w >> 16) & 0xffff;
-                coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
-                if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
-                    uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
-                    auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
-                    ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
-                }
+
+                if(block_uid_valid(block_uid)) voxel_read(block_uid, offset_in_block);
+
             }
             return ret;
         }
@@ -411,15 +451,17 @@ VISER_BEGIN
             uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
 
             //采样得到一个cube对应的八个体素
+            //todo use shared memory
             float field[8];
-            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod);
-            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod);
-            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod);
-            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod);
-            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod);
-            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod);
-            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod);
-            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod);
+#define MAKE_XYZ(x, y, z) (( x << 2 ) | ( y << 1) | z)
+            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0));
+            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 0));
+            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 0));
+            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 0));
+            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 0, 1));
+            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 1));
+            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 1));
+            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 1));
 
             //计算索引，分类查表，计算出case idx(43种)，以及会生成的三角形数量，所有信息pack到一个uint32_t
             uint32_t config_index = 0;
@@ -735,21 +777,59 @@ VISER_BEGIN
 
             params.vol_code.at(x, y, z) = m_code;
             params.vertex_num.at(x, y, z) = vert_num;
+//            if(vert_num > 0){
+//                printf("voxel index %d %d %d has vert_num %d\n",
+//                       voxel_coord.x, voxel_coord.y, voxel_coord.z,
+//                       vert_num);
+//            }
+#ifdef SKIP_EMPTY_VOXELS
+            params.cube_occupied.at(x, y, z) = vert_num > 0 ? 1 : 0;
+#endif
         }
 
         __forceinline__ CUB_GPU float3 VertexInterp(float isovalue, float3 p0, float3 p1, float f0, float f1){
             return lerp(p0, p1, (isovalue - f0) / (f1 - f0));
         }
 
-        CUB_KERNEL void MCKernel1_GenTriangles(MCKernelParams params){
+        CUB_KERNEL void MCKernel_ClassifyVoxel(MCKernelParams params){
             const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
             const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
             const unsigned int z = blockIdx.z * blockDim.z + threadIdx.z;
 
             if(x >= params.cu_mc_params.shape.x
-               || y >= params.cu_mc_params.shape.y
-               || z >= params.cu_mc_params.shape.z)
+                || y >= params.cu_mc_params.shape.y
+                || z >= params.cu_mc_params.shape.z) return;
+            if (params.vertex_num.at(x, y, z) > 0){
+                size_t idx = z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y + y * params.cu_mc_params.shape.x + x;
+                params.compacted_voxel_array.at(params.cube_occupied_scanned.at(idx)) = idx;
+            }
+
+        }
+
+        CUB_KERNEL void MCKernel1_GenTriangles(MCKernelParams params){
+      #ifdef SKIP_EMPTY_VOXELS
+            uint32_t voxel_index = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+            if(voxel_index >= params.occupied_voxel_num) return;
+            voxel_index = params.compacted_voxel_array.at(voxel_index);
+
+            const unsigned z = voxel_index / (params.cu_mc_params.shape.x * params.cu_mc_params.shape.y);
+            const unsigned y = (voxel_index % (params.cu_mc_params.shape.x * params.cu_mc_params.shape.y)) / params.cu_mc_params.shape.x;
+            const unsigned x = voxel_index - y * params.cu_mc_params.shape.x
+                            - z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y;
+            uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
+      #else
+            const unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+            const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+            const unsigned int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+            if(x >= params.cu_mc_params.shape.x
+                || y >= params.cu_mc_params.shape.y
+                || z >= params.cu_mc_params.shape.z)
                 return;
+
+            uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
+            uint32_t voxel_index = x + y * params.cu_mc_params.shape.x + z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y;
+      #endif
 
             __syncthreads();
 
@@ -778,8 +858,7 @@ VISER_BEGIN
             __syncthreads();
 
 
-            uint3 voxel_coord = make_uint3(x, y, z) + params.cu_mc_params.origin;
-            uint32_t voxel_index = x + y * params.cu_mc_params.shape.x + z * params.cu_mc_params.shape.x * params.cu_mc_params.shape.y;
+
 
             float3 vert[8];
             vert[0] = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
@@ -791,16 +870,17 @@ VISER_BEGIN
             vert[6] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
             vert[7] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
 
-
+            //todo use shared memory
             float field[8];
-            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod);
-            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod);
-            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod);
-            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod);
-            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod);
-            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod);
-            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod);
-            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod);
+#define MAKE_XYZ(x, y, z) (( x << 2 ) | ( y << 1) | z)
+            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0));
+            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 0));
+            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 0));
+            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 0));
+            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 0, 1));
+            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 1));
+            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 1));
+            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 1));
 
             //不需要生成法向量，因为之后会进行光滑操作，之后再合并重复顶点并生成索引，顶点法向量可以由面法向量插值得到，记录一个面所属的三个顶点，刚好与光滑的数据结构相同
 
@@ -831,6 +911,7 @@ VISER_BEGIN
             const unsigned int config_idx_in_case = (code >> 16) & 0xff;
             const unsigned int subconfig13_val = (code >> 24) & 0xff;
             const char* edge_table = nullptr;
+//            printf("voxel index: %d (%d, %d, %d), tri_num: %d\n", voxel_index, x, y, z, tri_num);
             if(tri_num == 0) return;
             __syncthreads();
 //            printf("tri_num %u\n", tri_num);
@@ -982,11 +1063,13 @@ VISER_BEGIN
 
         Handle<CUDABuffer> vol_mc_code;// max_voxel_num * sizeof(uint32_t)
         Handle<CUDABuffer> vol_vert_num;
+        Handle<CUDABuffer> vol_cube_occupied;
         Handle<CUDABuffer> vol_mc_scanned;// max_voxel_num * sizeof(uint32_t)
+        Handle<CUDABuffer> vol_cube_occupied_scanned;// max_voxel_num * sizeof(uint32_t)
         //一般体数据生成的三角形数量相对于体素数量是很少的
         //dev
         Handle<CUDABuffer> vol_vert_pos;// max_voxel_num / 8 * sizeof(float3)
-
+        Handle<CUDABuffer> vol_compacted_voxel_array;// max_voxel_num / 8 * sizeof(uint32_t)
         //host
         Handle<CUDAHostBuffer> vol_gen_host_vert;
 
@@ -1037,8 +1120,13 @@ VISER_BEGIN
 
         _->vol_gen_host_vert = info.host_mem_mgr.Invoke(&HostMemMgr::AllocPinnedHostMem, ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3), false);
         _->vol_vert_pos = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(Float3));
-
         _->params.vertex_pos = _->vol_vert_pos->view_1d<float3>(_->max_vert_num);
+#ifdef SKIP_EMPTY_VOXELS
+        _->vol_cube_occupied = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->vol_compacted_voxel_array = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num / 8 * sizeof(uint32_t));
+        _->vol_cube_occupied_scanned = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, info.max_voxel_num * sizeof(uint32_t));
+        _->params.compacted_voxel_array = _->vol_compacted_voxel_array->view_1d<uint32_t>(_->max_voxel_num / 8);
+#endif
         _->params.max_vert_num = _->max_vert_num;
 
         _->uid = _->GenMCAlgoUID();
@@ -1083,6 +1171,11 @@ VISER_BEGIN
         _->params.vertex_num = _->vol_vert_num->view_3d<uint32_t>(cub::pitched_buffer_info{mc_params.shape.x * sizeof(uint32_t)},
                                                                   cub::cu_extent{mc_params.shape.x, mc_params.shape.y, mc_params.shape.z});
         _->params.num_verts_scanned = _->vol_mc_scanned->view_1d<uint32_t>(num_voxels);
+#ifdef SKIP_EMPTY_VOXELS
+        _->params.cube_occupied = _->vol_cube_occupied->view_3d<uint32_t>(cub::pitched_buffer_info{mc_params.shape.x * sizeof(uint32_t)},
+                                                                          cub::cu_extent{mc_params.shape.x, mc_params.shape.y, mc_params.shape.z});
+        _->params.cube_occupied_scanned = _->vol_cube_occupied_scanned->view_1d<uint32_t>(num_voxels);
+#endif
 
         assert(num_voxels > 0);
         if(num_voxels > _->max_voxel_num){
@@ -1103,22 +1196,56 @@ VISER_BEGIN
             thrust::exclusive_scan(thrust::device_ptr<uint32_t>(vol_mc_vert_num_view.data()), thrust::device_ptr<uint32_t>(vol_mc_vert_num_view.data() + num_voxels),
                     thrust::device_ptr<uint32_t>(vol_mc_scanned_view.data()), 0, BOP{});
 
+
             //计算生成的三角形数
             uint32_t last_ele, last_scan_ele;
             CUB_CHECK(cudaMemcpy(&last_ele, &vol_mc_vert_num_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
             CUB_CHECK(cudaMemcpy(&last_scan_ele, &vol_mc_scanned_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+
             uint32_t total_vert_num = last_ele + last_scan_ele;
             _->params.gen_vert_num = total_vert_num;
-            cub::cu_kernel::pending(info, &MCKernel1_GenTriangles, params)
-            .launch(_->compute_stream).check_error_on_throw();
 
-            //将结果从dev传回host
-            auto dev_ret = _->vol_vert_pos->view_1d<Float3>(total_vert_num);
-            auto host_ret = _->vol_gen_host_vert->view_1d<Float3>(total_vert_num);
-            cub::memory_transfer_info tf_info; tf_info.width_bytes = total_vert_num * sizeof(Float3);
-            cub::cu_memory_transfer(dev_ret, host_ret, tf_info).launch(_->compute_stream).check_error_on_throw();
+#ifdef SKIP_EMPTY_VOXELS
+            auto vol_cube_occupied_view = _->vol_cube_occupied->view_1d<uint32_t>(num_voxels);
+            auto vol_cube_occupied_scanned_view = _->vol_cube_occupied_scanned->view_1d<uint32_t>(num_voxels);
+            thrust::exclusive_scan(thrust::device_ptr<uint32_t>(vol_cube_occupied_view.data()), thrust::device_ptr<uint32_t>(vol_cube_occupied_view.data() + num_voxels),
+                                   thrust::device_ptr<uint32_t>(vol_cube_occupied_scanned_view.data()), 0, BOP{});
 
-            mc_params.gen_host_vertices_ret = host_ret;
+
+            // 实际生成三角形的体素数量
+            CUB_CHECK(cudaMemcpy(&last_ele, &vol_cube_occupied_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            CUB_CHECK(cudaMemcpy(&last_scan_ele, &vol_cube_occupied_scanned_view.at(num_voxels - 1), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+
+            uint32_t total_occupied_voxel_num = last_ele + last_scan_ele;
+            LOG_DEBUG("total occupied voxel num : {}", total_occupied_voxel_num);
+            _->params.occupied_voxel_num = total_occupied_voxel_num;
+
+            cub::cu_kernel::pending(info, &MCKernel_ClassifyVoxel, params)
+                .launch(_->compute_stream).check_error_on_throw();
+
+            info.block_dim = dim3(32, 1, 1);
+            info.grid_dim = dim3((total_occupied_voxel_num + 31) / 32, 1, 1);
+            if(info.grid_dim.x > 65535u){
+                info.grid_dim.y = info.grid_dim.x / 32768u;
+                info.grid_dim.x = 32768u;
+            }
+#endif
+
+            if(total_vert_num > 0){
+                cub::cu_kernel::pending(info, &MCKernel1_GenTriangles, params)
+                    .launch(_->compute_stream)
+                    .check_error_on_throw();
+
+                // 将结果从dev传回host
+                auto dev_ret = _->vol_vert_pos->view_1d<Float3>(total_vert_num);
+                auto host_ret = _->vol_gen_host_vert->view_1d<Float3>(total_vert_num);
+                cub::memory_transfer_info tf_info;
+                tf_info.width_bytes = total_vert_num * sizeof(Float3);
+
+                cub::cu_memory_transfer(dev_ret, host_ret, tf_info).launch(_->compute_stream).check_error_on_throw();
+
+                mc_params.gen_host_vertices_ret = host_ret;
+            }
 
             return total_vert_num / 3;
         }

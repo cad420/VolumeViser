@@ -45,6 +45,8 @@ int main(int argc, char** argv){
         UInt3 voxel_dim;
     }volume_info;
 
+    bool transform = false;
+
     std::string export_dir = "./";
 
     std::vector<std::string> input_neurons;
@@ -128,11 +130,15 @@ int main(int argc, char** argv){
             if(ok) export_dir = _export_dir;
             if(export_dir.back() == '\\') export_dir.back() = '/';
             else if(export_dir.back() != '/') export_dir += '/';
+
+            std::string _transform = may_have("transform", j);
+            if(ok) transform = _transform == "yes";
         }
     }
 
     UInt3 block_dim = (volume_info.voxel_dim + algo_info.block_length - 1u) / algo_info.block_length;
     Float3 block_length_space = volume_info.voxel_space * (float)algo_info.block_length;
+    Float3 padding_space = (float)algo_info.padding * volume_info.voxel_space;
     BoundingBox3D volume_bound = {Float3(0.f),
                                   Float3(volume_info.voxel_dim.x * volume_info.voxel_space.x,
                                          volume_info.voxel_dim.y * volume_info.voxel_space.y,
@@ -276,6 +282,15 @@ int main(int argc, char** argv){
         swc.first = export_dir + name + ".obj";
         swc.second = NewHandle<SWC>(ResourceType::Object);
         auto swc_pts = swc_file.GetAllPoints();
+        if(transform){
+            auto _r = volume_info.voxel_space.length();
+            for(auto& pt : swc_pts){
+                pt.x *= volume_info.voxel_space.x;
+                pt.y *= volume_info.voxel_space.y;
+                pt.z *= volume_info.voxel_space.z;
+                pt.radius *= _r;
+            }
+        }
         swc_file.Close();
         std::sort(swc_pts.begin(), swc_pts.end(), [](const auto& a, const auto& b){
             return a.id < b.id;
@@ -312,10 +327,13 @@ int main(int argc, char** argv){
             std::vector<BlockUID> tmp;
             for(auto& pt : pts) pts_mp[pt.id] = pt;
             for(auto& pt : pts){
+                //todo replace with octree
                 BoundingBox3D box;
                 if(pts_mp.count(pt.pid)) box |= get_box(pts_mp.at(pt.pid));
 
                 box |= get_box(pt);
+                box.low -= 2.f * padding_space;
+                box.high += 2.f * padding_space;
 
                 ComputeIntersectedBlocksWithBoundingBox(tmp,
                                                         block_length_space,
@@ -330,13 +348,15 @@ int main(int argc, char** argv){
             auto set_task = [&](auto beg, auto end){
                 std::vector<BoundingBox3D> swc_intersect_boxes;
                 std::vector<BlockUID> partial_blocks;
+
                 for(auto it = beg; it != end; it++){
                     const auto& b = partial_blocks.emplace_back(*it);
                     auto f_uid = Float3(b.x, b.y, b.z);
-                    swc_intersect_boxes.emplace_back(f_uid * block_length_space, (f_uid + 1.f) * block_length_space);
+                    swc_intersect_boxes.emplace_back(f_uid * block_length_space - 2.f * padding_space, (f_uid + 1.f) * block_length_space + padding_space * 2.f);
                 }
 
                 auto intersect = [&](const auto& box){
+                    //todo replace with octree
                     return std::ranges::any_of(swc_intersect_boxes, [&](const BoundingBox3D& b){
                         return b.intersect(box);
                     });
@@ -368,8 +388,10 @@ int main(int argc, char** argv){
                 vparams.ptrs = segment_buffer->view_1d<SWCSegment>(swc_seg_count);
                 for(size_t i = 0; i < swc_seg_count; i++) vparams.ptrs.at(i) = swc_segments[i];
 
-
-                swc_voxelizer->Run(vparams);
+                {
+                    AutoTimer _t("Voxelizing");
+                    swc_voxelizer->Run(vparams);
+                }
 
                 mc_algo->BindPTBuffer(pt_ref->GetPageTable(false).GetHandle());
 
@@ -382,6 +404,8 @@ int main(int argc, char** argv){
                     mc_params.lod = b.GetLOD();
 
                     int gen_tri_num = mc_algo->Run(mc_params);
+
+                    LOG_INFO("gen tri num : {}", gen_tri_num);
 
                     mesh->Insert(MeshData0(gen_tri_num, [&](int vert_idx)->const Float3&{
                         return mc_params.gen_host_vertices_ret.at(vert_idx);
@@ -418,7 +442,7 @@ int main(int argc, char** argv){
             mesh_smoother->Smoothing(mesh->GetPackedMeshDataRef(), algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
             MeshFile mesh_file;
             mesh_file.Open(filename, MeshFile::Write);
-            mesh_file.WriteMeshData(mesh->GetPackedMeshData());
+            mesh_file.WriteMeshData(mesh->GetPackedMeshDataRef());
             mesh_file.Close();
             LOG_INFO("export mesh file: {} ok", filename.c_str());
         });

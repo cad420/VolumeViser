@@ -227,6 +227,7 @@ MeshData0 Merge(const std::vector<MeshData0>& meshes){
 }
 
 MeshData0::MeshData0(int tri_count, std::function<const PosType &(int)> get_vert) {
+    if(tri_count == 0) return;
     struct TriFace{
         uint32_t idx[3];
     };

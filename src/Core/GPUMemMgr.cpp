@@ -71,8 +71,7 @@ Handle<CUDABuffer> GPUMemMgr::AllocBuffer(ResourceType type, size_t bytes) {
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc buffer with size: " + std::to_string(bytes));
     }
     return NewHandle<CUDABuffer>(type, bytes, cub::cu_memory_type::e_cu_device, _->ctx).AddCallback([this, bytes = bytes]{
-        LOG_DEBUG("Release Buffer for GPUMemMgr with bytes : {}", bytes);
-        _->used_mem_bytes -= bytes;
+        if(this && _) _->used_mem_bytes -= bytes;
     });
 }
 
@@ -84,8 +83,7 @@ Handle<CUDAPitchedBuffer> GPUMemMgr::AllocPitchedBuffer(ResourceType type, size_
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc pitched buffer with size: " + std::to_string(bytes));
     }
     return NewHandle<CUDAPitchedBuffer>(type, width, height, ele_size, _->ctx).AddCallback([this, bytes = bytes]{
-        LOG_DEBUG("Release Pitched Buffer for GPUMemMgr with bytes : {}", bytes);
-        _->used_mem_bytes -= bytes;
+        if(this && _) _->used_mem_bytes -= bytes;
     });
 }
 
@@ -97,8 +95,7 @@ Handle<CUDATexture> GPUMemMgr::AllocTexture(ResourceType type, const TextureCrea
         throw ViserResourceCreateError("No enough free memory for GPUMemMgr to alloc texture with size: " + std::to_string(bytes));
     }
     return NewHandle<CUDATexture>(type, info.resc_info, info.view_info, _->ctx).AddCallback([this, bytes = bytes]{
-        LOG_DEBUG("Release Texture for GPUMemMgr with bytes : {}", bytes);
-        _->used_mem_bytes -= bytes;
+        if(this && _) _->used_mem_bytes -= bytes;
     });
 }
 
