@@ -55,3 +55,5 @@ add_subdirectory(applications/VolViewer)
 add_subdirectory(applications/VolAnnotater)
 
 add_subdirectory(applications/VolRenderer)
+
+add_subdirectory(applications/VolEditor)
