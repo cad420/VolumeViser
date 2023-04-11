@@ -7,7 +7,7 @@ VISER_BEGIN
 namespace cuda{
 
 #define KRNL_SS_BLOCK_W		16
-#define KRNL_SS_BLOCK_H		8
+#define KRNL_SS_BLOCK_H		16
 #define KRNL_SS_BLOCK_SIZE	KRNL_SS_BLOCK_W * KRNL_SS_BLOCK_H
 #define PI_F												3.141592654f
 #define INV_PI_F											0.31830988618379067154f
@@ -28,6 +28,9 @@ class Material;
 class BSDF;
 
 class Medium;
+
+
+
 
 
 

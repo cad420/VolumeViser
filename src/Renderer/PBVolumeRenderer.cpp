@@ -97,20 +97,38 @@ namespace{
         uint32_t block_length;
         uint32_t padding;
         uint32_t block_size;
+
+        float max_intensity;
+        float min_intensity;
+        float inv_intensity_range; // 1.f / (max_intensity - min_intensity)
+
     };
 
     struct CUDARenderParams{
         float lod_policy[MaxLodLevels];
-        float ray_step;
+
         float max_ray_dist;//中心的最远距离
         float3 inv_tex_shape;
         bool use_2d_tf;
         int2 mpi_node_offset;
+
+        float ray_step;
+        float shadow_ray_step;
+        float density_scale;
+
     };
 
     struct CUDAPBParams{
         int shadow_ray_lod;
 
+//        InfiniteAreaLight infinite_light;
+//        DiffuseLight diffuse_lights[6];
+
+    };
+
+    struct SceneLights{
+        int light_num;
+        Light* lights[8];
     };
 
     struct CUDAPerFrameParams{
@@ -181,47 +199,6 @@ namespace{
     }
 
 
-    class CRNG{
-
-        public:
-            CUB_CPU_GPU CRNG(unsigned int* pSeed0, unsigned int* pSeed1)
-            {
-                m_pSeed0 = pSeed0;
-                m_pSeed1 = pSeed1;
-            }
-
-            CUB_CPU_GPU float Get1()
-            {
-                *m_pSeed0 = 36969 * ((*m_pSeed0) & 65535) + ((*m_pSeed0) >> 16);
-                *m_pSeed1 = 18000 * ((*m_pSeed1) & 65535) + ((*m_pSeed1) >> 16);
-
-                unsigned int ires = ((*m_pSeed0) << 16) + (*m_pSeed1);
-
-                union
-                {
-                    float f;
-                    unsigned int ui;
-                } res;
-
-                res.ui = (ires & 0x007fffff) | 0x40000000;
-
-                return (res.f - 2.f) / 2.f;
-            }
-
-            CUB_CPU_GPU float2 Get2()
-            {
-                return make_float2(Get1(), Get1());
-            }
-
-            CUB_CPU_GPU float3 Get3()
-            {
-                return make_float3(Get1(), Get1(), Get1());
-            }
-
-        private:
-            unsigned int*	m_pSeed0;
-            unsigned int*	m_pSeed1;
-    };
 
     class CLightSample
     {
@@ -243,7 +220,7 @@ namespace{
             return *this;
         }
 
-        CUB_GPU void LargeStep(CRNG& Rnd)
+        CUB_GPU void LargeStep(RNG& Rnd)
         {
             m_Pos		= Rnd.Get2();
             m_Component	= Rnd.Get1();
@@ -276,7 +253,7 @@ namespace{
             return *this;
         }
 
-        CUB_GPU void LargeStep(CRNG& Rnd)
+        CUB_GPU void LargeStep(RNG& Rnd)
         {
             m_Component	= Rnd.Get1();
             m_Dir		= Rnd.Get2();
@@ -304,7 +281,7 @@ namespace{
             return *this;
         }
 
-        CUB_GPU void LargeStep(CRNG& Rnd)
+        CUB_GPU void LargeStep(RNG& Rnd)
         {
             m_BsdfSample.LargeStep(Rnd);
             m_LightSample.LargeStep(Rnd);
@@ -659,14 +636,22 @@ namespace{
         cudaTextureObject_t cu_vtex[MaxCUDATextureCountPerGPU];
         cudaTextureObject_t cu_tf_tex;
         cudaTextureObject_t cu_2d_tf_tex;
+
+        cudaTextureObject_t cu_tf_specular_roughness_tex;
+        cudaTextureObject_t cu_tf_emission_g_tex;
+
         CUDAFrameBuffer framebuffer;
 
         CUDABufferView1D<BlockUID> missed_blocks;
 
 
         CLighting m_Lighting;
+
         unsigned int* randomseed1;
         unsigned int* randomseed2;
+        CUDABufferView2D<uint32_t> random_seed0;
+        CUDABufferView2D<uint32_t> random_seed1;
+
         int	m_ShadingType;
         float m_GradientFactor;
     };
@@ -837,31 +822,31 @@ namespace{
     }
 
 
-    CUB_GPU float GetNormalizedIntensity(const float3& P)
+    CUB_GPU float GetNormalizedIntensity(float3 P)
     {
         const float Intensity = ((float)SHRT_MAX * tex3D(gTexDensity, P.x * gInvAaBbMax.x, P.y * gInvAaBbMax.y, P.z * gInvAaBbMax.z));
 
         return (Intensity - gIntensityMin) * gIntensityInvRange;
     }
 
-    CUB_GPU float GetOpacity(const float& NormalizedIntensity)
+    CUB_GPU float GetOpacity(float NormalizedIntensity)
     {
         return tex1D(gTexOpacity, NormalizedIntensity);
     }
 
-    CUB_GPU float3 GetDiffuse(const float& NormalizedIntensity)
+    CUB_GPU float3 GetDiffuse(float NormalizedIntensity)
     {
         float4 Diffuse = tex1D(gTexDiffuse, NormalizedIntensity);
         return make_float3(Diffuse.x, Diffuse.y, Diffuse.z);
     }
 
-    CUB_GPU float3 GetSpecular(const float& NormalizedIntensity)
+    CUB_GPU float3 GetSpecular(float NormalizedIntensity)
     {
         float4 Specular = tex1D(gTexSpecular, NormalizedIntensity);
         return make_float3(Specular.x, Specular.y, Specular.z);
     }
 
-    CUB_GPU float GetRoughness(const float& NormalizedIntensity)
+    CUB_GPU float GetRoughness(float NormalizedIntensity)
     {
         return tex1D(gTexRoughness, NormalizedIntensity);
     }
@@ -1401,18 +1386,19 @@ namespace{
         return LargestMaxT > LargestMinT;
     }
 
-    CUB_GPU inline bool SampleDistanceRM(RayExt& R, CRNG& RNG, float3& Ps)
+    CUB_GPU inline bool SampleDistanceRM(RayExt& ray, RNG& RNG, float3& Ps)
     {
         const int TID = threadIdx.y * blockDim.x + threadIdx.x;
 
+        //todo: remove __shared__ ?
         __shared__ float MinT[KRNL_SS_BLOCK_SIZE];
         __shared__ float MaxT[KRNL_SS_BLOCK_SIZE];
 
-        if (!IntersectBox(R, &MinT[TID], &MaxT[TID]))
+        if (!IntersectBox(ray, &MinT[TID], &MaxT[TID]))
             return false;
 
-        MinT[TID] = max(MinT[TID], R.min_t);
-        MaxT[TID] = min(MaxT[TID], R.max_t);
+        MinT[TID] = max(MinT[TID], ray.min_t);
+        MaxT[TID] = min(MaxT[TID], ray.max_t);
 
         const float S = -log(RNG.Get1()) / gDensityScale;
         float Sum = 0.0f;
@@ -1423,7 +1409,7 @@ namespace{
         // delta-tracking
         while (Sum < S)
         {
-            Ps = R.o + MinT[TID] * R.d;
+            Ps = ray.o + MinT[TID] * ray.d;
 
             if (MinT[TID] > MaxT[TID])
                 return false;
@@ -1438,7 +1424,7 @@ namespace{
     }
 
 
-    CUB_GPU inline bool FreePathRM(RayExt& R, CRNG& RNG)
+    CUB_GPU inline bool FreePathRM(RayExt& R, RNG& RNG)
     {
         const int TID = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -1458,7 +1444,7 @@ namespace{
 
         MinT[TID] += RNG.Get1() * gStepSizeShadow;
 
-        // delta-tracking
+        // delta-tracking ?
         while (Sum < S)
         {
             Ps[TID] = R.o + MinT[TID] * R.d;
@@ -1503,9 +1489,22 @@ namespace{
         return false;
     }
 
+    CUB_GPU Spectrum _EstimateDirectLight(){
+        //多重性采样 分别采样光源和brdf进行计算该点的贡献值
 
 
-    CUB_GPU float3 EstimateDirectLight(PBVolumeRenderKernelParams & params, const CVolumeShader::EType& Type, const float& Density, CLight& Light, CLightingSample& LS, const float3& Wo, const float3& Pe, const float3& N, CRNG& RNG)
+
+    }
+
+    CUB_GPU float3 EstimateDirectLight(PBVolumeRenderKernelParams & params,
+                                       const CVolumeShader::EType& Type,
+                                       const float& Density,
+                                       CLight& Light,
+                                       CLightingSample& LS,
+                                       const float3& Wo,
+                                       const float3& Pe,
+                                       const float3& N,
+                                       RNG& RNG)
     {
         float3 Ld = make_float3(0), Li = make_float3(0), F = make_float3(0);
         float3 tdiffuse = GetDiffuse(Density);
@@ -1565,7 +1564,22 @@ namespace{
         return Ld;
     }
 
-    CUB_GPU float3 UniformSampleOneLight(PBVolumeRenderKernelParams & params, const CVolumeShader::EType& Type, const float& Density, const float3& Wo, const float3& Pe, const float3& N, CRNG& RNG, const bool& Brdf)
+    CUB_GPU Spectrum _UniformSampleOneLight(PBVolumeRenderKernelParams& params,
+                                            RNG& rng,
+                                            PBRVolumeModel::EType type){
+        // 选择光源 产生brdf和light的sample uv
+
+
+    }
+
+    CUB_GPU float3 UniformSampleOneLight(PBVolumeRenderKernelParams & params,
+                                         const CVolumeShader::EType& Type,
+                                         const float& Density,
+                                         const float3& Wo,
+                                         const float3& Pe,
+                                         const float3& N,
+                                         RNG& rng,
+                                         const bool& Brdf)
     {
         const int NumLights = params.m_Lighting.m_NoLights;
 
@@ -1574,13 +1588,13 @@ namespace{
 
         CLightingSample LS;
 
-        LS.LargeStep(RNG);
+        LS.LargeStep(rng);
 
         const int WhichLight = (int)floorf(LS.m_LightNum * (float)NumLights);
 
         CLight& Light = params.m_Lighting.m_Lights[WhichLight];
 
-        return (float)NumLights * EstimateDirectLight(params, Type, Density, Light, LS, Wo, Pe, N, RNG);
+        return (float)NumLights * EstimateDirectLight(params, Type, Density, Light, LS, Wo, Pe, N, rng);
     }
 
 
@@ -1612,7 +1626,7 @@ namespace{
 
 
 
-        CRNG RNG(&(params.randomseed1[y * params.cu_per_frame_params.frame_width + x]), &(params.randomseed2[y * params.cu_per_frame_params.frame_width + x]));
+        RNG rng(&(params.randomseed1[y * params.cu_per_frame_params.frame_width + x]), &(params.randomseed2[y * params.cu_per_frame_params.frame_width + x]));
 
 
 
@@ -1620,7 +1634,7 @@ namespace{
 
 
 
-        const float2 UV = make_float2(x, y) + RNG.Get2();
+        const float2 UV = make_float2(x, y) + rng.Get2();
 
 
         RayExt ray;
@@ -1644,7 +1658,7 @@ namespace{
 
         CLight* pLight = NULL;
 
-        if (SampleDistanceRM(ray, RNG, pe))
+        if (SampleDistanceRM(ray, rng, pe))
         {
             if (NearestLight(params, RayExt(ray.o, ray.d, 0.0f, length(pe - ray.o)), Li, pl, pLight))
             {
@@ -1686,13 +1700,13 @@ namespace{
             {
                 case 0:
                 {
-                    Lv += UniformSampleOneLight(params, CVolumeShader::Brdf, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, true);
+                    Lv += UniformSampleOneLight(params, CVolumeShader::Brdf, D, normalize(make_float3(0)-ray.d), pe, gN, rng, true);
                     break;
                 }
 
                 case 1:
                 {
-                    Lv += 0.5f * UniformSampleOneLight(params, CVolumeShader::Phase, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, false);
+                    Lv += 0.5f * UniformSampleOneLight(params, CVolumeShader::Phase, D, normalize(make_float3(0)-ray.d), pe, gN, rng, false);
                     break;
                 }
 
@@ -1702,10 +1716,10 @@ namespace{
 
                     const float PdfBrdf = (1.0f - __expf(-params.m_GradientFactor * GradMag));
 
-                    if (RNG.Get1() < PdfBrdf)
-                        Lv += UniformSampleOneLight(params, CVolumeShader::Brdf, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, true);
+                    if (rng.Get1() < PdfBrdf)
+                        Lv += UniformSampleOneLight(params, CVolumeShader::Brdf, D, normalize(make_float3(0)-ray.d), pe, gN, rng, true);
                     else
-                        Lv += 0.5f * UniformSampleOneLight(params, CVolumeShader::Phase, D, normalize(make_float3(0)-ray.d), pe, gN, RNG, false);
+                        Lv += 0.5f * UniformSampleOneLight(params, CVolumeShader::Phase, D, normalize(make_float3(0)-ray.d), pe, gN, rng, false);
 
                     break;
                 }
