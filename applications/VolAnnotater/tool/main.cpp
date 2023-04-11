@@ -11,6 +11,7 @@
 #include <Model/SWC.hpp>
 #include <Model/Mesh.hpp>
 #include <Model/SWC.hpp>
+#include <Geometry/GridOctTree.hpp>
 #include <IO/SWCIO.hpp>
 
 #include <queue>
@@ -145,6 +146,7 @@ int main(int argc, char** argv){
                                          volume_info.voxel_dim.z * volume_info.voxel_space.z)};
 
 
+
     // resource
     auto& resc_ins = ResourceMgr::GetInstance();
     auto host_mem_mgr_uid = resc_ins.RegisterResourceMgr({.type = ResourceMgr::Host,
@@ -152,6 +154,17 @@ int main(int argc, char** argv){
                                                           .DeviceIndex = -1});
 
     auto host_mem_mgr_ref = resc_ins.GetHostRef(host_mem_mgr_uid);
+
+    // build oct tree
+    GridOctTree::OctTreeCreateInfo tree_info{
+        .host_mem_mgr_ref = host_mem_mgr_ref,
+        .leaf_node_shape = block_length_space,
+        .world_origin = volume_bound.low,
+        .world_range = volume_bound.high,
+        .expand_boundary = padding_space,
+        .leaf_is_valid = false
+    };
+    auto oct_tree = NewHandle<GridOctTree>(ResourceType::Object, tree_info);
 
     auto gpu_resc_uid = resc_ins.RegisterResourceMgr({.type = ResourceMgr::Device,
                                                              .MaxMemBytes = memory_info.max_gpu_mem_bytes,
@@ -306,6 +319,9 @@ int main(int argc, char** argv){
     using SWCPoint = SWC::SWCPoint;
     using SWCPointKey = SWC::SWCPointKey;
 
+    vutil::thread_group_t tg;
+    tg.start(actual_worker_count(18));
+
     auto swc2mesh_task = [&](Handle<SWC> swc, std::string filename){
         LOG_INFO("start swc to mesh task");
         auto mesh = NewHandle<Mesh>(ResourceType::Object);
@@ -346,37 +362,43 @@ int main(int argc, char** argv){
 
             // partial into small sets
             auto set_task = [&](auto beg, auto end){
-                std::vector<BoundingBox3D> swc_intersect_boxes;
                 std::vector<BlockUID> partial_blocks;
-
+                std::vector<GridOctTree::NodeIndex> node_indices;
                 for(auto it = beg; it != end; it++){
-                    const auto& b = partial_blocks.emplace_back(*it);
-                    auto f_uid = Float3(b.x, b.y, b.z);
-                    swc_intersect_boxes.emplace_back(f_uid * block_length_space - 2.f * padding_space, (f_uid + 1.f) * block_length_space + padding_space * 2.f);
+                    const auto& uid = partial_blocks.emplace_back(*it);
+                    node_indices.push_back({(int)uid.x, (int)uid.y, (int)uid.z, uid.GetLOD()});
                 }
 
+                oct_tree->Set(node_indices, false);
+
                 auto intersect = [&](const auto& box){
-                    //todo replace with octree
-                    return std::ranges::any_of(swc_intersect_boxes, [&](const BoundingBox3D& b){
-                        return b.intersect(box);
-                    });
+                    return oct_tree->TestIntersect(box);
                 };
 
                 std::vector<SWCSegment> swc_segments;
+                std::mutex mtx;
                 // calc swc segments for the set of blocks
-                for(auto& pt : pts){
-                    if(pts_mp.count(pt.pid) == 0) continue;
-                    auto& prev_pt = pts_mp.at(pt.pid);
-                    auto box = get_box(prev_pt) | get_box(pt);
-                    if(intersect(box))
-                        swc_segments.emplace_back(Float4(prev_pt.x, prev_pt.y, prev_pt.z, prev_pt.radius),
-                                                  Float4(pt.x, pt.y, pt.z, pt.radius));
-                }
+                int pt_cnt = pts.size();
+                vutil::parallel_forrange(0, pt_cnt, [&](int threadIdx, int idx){
+                        auto& pt = pts.at(idx);
+                        if(pts_mp.count(pt.pid) == 0) return;
+                        auto& prev_pt = pts_mp.at(pt.pid);
+                        auto box = get_box(prev_pt) | get_box(pt);
+                        if(intersect(box)){
+                            std::lock_guard<std::mutex> lk(mtx);
+                            swc_segments.emplace_back(Float4(prev_pt.x, prev_pt.y, prev_pt.z, prev_pt.radius),
+                                                      Float4(pt.x, pt.y, pt.z, pt.radius));
+                        }
+                    }, tg);
+
+
                 size_t swc_seg_count = swc_segments.size();
                 if(swc_seg_count > MaxSegmentCount){
                     LOG_ERROR("SWC segments count({}) > MaxSegmentCount({})", swc_seg_count, MaxSegmentCount);
                     return;
                 }
+                LOG_INFO("partial blocks intersect swc segment count: {}", swc_seg_count);
+
 
                 std::vector<GPUPageTableMgr::PageTableItem> blocks_info;
                 pt_ref->GetAndLock(partial_blocks, blocks_info);
@@ -386,7 +408,8 @@ int main(int argc, char** argv){
 
                 SWCVoxelizer::SWCVoxelizeAlgoParams vparams;
                 vparams.ptrs = segment_buffer->view_1d<SWCSegment>(swc_seg_count);
-                for(size_t i = 0; i < swc_seg_count; i++) vparams.ptrs.at(i) = swc_segments[i];
+                for(size_t i = 0; i < swc_seg_count; i++)
+                    vparams.ptrs.at(i) = swc_segments[i];
 
                 {
                     AutoTimer _t("Voxelizing");

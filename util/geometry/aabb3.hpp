@@ -67,6 +67,9 @@ VUTIL_BEGIN
     template<typename T>
     taabb3<T> operator*(const taabb3<T> &a, const tvec3 <T> &b);
 
+    template<typename T>
+    taabb3<T> operator+(const taabb3<T>& a, const tvec3<T>& b);
+
     using aabb3f = taabb3<float>;
     using aabb3d = taabb3<double>;
     using aabb3i = taabb3<int>;

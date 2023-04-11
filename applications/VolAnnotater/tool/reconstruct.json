@@ -2,7 +2,7 @@
   "memory": {
     "gpu_index": 0,
     "max_host_mem_gb" : 16,
-    "max_gpu_mem_gb": 20,
+    "max_gpu_mem_gb": 16,
     "virtual_texture_count": 10,
     "virtual_texture_shape": [1024, 1024, 1024]
   },
@@ -11,7 +11,7 @@
     "voxel_dim": [2048,4096,128]
   },
   "algo": {
-    "block_length": 126,
+    "block_length": 62,
     "padding": 1,
     "lod": 0,
     "smooth_count": 0,

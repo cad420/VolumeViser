@@ -129,7 +129,7 @@ VUTIL_BEGIN
  * @param thread_group must start before
  */
     template<typename T, typename Func>
-    void parallel_forrange(T beg, T end, Func &&func, thread_group_t& thread_group,int worker_count = 0)
+    void parallel_forrange(T beg, T end, Func &&func, thread_group_t& thread_group)
     {
         assert(thread_group.is_running());
         std::mutex it_mutex;
@@ -146,7 +146,6 @@ VUTIL_BEGIN
         std::exception_ptr except_ptr = nullptr;
 
         int num_threads = thread_group.get_num_threads();
-        worker_count = worker_count == 0 ? num_threads : std::min(worker_count, num_threads);
 
         auto worker_func = [&](int thread_index)
         {

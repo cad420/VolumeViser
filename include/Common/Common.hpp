@@ -142,6 +142,7 @@ enum class UnifiedRescType : uint8_t{
     MeshSmoother,
     SWC,
     Mesh,
+    OctTree,
     General,
     MaxEnum = 255
 };

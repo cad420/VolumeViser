@@ -157,4 +157,9 @@ VUTIL_BEGIN
         );
     }
 
+    template<typename T>
+    taabb3<T> operator+(const taabb3<T>& a, const tvec3<T>& b){
+        return taabb3<T>(a.low + b, a.high + b);
+    }
+
 VUTIL_END
