@@ -217,45 +217,28 @@ VISER_BEGIN
         }
 
 
-        CUB_GPU float TestFace(const float field[8], int f){
+        CUB_GPU bool TestFace(const float field[8], int f){
             // 渐近线测试所用的四个参数
             int A, B, C, D;
             // 注意有的面需要将结果取反，这个时候 f 是负数
             // 参考 Figure 6 第 3 个图，这个顺序 ABCD 的应该是作者自己确定的，论文里面没写，这个顺序跟测试是否带正负号相关
             switch (f) {
-                case 1:
-                case -1:
-                    A = 0, B = 4, C = 5, D = 1;
-                    break;
-                case 2:
-                case -2:
-                    A = 1, B = 5, C = 6, D = 2;
-                    break;
-                case 3:
-                case -3:
-                    A = 2, B = 6, C = 7, D = 3;
-                    break;
-                case 4:
-                case -4:
-                    A = 3, B = 7, C = 4, D = 0;
-                    break;
-                case 5:
-                case -5:
-                    A = 0, B = 3, C = 2, D = 1;
-                    break;
-                case 6:
-                case -6:
-                    A = 4, B = 7, C = 6, D = 5;
-                    break;
+                case -1: case 1: A = 0, B = 4, C = 5, D = 1; break;
+                case -2: case 2: A = 1, B = 5, C = 6, D = 2; break;
+                case -3: case 3: A = 2, B = 6, C = 7, D = 3; break;
+                case -4: case 4: A = 3, B = 7, C = 4, D = 0; break;
+                case -5: case 5: A = 0, B = 3, C = 2, D = 1; break;
+                case -6: case 6: A = 4, B = 7, C = 6, D = 5; break;
                 default:{
 
                 }
             }
-
-            return f * field[A] * (field[A] * field[C] - field[B] * field[D]);
+            if(fabs(field[A] * field[C] - field[B] * field[D]) < FLT_EPSILON)
+                return f >= 0;
+            return f * field[A] * (field[A] * field[C] - field[B] * field[D]) >= 0;
         }
 
-        CUB_GPU float TestInterior(const float field[8], int caseIdx, int alongEdgeIdx, int edgeIdx){
+        CUB_GPU bool TestInterior(const float field[8], int caseIdx, int alongEdgeIdx, int edgeIdx){
             float t, At = 0, Bt = 0, Ct = 0, Dt = 0, a, b;
             switch (caseIdx) {
                 // 强对称性，直接计算
@@ -264,7 +247,7 @@ VISER_BEGIN
                     a = (field[4] - field[0]) * (field[6] - field[2]) - (field[7] - field[3]) * (field[5] - field[1]);
                     b = field[2] * (field[4] - field[0]) + field[0] * (field[6] - field[2]) - field[1] * (field[7] - field[3]) - field[3] * (field[5] - field[1]);
                     t = -b / (2 * a);
-                    if (t > 0 || t < 1) return -alongEdgeIdx;
+                    if (t > 0 || t < 1) return alongEdgeIdx > 0;
                     At = field[0] + (field[4] - field[0]) * t;
                     Bt = field[3] + (field[7] - field[3]) * t;
                     Ct = field[2] + (field[6] - field[2]) * t;
@@ -378,28 +361,25 @@ VISER_BEGIN
             if (Ct >= 0) test += 4;
             if (Dt >= 0) test += 8;
             if (test <= 4)
-                return -alongEdgeIdx;
+                return alongEdgeIdx > 0;
             else if (test == 5)
-                return (At * Ct - Bt * Dt) * alongEdgeIdx;
+                if(At * Ct - Bt * Dt < FLT_EPSILON) return alongEdgeIdx > 0;
             else if (test == 6)
-                return -alongEdgeIdx;
+                return alongEdgeIdx > 0;
             else if (test == 7)
-                return alongEdgeIdx;
+                return alongEdgeIdx < 0;
             else if (test <= 9)
-                return -alongEdgeIdx;
+                return alongEdgeIdx > 0;
             else if (test == 10)
-                return -(At * Ct - Bt * Dt) * alongEdgeIdx;
+                if(At * Ct - Bt * Dt >= FLT_EPSILON) return alongEdgeIdx > 0;
             else if (test == 11)
-                return alongEdgeIdx;
+                return alongEdgeIdx < 0;
             else if (test == 12)
-                return -alongEdgeIdx;
+                return alongEdgeIdx > 0;
             else if (test <= 15)
-                return alongEdgeIdx;
-            else {
-//                std::cout << "testInterior got wrong test value: " << test << std::endl;
-//                assert(false);
-                return -1;
-            }
+                return alongEdgeIdx < 0;
+
+            return alongEdgeIdx < 0;
         }
 
 
@@ -445,25 +425,30 @@ VISER_BEGIN
             //采样得到一个cube对应的八个体素
             float field[8];
 #define MAKE_XYZ(x, y, z) (( x << 2 ) | ( y << 1) | z)
-            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0));
-            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 0));
-            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 0));
-            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 0));
-            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 0, 1));
-            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 1));
-            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 1));
-            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 1));
+            field[0] = VirtualSampling(params, hash_table, voxel_coord, params.cu_mc_params.lod, MAKE_XYZ(0, 0, 0)) - params.cu_mc_params.isovalue;
+            field[1] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 0)) - params.cu_mc_params.isovalue;
+            field[2] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 0)) - params.cu_mc_params.isovalue;
+            field[3] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 0), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 0)) - params.cu_mc_params.isovalue;
+            field[4] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 0, 1)) - params.cu_mc_params.isovalue;
+            field[5] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 0, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 0, 1)) - params.cu_mc_params.isovalue;
+            field[6] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(1, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(1, 1, 1)) - params.cu_mc_params.isovalue;
+            field[7] = VirtualSampling(params, hash_table, voxel_coord + make_uint3(0, 1, 1), params.cu_mc_params.lod, MAKE_XYZ(0, 1, 1)) - params.cu_mc_params.isovalue;
 
             //计算索引，分类查表，计算出case idx(43种)，以及会生成的三角形数量，所有信息pack到一个uint32_t
             uint32_t config_index = 0;
-            config_index += uint32_t(field[0] < params.cu_mc_params.isovalue);
-            config_index += uint32_t(field[1] < params.cu_mc_params.isovalue) << 1;
-            config_index += uint32_t(field[2] < params.cu_mc_params.isovalue) << 2;
-            config_index += uint32_t(field[3] < params.cu_mc_params.isovalue) << 3;
-            config_index += uint32_t(field[4] < params.cu_mc_params.isovalue) << 4;
-            config_index += uint32_t(field[5] < params.cu_mc_params.isovalue) << 5;
-            config_index += uint32_t(field[6] < params.cu_mc_params.isovalue) << 6;
-            config_index += uint32_t(field[7] < params.cu_mc_params.isovalue) << 7;
+//            config_index += uint32_t(field[0] < params.cu_mc_params.isovalue);
+//            config_index += uint32_t(field[1] < params.cu_mc_params.isovalue) << 1;
+//            config_index += uint32_t(field[2] < params.cu_mc_params.isovalue) << 2;
+//            config_index += uint32_t(field[3] < params.cu_mc_params.isovalue) << 3;
+//            config_index += uint32_t(field[4] < params.cu_mc_params.isovalue) << 4;
+//            config_index += uint32_t(field[5] < params.cu_mc_params.isovalue) << 5;
+//            config_index += uint32_t(field[6] < params.cu_mc_params.isovalue) << 6;
+//            config_index += uint32_t(field[7] < params.cu_mc_params.isovalue) << 7;
+
+            for(int i = 0; i < 8; i++){
+                if(fabs(field[i]) < FLT_EPSILON) field[i] = FLT_EPSILON;
+                if(field[i] <= 0) config_index += 1u << i;
+            }
 
             const unsigned int case_idx = cases[config_index][0];
             const unsigned int config_idx_in_case = cases[config_index][1];
@@ -492,7 +477,7 @@ VISER_BEGIN
                 }
                 // 3 : 内部 2 种情况  1:2  2:4
                 case 3 : {
-                    if(TestFace(field, test3[config_idx_in_case]) < 0){
+                    if(!TestFace(field, test3[config_idx_in_case])){
                         m_code = MAKE_HARD_CODE(3, 2, config_idx_in_case, subconfig13Value);
                         vert_num = 6;
                     }
@@ -504,7 +489,7 @@ VISER_BEGIN
                 }
                 // 4 : 内部 2 种情况  1:2  2:6
                 case 4 : {
-                    if(TestInterior(field, case_idx, test4[config_idx_in_case], 1) < 0){
+                    if(TestInterior(field, case_idx, test4[config_idx_in_case], 1)){
                         m_code = MAKE_HARD_CODE(5, 2, config_idx_in_case, subconfig13Value);
                         vert_num = 6;
                     }
@@ -522,8 +507,8 @@ VISER_BEGIN
                 }
                 // 6 : 内部 3 种情况  1:3  2:9  3:5
                 case 6 : {
-                    if(TestFace(field, test6[config_idx_in_case][0]) < 0){
-                        if(TestInterior(field, case_idx, test6[config_idx_in_case][1], test6[config_idx_in_case][2]) < 0){
+                    if(TestFace(field, test6[config_idx_in_case][0]) == 0){
+                        if(TestInterior(field, case_idx, test6[config_idx_in_case][1], test6[config_idx_in_case][2])){
                             m_code = MAKE_HARD_CODE(8, 3, config_idx_in_case, subconfig13Value);
                             vert_num = 9;
                         }
@@ -540,13 +525,13 @@ VISER_BEGIN
                 }
                 // 7 : 内部 8 种情况  1:3  2:5  3:5  4:9  5:5  6:9  7:9  8:5  9:9
                 case 7 : {
-                    if(TestFace(field, test7[config_idx_in_case][0]) < 0){
+                    if(TestFace(field, test7[config_idx_in_case][0])){
                         subconfig += 1;
                     }
-                    if(TestFace(field, test7[config_idx_in_case][1]) < 0){
+                    if(TestFace(field, test7[config_idx_in_case][1])){
                         subconfig += 2;
                     }
-                    if(TestFace(field, test7[config_idx_in_case][2]) < 0){
+                    if(TestFace(field, test7[config_idx_in_case][2])){
                         subconfig += 4;
                     }
                     switch (subconfig) {
@@ -586,7 +571,7 @@ VISER_BEGIN
                             break;
                         }
                         case 7 : {
-                            if(TestInterior(field, case_idx, test7[config_idx_in_case][3], test7[config_idx_in_case][4]) > 0){
+                            if(TestInterior(field, case_idx, test7[config_idx_in_case][3], test7[config_idx_in_case][4]) == 0){
                                 m_code = MAKE_HARD_CODE(18, 5, config_idx_in_case, subconfig13Value);
                                 vert_num = 15;
                             }
@@ -613,15 +598,15 @@ VISER_BEGIN
                 }
                 // 10 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
                 case 10 : {
-                    if(TestFace(field, test10[config_idx_in_case][0]) > 0){
+                    if(TestFace(field, test10[config_idx_in_case][0])){
                         subconfig += 1;
                     }
-                    if(TestFace(field, test10[config_idx_in_case][1]) > 0){
+                    if(TestFace(field, test10[config_idx_in_case][1])){
                         subconfig += 2;
                     }
                     switch (subconfig) {
                         case 0 : {
-                            if(TestInterior(field, case_idx, test10[config_idx_in_case][2], 1) < 0){
+                            if(TestInterior(field, case_idx, test10[config_idx_in_case][2], 1)){
                                 m_code = MAKE_HARD_CODE(22, 4, config_idx_in_case, subconfig13Value);
                                 vert_num = 12;
                             }
@@ -657,15 +642,15 @@ VISER_BEGIN
                 }
                 // 12 : 内部 5 种情况  1:4  2:8  3:8  4:8  5:4
                 case 12 : {
-                    if(TestFace(field, test12[config_idx_in_case][0]) > 0){
+                    if(TestFace(field, test12[config_idx_in_case][0])){
                         subconfig += 1;
                     }
-                    if(TestFace(field, test12[config_idx_in_case][1]) > 0){
+                    if(TestFace(field, test12[config_idx_in_case][1])){
                         subconfig += 2;
                     }
                     switch (subconfig) {
                         case 0 : {
-                            if(TestInterior(field, case_idx, test12[config_idx_in_case][2], test12[config_idx_in_case][3]) < 0){
+                            if(TestInterior(field, case_idx, test12[config_idx_in_case][2], test12[config_idx_in_case][3])){
                                 m_code = MAKE_HARD_CODE(28, 4, config_idx_in_case, subconfig13Value);
                                 vert_num = 12;
                             }
@@ -698,22 +683,22 @@ VISER_BEGIN
                 }
                 // 13 : 内部 9 种情况  1:4  2:6  3:10  4:12  5:6  6:10  7:10  8:6  9:4
                 case 13 : {
-                    if(TestFace(field, test13[config_idx_in_case][0]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][0])){
                         subconfig += 1;
                     }
-                    if(TestFace(field, test13[config_idx_in_case][1]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][1])){
                         subconfig += 2;
                     }
-                    if(TestFace(field, test13[config_idx_in_case][2]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][2])){
                         subconfig += 4;
                     }
-                    if(TestFace(field, test13[config_idx_in_case][3]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][3])){
                         subconfig += 8;
                     }
-                    if(TestFace(field, test13[config_idx_in_case][4]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][4])){
                         subconfig += 16;
                     }
-                    if(TestFace(field, test13[config_idx_in_case][5]) > 0){
+                    if(TestFace(field, test13[config_idx_in_case][5])){
                         subconfig += 32;
                     }
                     subconfig13Value = subconfig13[subconfig];
@@ -734,7 +719,7 @@ VISER_BEGIN
                         vert_num = 36;
                     }
                     else if(subconfig13Value < 27){
-                        if(TestInterior(field, case_idx, test13[config_idx_in_case][6], tiling13_5_1[config_idx_in_case][subconfig13Value - 23][0]) < 0){
+                        if(TestInterior(field, case_idx, test13[config_idx_in_case][6], tiling13_5_1[config_idx_in_case][subconfig13Value - 23][0])){
                             m_code = MAKE_HARD_CODE(37, 6, config_idx_in_case, subconfig13Value);
                             vert_num = 18;
                         }
