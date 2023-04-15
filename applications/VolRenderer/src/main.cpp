@@ -2,63 +2,13 @@
 // Created by wyz on 2023/4/6.
 //
 
-#include <Core/Renderer.hpp>
-#include <json.hpp>
-
+#include "Common.hpp"
 #include "VideoMaker.hpp"
 
-using namespace viser;
 
-namespace{
-    enum LightType{
-        Point,
-        Spot,
-        Direct
-    };
-}
 
-struct VolRendererConfigParams{
-    struct Settings{
 
-    }settings;
 
-    struct Camera{
-
-    }camera;
-
-    struct TransferFunc{
-
-    }tf;
-
-    struct Lights{
-
-    }lights;
-
-    struct Render{
-
-    }render;
-
-    struct Frame{
-        Int2 resolution;
-
-    }frame;
-
-    struct Data{
-        std::vector<std::string> lod_filenames;
-    }data;
-
-    struct Memory{
-        size_t max_host_mem_bytes = 4ull << 30;
-        size_t max_gpu_mem_bytes = 8ull << 30;
-        uint32_t gpu_index = 0;
-    }memory;
-
-    struct Animation{
-        int frame_count;
-        std::vector<Mat4> transforms; // for camera
-        // todo: other operations like change fov, near/far plane or field of depth
-    }animation;
-};
 
 class ImageProcessor{
   public:
@@ -74,6 +24,20 @@ class ImageProcessor{
 
     }
 
+    void SaveImage(std::string_view filename){
+        if(vutil::ends_with(filename, ".hdr")){
+            throw std::runtime_error("Can't save image for hdr format");
+        }
+        auto ret = radiance.map([](const Float4& r){
+           return vutil::color4b(
+                std::clamp<int>(r.x * 255, 0, 255),
+                std::clamp<int>(r.y * 255, 0, 255),
+                std::clamp<int>(r.z * 255, 0, 255),
+                255);
+        });
+        vutil::save_rgba_to_png_file(filename.data(), ret.get_data());
+    }
+
   private:
     CUDAContext ctx;
     Handle<FrameBuffer> framebuffer;// use _color for float4
@@ -83,6 +47,8 @@ class ImageProcessor{
 class RenderOutput{
   public:
     RenderOutput(int width, int height, CUDAContext ctx){
+        image_processor = std::make_unique<ImageProcessor>(width, height, ctx);
+
 
     }
 
@@ -99,6 +65,10 @@ class RenderOutput{
 
     }
 
+    void ExportFrame(std::string_view filename){
+        image_processor->SaveImage(filename);
+    }
+
     void Close(){
 
     }
@@ -108,9 +78,7 @@ class RenderOutput{
     std::unique_ptr<VideoMaker> video_maker;
 };
 
-void LoadFromJsonFile(VolRendererConfigParams& params, std::string_view filename){
 
-}
 
 void Run(Handle<PBVolumeRenderer> renderer, std::unique_ptr<RenderOutput> rop, const VolRendererConfigParams& params){
     // create and bind render resource
@@ -128,19 +96,7 @@ void Run(Handle<PBVolumeRenderer> renderer, std::unique_ptr<RenderOutput> rop, c
 
 }
 
-void SetupVolumeIO(GridVolume::GridVolumeCreateInfo& volInfo,
-                   const VolRendererConfigParams::Data& data){
-    if(data.lod_filenames.empty()){
-        throw std::runtime_error("Empty lod filenames for loading volume data");
-    }
 
-    int lod = 0;
-    for(auto& filename : data.lod_filenames){
-        volInfo.lod_vol_file_io[lod++] = Handle<VolumeIOInterface>(ResourceType::Object,
-                                                                   CreateVolumeFileByFileName(filename));
-    }
-    volInfo.levels = lod;
-}
 
 void Run(const VolRendererConfigParams& params){
     // create system resource

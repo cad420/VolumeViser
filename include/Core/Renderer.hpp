@@ -154,7 +154,9 @@ class PBVolumeRenderer: public Renderer{
         Ref<HostMemMgr> host_mem_mgr_ref;
         Ref<GPUMemMgr> gpu_mem_mgr_ref;
 
-
+        size_t fixed_host_mem_bytes = 6ull << 30;
+        size_t vtex_cnt = 8;
+        Int3 vtex_shape{1024, 1024, 1024};
     };
     explicit PBVolumeRenderer(const PBVolumeRendererCreateInfo&);
 

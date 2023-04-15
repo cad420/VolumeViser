@@ -1,0 +1,22 @@
+#version 460 core
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(rgba32f, binding = 0) uniform readonly image2D Accumulate;
+layout(rgba8, binding = 1) uniform writeonly image2D Display;
+
+layout(std140, binding = 0) uniform Params{
+    int ToneMapping;
+};
+
+void main() {
+    ivec2 res = imageSize(Accumulate);
+    ivec2 g_index = ivec2(gl_WorkGroupSize.xy * gl_WorkGroupID.xy + gl_LocalInvocationID.xy);
+    if (g_index.x >= res.x || g_index.y >= res.y){
+        return;
+    }
+
+    vec4 color = imageLoad(Accumulate, g_index);
+    color = pow(color, vec4(1.0 / 2.2));
+
+    imageStore(Display, g_index, color);
+}

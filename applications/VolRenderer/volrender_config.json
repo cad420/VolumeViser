@@ -1,0 +1,48 @@
+{
+  "settings": {
+
+  },
+  "camera": {
+    "pos": [],
+    "dir": [],
+    "near": 0.001,
+    "far": 10.0,
+    "fov": 40.0
+  },
+  "tf": {
+
+  },
+  "lights": {
+
+  },
+  "render": {
+
+  },
+  "frame": {
+    "resolution": [1920, 1080],
+    "output_dir": "",
+    "output_name": ""
+  },
+  "data": {
+    "levels": 8,
+    "lod0": "G:/VolMouseData/config/gen_mouse_lod0.encoded_blocked.desc.json",
+    "lod1": "G:/VolMouseData/config/gen_mouse_lod1.encoded_blocked.desc.json",
+    "lod2": "G:/VolMouseData/config/gen_mouse_lod2.encoded_blocked.desc.json",
+    "lod3": "G:/VolMouseData/config/gen_mouse_lod3.encoded_blocked.desc.json",
+    "lod4": "G:/VolMouseData/config/gen_mouse_lod4.encoded_blocked.desc.json",
+    "lod5": "G:/VolMouseData/config/gen_mouse_lod5.encoded_blocked.desc.json",
+    "lod6": "G:/VolMouseData/config/gen_mouse_lod6.encoded_blocked.desc.json",
+    "lod7": "G:/VolMouseData/config/gen_mouse_lod7.encoded_blocked.desc.json"
+  },
+  "memory": {
+    "cpu": 16,
+    "gpu": 20
+  },
+  "animation": {
+    "transform_file": "",
+    "transform": {
+      "count": 1,
+      "matrix": []
+    }
+  }
+}

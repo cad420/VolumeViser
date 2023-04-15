@@ -112,6 +112,8 @@ namespace{
         bool use_2d_tf;
         int2 mpi_node_offset;
 
+        int output_depth;
+
         float ray_step;
         float shadow_ray_step;
         float density_scale;
@@ -150,6 +152,9 @@ namespace{
     struct CUDAFrameBuffer{
         CUDABufferView2D<uint32_t> color;
         CUDABufferView2D<float> depth;
+        cudaSurfaceObject_t _color;
+        cudaSurfaceObject_t _depth;
+
     };
 
     struct RayCastResult{
@@ -1604,6 +1609,17 @@ namespace{
         if(x >= params.cu_per_frame_params.frame_width || y >= params.cu_per_frame_params.frame_height)
             return;
 
+        float4 color{1.f, 1.f, 1.f, 1.f};
+
+        if(params.framebuffer.color.data()){
+            params.framebuffer.color.at(x, y) = Float4ToUInt(color);
+        }
+        else{
+            surf2Dwrite(color, params.framebuffer._color, x * sizeof(float4), y);
+        }
+
+        return ;
+
 
         const unsigned int thread_count = blockDim.x * blockDim.y;
         const unsigned int thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
@@ -1732,10 +1748,10 @@ namespace{
         }
 
 
-        float4 color = make_float4(PostProcessing(make_float4(Lv, 0)));
-
-        params.framebuffer.color.at(x, y) = Float4ToUInt(color);
-        params.framebuffer.depth.at(x, y) = 0;
+//        float4 color = make_float4(PostProcessing(make_float4(Lv, 0)));
+//
+//        params.framebuffer.color.at(x, y) = Float4ToUInt(color);
+//        params.framebuffer.depth.at(x, y) = 0;
 
     }
 
@@ -1835,6 +1851,18 @@ class PBVolumeRendererPrivate{
 PBVolumeRenderer::PBVolumeRenderer(const PBVolumeRendererCreateInfo &info)
 {
     _ = std::make_unique<PBVolumeRendererPrivate>();
+
+    _->host_mem_mgr_ref = info.host_mem_mgr_ref;
+    _->gpu_mem_mgr_ref = info.gpu_mem_mgr_ref;
+    _->fixed_host_mem_bytes = info.fixed_host_mem_bytes;
+    _->vtex_cnt = info.vtex_cnt;
+    _->vtex_shape = info.vtex_shape;
+
+    _->ctx = info.gpu_mem_mgr_ref->_get_cuda_context();
+
+    _->stream = cub::cu_stream::null(_->ctx);
+
+    _->uid = _->GenRescUID();
 
 
 }
@@ -1957,25 +1985,51 @@ void PBVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
 void PBVolumeRenderer::Render(Handle<FrameBuffer> frame)
 {
 
+//    _->kernel_params.framebuffer.color = frame->color;
+//    _->kernel_params.framebuffer.depth = frame->depth;
+    _->kernel_params.framebuffer._color = frame->_color->_get_handle();
+    if(_->kernel_params.cu_render_params.output_depth)
+        _->kernel_params.framebuffer._depth = frame->_depth->_get_handle();
+
+    _->kernel_params.cu_per_frame_params.frame_width = frame->frame_width;
+    _->kernel_params.cu_per_frame_params.frame_height = frame->frame_height;
+
     bool render_frame_completed = false;
 
     auto load_resource = [&](){
 
     };
 
+
+
+
+
+    const dim3 tile = {16u, 16u, 1u};
+    cub::cu_kernel_launch_info launch_info;
+    launch_info.shared_mem_bytes = 0;//shared memory size in kernel params is not for __shared__ ?
+    launch_info.block_dim = tile;
+    launch_info.grid_dim = {(frame->frame_width + tile.x - 1) / tile.x,
+                            (frame->frame_height + tile.y - 1) / tile.y, 1};
+
+    void* params[] = {&_->kernel_params};
+
+    auto render_task = cub::cu_kernel::pending(launch_info, &PBVolumeRenderKernel, params);
+
     auto render_pass = [&](){
-
+        render_task.launch(_->stream).check_error_on_throw();
     };
-
 
     try
     {
-        while (render_frame_completed)
+//        while (render_frame_completed)
         {
 
-            load_resource();
+//            load_resource();
 
             render_pass();
+
+
+
 
         }
     }
