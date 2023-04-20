@@ -49,8 +49,8 @@ namespace detail {
 
     template<typename T>
     struct cu_buffer_transfer<T, 2> {
-        static cu_task transfer(const buffer_view<T, 2> &src, const buffer_view<T, 2> &dst, const memory_transfer_info &info) {
-            return {[=](const cu_stream &stream) {
+        static cu_task transfer(const buffer_view<T, 2> &src, buffer_view<T, 2> dst, const memory_transfer_info &info) {
+            return {[=](const cu_stream &stream) mutable {
                 CUDA_MEMCPY2D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -65,11 +65,11 @@ namespace detail {
                 m.srcY = info.src_y;
 
                 if (dst.is_device()) {
-                    m.srcDevice = (CUdeviceptr) dst.data();
-                    m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+                    m.dstDevice = (CUdeviceptr) dst.data();
+                    m.dstMemoryType = CU_MEMORYTYPE_DEVICE;
                 } else {
-                    m.srcHost = dst.data();
-                    m.srcMemoryType = CU_MEMORYTYPE_HOST;
+                    m.dstHost = dst.data();
+                    m.dstMemoryType = CU_MEMORYTYPE_HOST;
                 }
                 m.dstPitch = dst.pitch();
                 m.dstXInBytes = info.dst_x_bytes;

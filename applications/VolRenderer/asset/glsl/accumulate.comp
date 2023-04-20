@@ -6,8 +6,7 @@ layout(rgba32f, binding = 0) uniform readonly image2D Src;//framne
 layout(rgba32f, binding = 1) uniform image2D Dst;//accumulate
 
 layout(std140, binding = 0) uniform Params{
-    float BlendRatio;
-
+    int FrameIndex;
 };
 
 void main() {
@@ -21,7 +20,9 @@ void main() {
 
     vec4 accu_color = imageLoad(Dst, g_index);
 
-    vec4 blend_color = mix(accu_color, cur_color, BlendRatio);
+    float n = max(float(FrameIndex), 1.f);
+
+    vec4 blend_color = accu_color + (cur_color - accu_color) / n;
 
     imageStore(Dst, g_index, blend_color);
 }

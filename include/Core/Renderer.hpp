@@ -154,6 +154,8 @@ class PBVolumeRenderer: public Renderer{
         Ref<HostMemMgr> host_mem_mgr_ref;
         Ref<GPUMemMgr> gpu_mem_mgr_ref;
 
+        float render_space_ratio = 1.f;
+
         size_t fixed_host_mem_bytes = 6ull << 30;
         size_t vtex_cnt = 8;
         Int3 vtex_shape{1024, 1024, 1024};
@@ -179,6 +181,7 @@ class PBVolumeRenderer: public Renderer{
     void Render(Handle<FrameBuffer> frame) override;
 
     struct PBParams{
+        int spp = 1;
 
     };
     void SetPBParams(const PBParams&);

@@ -5,10 +5,14 @@
 //只用于渲染单帧 不能调整任何参数 除了相机移动 可用于debug
 
 #include "../src/Common.hpp"
-
-
+#include "Algorithm/LevelOfDetailPolicy.hpp"
 
 #include <cuda_gl_interop.h>
+
+#define WINDOW_WIDTH 1280
+#define WINDOW_HEIGHT 720
+
+#define TEST_TIME(f, desc) test_time([this](){f;}, desc);
 
 class UI : public gl_app_t{
   public:
@@ -37,8 +41,8 @@ class UI : public gl_app_t{
     void initialize() override {
 //        GL_EXPR(glEnable(GL_DEPTH_TEST));
         GL_EXPR(glDisable(GL_DEPTH_TEST));
-        int w = 1200;
-        int h = 720;
+        int w = WINDOW_WIDTH;
+        int h = WINDOW_HEIGHT;
 
         //
         fbo.initialize_handle();
@@ -102,9 +106,48 @@ class UI : public gl_app_t{
         SetupVolumeIO(vol_info, params.data);
         auto volume = NewHandle<GridVolume>(ResourceType::Object, vol_info);
 
+        auto volume_desc = volume->GetDesc();
+
         pb_vol_renderer->BindGridVolume(std::move(volume));
 
+
+
+        auto render_space = (std::min)({volume_desc.voxel_space.x, volume_desc.voxel_space.y, volume_desc.voxel_space.z});
+
+        {
+            RenderParams render_params{};
+            ComputeUpBoundLOD(render_params.lod.leve_of_dist, render_space,
+                              w, h, vutil::deg2rad(40.f));
+            render_params.lod.updated = true;
+            for(int i = 0; i < vol_info.levels; i++)
+                render_params.lod.leve_of_dist.LOD[i] *= 1.5f;
+
+            render_params.tf.updated = true;
+            render_params.tf.tf_pts.pts.push_back({119.f/255.f, Float4(0.f, 0.f, 0.f, 0.f)});
+            render_params.tf.tf_pts.pts.push_back({142.f/255.f, Float4(0.5f, 0.48443f, 0.36765f, 0.3412f)});
+            render_params.tf.tf_pts.pts.push_back({238.f/255.f, Float4(0.853f, 0.338f, 0.092f, 0.73333f)});
+
+
+            render_params.raycast.updated = true;
+            render_params.raycast.ray_step = render_space * 0.5f;
+            render_params.raycast.max_ray_dist = 6.f;
+
+            render_params.other.updated = true;
+            render_params.other.output_depth = false;
+
+            pb_vol_renderer->SetRenderParams(render_params);
+        }
+
         register_cuda_gl_resource();
+
+        Float3 default_pos = {3.60977, 2.882, 9.3109};//8.06206f
+        camera.set_position(default_pos);
+        camera.set_perspective(40.f, 0.001f, 10.f);
+        camera.set_direction(vutil::deg2rad(-90.f), 0.f);
+        camera.set_move_speed(0.005);
+        camera.set_view_rotation_speed(0.0003f);
+        //global camera for get proj view
+        camera.set_w_over_h((float)w / h);
     }
 
     void frame() override {
@@ -124,7 +167,7 @@ class UI : public gl_app_t{
     }
 
     void handle_events() override {
-
+        gl_app_t::handle_events();
     }
 
   private:
@@ -152,6 +195,8 @@ class UI : public gl_app_t{
         fbo.unbind();
 
         cur_frame_index = 0;
+        accu_params.frame_index = cur_frame_index;
+        accu_params_buffer.set_buffer_data(&accu_params);
     }
 
     void update_per_frame(){
@@ -164,18 +209,27 @@ class UI : public gl_app_t{
 
         auto get_cur_params = [&](){
             PerFrameParams cur_params;
-
-
+            cur_params.fov = vutil::deg2rad(camera.get_fov_deg());
+            cur_params.cam_dir = camera.get_xyz_direction();
+            cur_params.cam_pos = camera.get_position();
+            cur_params.frame_width = WINDOW_WIDTH;
+            cur_params.frame_height = WINDOW_HEIGHT;
+            cur_params.frame_w_over_h = camera.get_w_over_h();
+            cur_params.proj_view = camera.get_view_proj();
+            static Float3 WorldUp = {0.f, 1.f, 0.f};
+            cur_params.cam_right = vutil::cross(camera.get_xyz_direction(), WorldUp).normalized();
+            cur_params.cam_up = vutil::cross(cur_params.cam_right, cur_params.cam_dir);
             return cur_params;
         };
 
         auto cur_params = get_cur_params();
-        bool clear_history = !view_not_changed(cur_params);
+        clear_history = !view_not_changed(cur_params);
+        static bool first = true;
+        if(first) clear_history = first = false;
         if(clear_history){
             clear_framebuffer();
-
-            pb_vol_renderer->SetPerFrameParams(cur_params);
         }
+        pb_vol_renderer->SetPerFrameParams(cur_params);
 
         per_frame_params = cur_params;
     }
@@ -196,7 +250,10 @@ class UI : public gl_app_t{
         update_per_frame();
 
 
-        pb_vol_renderer->Render(framebuffer);
+//        pb_vol_renderer->Render(framebuffer);
+
+        TEST_TIME(pb_vol_renderer->Render(framebuffer), "vol-render");
+
 
         cudaGraphicsUnmapResources(1, &cuda_frame_color_resc);
 
@@ -230,8 +287,11 @@ class UI : public gl_app_t{
 
     void render_ui(){
         if(ImGui::Begin("VolRenderer Settings")){
+            ImGui::Text("Cur Frame Index: %d", cur_frame_index);
 
-
+            for(auto& [desc, time] : time_records){
+                ImGui::Text("%s cost time: %s ms", desc.c_str(), time.ms().fmt().c_str());
+            }
 
         }
 
@@ -239,15 +299,27 @@ class UI : public gl_app_t{
     }
 
     void after_render(){
-
+        cur_frame_index++;
+//        if(clear_history) cur_frame_index = 0;
 
     }
 
+
+    void test_time(std::function<void()> f, const std::string& desc){
+        timer.start();
+        f();
+        timer.stop();
+        time_records[desc] = timer.duration();
+    }
   private:
     VolRendererConfigParams params;
 
+    Timer timer;
+    std::map<std::string, Duration> time_records;
+
     struct{
         int cur_frame_index = 0;
+        bool clear_history;
 
     };
 
@@ -272,7 +344,7 @@ class UI : public gl_app_t{
 
     struct{
         struct alignas(16) AccumulateParams{
-            float blend_ratio = 0.05f;
+            int frame_index = 0;
         }accu_params;
         std140_uniform_block_buffer_t<AccumulateParams> accu_params_buffer;
         program_t accumulator;
