@@ -47,6 +47,7 @@ int main(int argc, char** argv){
     }volume_info;
 
     bool transform = false;
+    float transform_ratio = 1.f;
 
     std::string export_dir = "./";
 
@@ -134,6 +135,8 @@ int main(int argc, char** argv){
 
             std::string _transform = may_have("transform", j);
             if(ok) transform = _transform == "yes";
+            float _transform_ratio = may_have("transform_ratio", j);
+            if(ok) transform_ratio = _transform_ratio;
         }
     }
 
@@ -164,8 +167,9 @@ int main(int argc, char** argv){
         .expand_boundary = padding_space,
         .leaf_is_valid = false
     };
+#ifdef USE_TREE
     auto oct_tree = NewHandle<GridOctTree>(ResourceType::Object, tree_info);
-
+#endif
     auto gpu_resc_uid = resc_ins.RegisterResourceMgr({.type = ResourceMgr::Device,
                                                              .MaxMemBytes = memory_info.max_gpu_mem_bytes,
                                                              .DeviceIndex = memory_info.gpu_index});
@@ -296,11 +300,12 @@ int main(int argc, char** argv){
         swc.second = NewHandle<SWC>(ResourceType::Object);
         auto swc_pts = swc_file.GetAllPoints();
         if(transform){
-            auto _r = volume_info.voxel_space.length();
+            auto space = volume_info.voxel_space * transform_ratio;
+            auto _r = space.length();
             for(auto& pt : swc_pts){
-                pt.x *= volume_info.voxel_space.x;
-                pt.y *= volume_info.voxel_space.y;
-                pt.z *= volume_info.voxel_space.z;
+                pt.x *= space.x;
+                pt.y *= space.y;
+                pt.z *= space.z;
                 pt.radius *= _r;
             }
         }
@@ -310,6 +315,20 @@ int main(int argc, char** argv){
         });
         for(auto& pt : swc_pts) swc.second->InsertNodeLeaf(pt);
         LOG_INFO("load swc: {} ok, pts count: {}", filename.c_str(), swc_pts.size());
+
+        // calc swc length
+        {
+            float total_length = 0.f;
+            for(auto& pt : swc_pts){
+                if(swc.second->QueryNode(pt.pid)){
+                    auto& ppt = swc.second->GetNode(pt.pid);
+                    auto l = Float3(pt.x - ppt.x, pt.y - ppt.y, pt.z - ppt.z);
+                    total_length += l.length();
+                }
+            }
+            LOG_INFO("swc total length: {}", total_length);
+        }
+
     };
     LOG_INFO("start loading neuron swc files...");
     for(auto& neuron : input_neurons) load_swc(neuron);
@@ -368,11 +387,15 @@ int main(int argc, char** argv){
                     const auto& uid = partial_blocks.emplace_back(*it);
                     node_indices.push_back({(int)uid.x, (int)uid.y, (int)uid.z, uid.GetLOD()});
                 }
-
+#ifdef USE_TREE
                 oct_tree->Set(node_indices, false);
-
+#endif
                 auto intersect = [&](const auto& box){
+#ifdef USE_TREE
                     return oct_tree->TestIntersect(box);
+#else
+                    return true;
+#endif
                 };
 
                 std::vector<SWCSegment> swc_segments;
@@ -428,7 +451,7 @@ int main(int argc, char** argv){
 
                     int gen_tri_num = mc_algo->Run(mc_params);
 
-                    LOG_INFO("gen tri num : {}", gen_tri_num);
+//                    LOG_INFO("gen tri num : {}", gen_tri_num);
 
                     mesh->Insert(MeshData0(gen_tri_num, [&](int vert_idx)->const Float3&{
                         return mc_params.gen_host_vertices_ret.at(vert_idx);
@@ -456,13 +479,17 @@ int main(int argc, char** argv){
                 set_task(beg, end);
                 LOG_INFO("mesh generate from {} to {} ok...", offset, (std::min)(all_blocks_count, offset + algo_info.partial_blocks_size));
             }
-
             LOG_INFO("mesh generate ok...");
         }
 
+
         mesh_postprocess_queue.append([&, mesh = std::move(mesh), filename = std::move(filename)] () mutable {
 //            mesh->Smooth(algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
-            mesh_smoother->Smoothing(mesh->GetPackedMeshDataRef(), algo_info.smooth_lambda, algo_info.smooth_mu, algo_info.smooth_count);
+            {
+                AutoTimer timer("smoothing");
+                mesh_smoother->Smoothing(mesh->GetPackedMeshDataRef(), algo_info.smooth_lambda, algo_info.smooth_mu,
+                                         algo_info.smooth_count);
+            }
             MeshFile mesh_file;
             mesh_file.Open(filename, MeshFile::Write);
             mesh_file.WriteMeshData(mesh->GetPackedMeshDataRef());

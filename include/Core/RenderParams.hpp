@@ -126,9 +126,9 @@ struct PerFrameParams{
     float frame_height;
     Float3 cam_up;
     float frame_w_over_h;
-//    int debug_mode = 0;
     Mat4 proj_view;
+    int debug_mode = 1;
 };
-static_assert(sizeof(PerFrameParams) == 32 * 4,"");
+//static_assert(sizeof(PerFrameParams) == 32 * 4,"");
 
 VISER_END

@@ -753,9 +753,9 @@ namespace{
             ret.flag = tex_coord.w & 0xffff;
         }
         else{
-            if(params.cu_per_frame_params.debug_mode == 1)
-                printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
-                       tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
+//            if(params.cu_per_frame_params.debug_mode == 1)
+//                printf("block not find : %d %d %d %d, %d %d %d %d\n",key.x, key.y, key.z, key.w,
+//                       tex_coord.x, tex_coord.y, tex_coord.z, tex_coord.w);
         }
         return ret;
     }
@@ -764,9 +764,9 @@ namespace{
     CUB_GPU float4 ScalarToRGBA(const PBVolumeRenderKernelParams & params,
                                 float scalar, uint32_t lod){
         if(scalar < 0.3f) return make_float4(0.f);
-        if(params.cu_per_frame_params.debug_mode == 3){
-            return make_float4(scalar, scalar, scalar, 1.f);
-        }
+//        if(params.cu_per_frame_params.debug_mode == 3){
+//            return make_float4(scalar, scalar, scalar, 1.f);
+//        }
         auto color = tex3D<float4>(params.cu_tf_tex, scalar, 0.5f, 0.5f);
         return color;
     }
@@ -1696,14 +1696,14 @@ namespace{
             return ret;
 
         entry_t = max(0.f ,entry_t);
-        if(params.cu_per_frame_params.debug_mode == 1){
-            ret.color = make_float4(ray.o + ray.d * entry_t, 1.f);
-            return ret;
-        }
-        else if(params.cu_per_frame_params.debug_mode == 2){
-            ret.color = make_float4(ray.o + ray.d * exit_t, 1.f);
-            return ret;
-        }
+//        if(params.cu_per_frame_params.debug_mode == 1){
+//            ret.color = make_float4(ray.o + ray.d * entry_t, 1.f);
+//            return ret;
+//        }
+//        else if(params.cu_per_frame_params.debug_mode == 2){
+//            ret.color = make_float4(ray.o + ray.d * exit_t, 1.f);
+//            return ret;
+//        }
 
         float entry_to_exit_dist = exit_t - entry_t;
         // 注意浮点数的有效位数只有6位
@@ -1747,7 +1747,7 @@ namespace{
                 float4 mapping_color = ScalarToRGBA(params, scalar, cur_lod);
                 // always assert alpha = 0.f has no contribution
                 if(mapping_color.w > 0.f){
-                    if(params.cu_per_frame_params.debug_mode != 4)
+//                    if(params.cu_per_frame_params.debug_mode != 4)
                         mapping_color = CalcShadingColor(params, hash_table, mapping_color, cur_ray_pos, ray.d,
                                                          params.cu_volume.voxel_space, cur_lod);
                     // accumulate color radiance
@@ -1802,7 +1802,7 @@ namespace{
 
         __syncthreads();
 
-        {
+        if(params.cu_per_frame_params.debug_mode == 1){
             Ray ray;
             ray.o = params.cu_per_frame_params.cam_pos;
             float scale = tanf(0.5f * params.cu_per_frame_params.fov);
@@ -1880,6 +1880,9 @@ namespace{
 
 
             float4 mapping_color = ScalarToRGBA(params, scalar, cur_lod);
+
+            mapping_color = CalcShadingColor(params, hash_table, mapping_color, pe, ray.d,
+                                             params.cu_volume.voxel_space, cur_lod);
 
             params.view.immediate_color.at(x, y) = mapping_color;
             return;
@@ -2510,7 +2513,7 @@ void PBVolumeRenderer::SetPerFrameParams(const PerFrameParams &per_frame_params)
     _->kernel_params.cu_per_frame_params.frame_height = per_frame_params.frame_height;
     _->kernel_params.cu_per_frame_params.cam_up = { Transform(per_frame_params.cam_up) };
     _->kernel_params.cu_per_frame_params.frame_w_over_h = per_frame_params.frame_w_over_h;
-//    _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
+    _->kernel_params.cu_per_frame_params.debug_mode = per_frame_params.debug_mode;
 
     _->camera_pos = per_frame_params.cam_pos;
     _->camera_proj_view = per_frame_params.proj_view;
