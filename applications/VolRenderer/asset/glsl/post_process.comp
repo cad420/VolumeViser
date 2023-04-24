@@ -6,7 +6,13 @@ layout(rgba8, binding = 1) uniform writeonly image2D Display;
 
 layout(std140, binding = 0) uniform Params{
     int ToneMapping;
+    float InvExposure;
 };
+
+
+const float rWeight[3] = { 3.240479f, -1.537150f, -0.498535f };
+const float gWeight[3] = {-0.969256f,  1.875991f,  0.041556f };
+const float bWeight[3] = { 0.055648f, -0.204043f,  1.057311f };
 
 void main() {
     ivec2 res = imageSize(Accumulate);
@@ -15,7 +21,31 @@ void main() {
         return;
     }
 
-    vec4 color = imageLoad(Accumulate, g_index);
+    vec4 xyz = imageLoad(Accumulate, g_index);
+
+    vec4 color = xyz;
+
+    if(bool(ToneMapping)){
+        color.r =	rWeight[0] * xyz.x +
+        rWeight[1] * xyz.y +
+        rWeight[2] * xyz.z;
+
+        color.g =	gWeight[0] * xyz.x +
+        gWeight[1] * xyz.y +
+        gWeight[2] * xyz.z;
+
+        color.b =	bWeight[0] * xyz.x +
+        bWeight[1] * xyz.y +
+        bWeight[2] * xyz.z;
+    }
+
+
+    color.r = clamp(1.f - exp(- color.r * InvExposure), 0.f, 1.f);
+    color.g = clamp(1.f - exp(- color.g * InvExposure), 0.f, 1.f);
+    color.b = clamp(1.f - exp(- color.b * InvExposure), 0.f, 1.f);
+
+    color.a = 1.0;
+
     color = pow(color, vec4(1.0 / 2.2));
 
     imageStore(Display, g_index, color);

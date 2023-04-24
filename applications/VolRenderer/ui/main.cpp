@@ -9,8 +9,8 @@
 
 #include <cuda_gl_interop.h>
 
-#define WINDOW_WIDTH 1280
-#define WINDOW_HEIGHT 720
+#define WINDOW_WIDTH 960
+#define WINDOW_HEIGHT 540
 
 #define TEST_TIME(f, desc) test_time([this](){f;}, desc);
 
@@ -219,14 +219,15 @@ class UI : public gl_app_t{
             static Float3 WorldUp = {0.f, 1.f, 0.f};
             cur_params.cam_right = vutil::cross(camera.get_xyz_direction(), WorldUp).normalized();
             cur_params.cam_up = vutil::cross(cur_params.cam_right, cur_params.cam_dir);
+            cur_params.debug_mode = per_frame_params.debug_mode;
             return cur_params;
         };
 
         auto cur_params = get_cur_params();
-        clear_history = !view_not_changed(cur_params);
+        auto changed = !view_not_changed(cur_params);
         static bool first = true;
-        if(first) clear_history = first = false;
-        if(clear_history){
+        if(first) changed = first = false;
+        if(changed || clear_history){
             clear_framebuffer();
         }
         pb_vol_renderer->SetPerFrameParams(cur_params);
@@ -268,12 +269,16 @@ class UI : public gl_app_t{
         GL_EXPR(glDispatchCompute(x, y, 1));
         accumulator.unbind();
 
+        GL_EXPR(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
+
         post_processor.bind();
         post_params_buffer.bind(0);
         accumulate_color.bind_image(0, 0, GL_READ_ONLY, GL_RGBA32F);
         display_color.bind_image(1, 0, GL_WRITE_ONLY, GL_RGBA8);
         GL_EXPR(glDispatchCompute(x, y, 1));
         post_processor.unbind();
+
+        GL_EXPR(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
 
         framebuffer_t::bind_to_default();
         screen.bind();
@@ -288,10 +293,43 @@ class UI : public gl_app_t{
     void render_ui(){
         if(ImGui::Begin("VolRenderer Settings")){
             ImGui::Text("Cur Frame Index: %d", cur_frame_index);
-
+            ImGui::Checkbox("Clear History", &clear_history);
+            bool mode_changed = ImGui::RadioButton("PB", &per_frame_params.debug_mode, 0);
+            ImGui::SameLine();
+            mode_changed |= ImGui::RadioButton("RT", &per_frame_params.debug_mode, 1);
+            if(mode_changed) clear_framebuffer();
             for(auto& [desc, time] : time_records){
                 ImGui::Text("%s cost time: %s ms", desc.c_str(), time.ms().fmt().c_str());
             }
+
+            if(ImGui::TreeNode("PB Params")){
+                bool update = false;
+
+                update |= ImGui::SliderFloat("Density Scale", &pb_params.density_scale, 1.f, 100.f);
+
+
+                if(update){
+                    pb_vol_renderer->SetPBParams(pb_params);
+
+                    clear_framebuffer();
+                }
+
+
+                ImGui::TreePop();
+            }
+
+            if(ImGui::TreeNode("Image Post Process")){
+                bool update = ImGui::Checkbox("Tone Mapping", reinterpret_cast<bool*>(&post_params.tone_mapping));
+                static float exposure = 1.f;
+                if(ImGui::InputFloat("Exposure", &exposure)){
+                    post_params.inv_exposure = 1.f / exposure;
+                    update = true;
+                }
+                if(update) post_params_buffer.set_buffer_data(&post_params);
+
+                ImGui::TreePop();
+            }
+
 
         }
 
@@ -300,8 +338,8 @@ class UI : public gl_app_t{
 
     void after_render(){
         cur_frame_index++;
-//        if(clear_history) cur_frame_index = 0;
-
+        accu_params.frame_index = cur_frame_index;
+        accu_params_buffer.set_buffer_data(&accu_params);
     }
 
 
@@ -319,7 +357,7 @@ class UI : public gl_app_t{
 
     struct{
         int cur_frame_index = 0;
-        bool clear_history;
+        bool clear_history = false;
 
     };
 
@@ -338,6 +376,8 @@ class UI : public gl_app_t{
 
     PerFrameParams per_frame_params;
 
+    PBVolumeRenderer::PBParams pb_params;
+
     Handle<FrameBuffer> framebuffer;
 
     Handle<PBVolumeRenderer> pb_vol_renderer;
@@ -349,7 +389,8 @@ class UI : public gl_app_t{
         std140_uniform_block_buffer_t<AccumulateParams> accu_params_buffer;
         program_t accumulator;
         struct alignas(16) PostProcessParams{
-            int tone_mapping = 0;
+            int tone_mapping = 1;
+            float inv_exposure = 1.f;
         }post_params;
         std140_uniform_block_buffer_t<PostProcessParams> post_params_buffer;
         program_t post_processor;
@@ -360,7 +401,7 @@ class UI : public gl_app_t{
 
 int main(int argc, char** argv){
     try{
-        UI(window_desc_t{.size = {1200, 720}, .title = "VolRendererUI"}).init(argc, argv).run();
+        UI(window_desc_t{.size = {WINDOW_WIDTH, WINDOW_HEIGHT}, .title = "VolRendererUI"}).init(argc, argv).run();
     }
     catch (const std::exception& err){
         std::cerr<< "VolRendererUI exited with error: " << err.what() << std::endl;

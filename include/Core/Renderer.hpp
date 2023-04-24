@@ -182,7 +182,7 @@ class PBVolumeRenderer: public Renderer{
 
     struct PBParams{
         int spp = 1;
-
+        float density_scale = 1.f;
     };
     void SetPBParams(const PBParams&);
 

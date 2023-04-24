@@ -158,7 +158,7 @@ void GridVolume::ReadRegion(Int3 beg, Int3 end, uint32_t lod, CUDAPitchedBuffer 
 }
 int GridVolume::GetMaxLOD() const noexcept
 {
-    return _->lod_vol_file_io.size();
+    return _->lod_vol_file_io.size() - 1;
 }
 
 bool GridVolume::BlockUID::IsValid() const {

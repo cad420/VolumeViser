@@ -13,6 +13,14 @@ VUTIL_BEGIN
         explicit scope_bomb_t(T&& t)
                 :bomb(std::forward<T>(t))
         {}
+
+        scope_bomb_t& operator=(scope_bomb_t&& other) noexcept {
+            call();
+            should_call = other.should_call;
+            bomb = std::move(other.bomb);
+            return *this;
+        }
+
         ~scope_bomb_t(){
             if(should_call)
                 bomb();
