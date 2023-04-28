@@ -15,6 +15,8 @@ public:
     using GPUTexUnit = GPUVTexMgr::GPUTexUnit;
     std::unordered_map<GPUTexUnit, Handle<CUDATexture>> tex_mp;
 
+    std::unordered_map<GPUTexUnit, Handle<CUDABuffer>> buf_mp;
+
     struct{
         int vtex_count;
         Int3 vtex_shape;
@@ -85,6 +87,7 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
 
     _->transfer_stream = cub::cu_stream(_->ctx);
 
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
     GPUMemMgr::TextureCreateInfo tex_info{
         .resc_info ={
                 .format = GetFormat(info.bits_per_sample, info.is_float),
@@ -107,6 +110,18 @@ GPUVTexMgr::GPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         assert(_->tex_mp.count(tex_uid) == 0);
         _->tex_mp[tex_uid] = std::move(tex_handle);
     }
+#else
+    // create buffer only support uint8_t
+    if(info.bits_per_sample != 8 || info.is_float || info.samples_per_channel != 1){
+        assert(false);
+        throw std::runtime_error("invalid voxel format for using linear buffer, only support uint8!");
+    }
+    size_t buf_size = (size_t)info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z;
+    for(int i = 0; i < info.vtex_count; i++){
+        auto buf_handle = info.gpu_mem_mgr.Invoke(&GPUMemMgr::AllocBuffer, ResourceType::Buffer, buf_size);
+        _->buf_mp[i] = std::move(buf_handle);
+    }
+#endif
 
     GPUPageTableMgr::GPUPageTableMgrCreateInfo pt_info{
         .gpu_mem_mgr = Ref<GPUMemMgr>(info.gpu_mem_mgr._get_ptr(), false),
@@ -159,7 +174,11 @@ bool GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
     auto block_uid = GridVolume::BlockUID(src.GetUID());
     auto __ = GetGPUPageTableMgrRef().LockRef().AutoLock();
     if(_->pt_mgr->Check(block_uid, dst)){
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
         cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
+#else
+        cub::cu_memory_transfer(*src, *_->buf_mp.at(tid), transfer_info).launch(_->transfer_stream);
+#endif
         _->pt_mgr->Promote(block_uid);
         return true;
     }
@@ -171,9 +190,15 @@ bool GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
 
 void GPUVTexMgr::UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, GPUVTexMgr::TexCoord dst) {
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
     _->submitted_tasks.add(
             cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info)
             .launch_async(_->transfer_stream), src.GetUID());
+#else
+    _->submitted_tasks.add(
+        cub::cu_memory_transfer(*src, *_->buf_mp.at(tid), transfer_info)
+            .launch_async(_->transfer_stream), src.GetUID());
+#endif
     _->submitted_items[src.GetUID()] = dst;
 }
 
@@ -206,9 +231,23 @@ std::vector<GPUVTexMgr::GPUVTex> GPUVTexMgr::GetAllTextures() {
 
 void GPUVTexMgr::Clear(UnifiedRescUID uid, TexCoord dst) {
     auto [tid, transfer_info] = _->GetTransferInfo(dst);
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
     cub::cu_memory_transfer(*_->cu_black_buffer, *_->tex_mp.at(tid), transfer_info)
     .launch(_->transfer_stream).check_error_on_throw();
+#else
+    cub::cu_memory_transfer(*_->cu_black_buffer, *_->buf_mp.at(tid), transfer_info)
+        .launch(_->transfer_stream).check_error_on_throw();
+#endif
 }
+std::vector<std::pair<GPUVTexMgr::GPUTexUnit, CUDABufferView3D<uint8_t>>> GPUVTexMgr::GetAllTextureBuffers()
+{
+    std::vector<std::pair<GPUTexUnit, CUDABufferView3D<uint8_t>>> res;
 
+    for(auto& item : _->buf_mp){
+        res.emplace_back(item.first, item.second->view_3d<uint8_t>({.pitch = (size_t)_->vtex_shape.x, .xsize = (size_t)_->vtex_shape.x, .ysize = (size_t)_->vtex_shape.y},
+                                                                   {.width = (size_t)_->vtex_shape.x, .height = (size_t)_->vtex_shape.y, .depth = (size_t)_->vtex_shape.z}));
+    }
+    return res;
+}
 
 VISER_END

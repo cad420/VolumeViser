@@ -2,6 +2,9 @@
 
 #include <json.hpp>
 
+#define USE_SDF
+#define USE_LINEAR_BUFFER_FOR_TEXTURE
+
 #include <Algorithm/LevelOfDetailPolicy.hpp>
 #include <Algorithm/MarchingCube.hpp>
 #include <Algorithm/Voxelization.hpp>
@@ -225,12 +228,22 @@ int main(int argc, char** argv){
 
     mc_algo->SetVolume(vol_params);
 
+
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
     auto vtexs = vtex_ref->GetAllTextures();
     for(auto& [unit, handle] : vtexs){
         swc_voxelizer->BindVTexture(handle, unit);
 
         mc_algo->BindVTexture(handle, unit);
     }
+#else
+    auto vbufs = vtex_ref->GetAllTextureBuffers();
+    for(auto& [unit, view] : vbufs){
+        swc_voxelizer->BindVBuffer(view, unit);
+
+        mc_algo->BindVBuffer(view, unit);
+    }
+#endif
 
     MeshSmoother::MeshSmootherCreateInfo ms_info{
         .gpu_mem_mgr = gpu_mem_mgr_ref.LockRef(),
@@ -443,15 +456,19 @@ int main(int argc, char** argv){
 
                 MarchingCubeAlgo::MarchingCubeAlgoParams mc_params;
                 mc_params.shape = UInt3(algo_info.block_length);
+#ifdef USE_SDF
+//                mc_params.isovalue = 0.0f;
+                mc_params.isovalue = vol_params.space.length() * 0.5f;
+#else
                 mc_params.isovalue = 0.5f;
-
+#endif;
                 for(auto& b : partial_blocks){
                     mc_params.origin = UInt3(b.x, b.y, b.z) * mc_params.shape;
                     mc_params.lod = b.GetLOD();
 
                     int gen_tri_num = mc_algo->Run(mc_params);
 
-//                    LOG_INFO("gen tri num : {}", gen_tri_num);
+                    LOG_INFO("gen tri num : {}", gen_tri_num);
 
                     mesh->Insert(MeshData0(gen_tri_num, [&](int vert_idx)->const Float3&{
                         return mc_params.gen_host_vertices_ret.at(vert_idx);
@@ -490,6 +507,7 @@ int main(int argc, char** argv){
                 mesh_smoother->Smoothing(mesh->GetPackedMeshDataRef(), algo_info.smooth_lambda, algo_info.smooth_mu,
                                          algo_info.smooth_count);
             }
+
             MeshFile mesh_file;
             mesh_file.Open(filename, MeshFile::Write);
             mesh_file.WriteMeshData(mesh->GetPackedMeshDataRef());

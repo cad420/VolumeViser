@@ -51,7 +51,14 @@ public:
 
     std::vector<GPUVTex> GetAllTextures();
 
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
+    std::vector<std::pair<GPUTexUnit, CUDABufferView3D<uint8_t>>> GetAllTextureBuffers();
+
+#endif
+
     void Clear(UnifiedRescUID uid, TexCoord dst);
+
+
 
 protected:
     std::unique_ptr<GPUVTexMgrPrivate> _;

@@ -96,14 +96,42 @@ VISER_BEGIN
         };
         struct SWCVoxelizeKernelParams{
             cudaSurfaceObject_t cu_vsurf[MaxCUDATextureCountPerGPU];
+            CUDABufferView3D<uint8_t> cu_vbuffer[MaxCUDATextureCountPerGPU];
             CUDAPageTable cu_page_table;
             CUDAVolumeParams cu_vol_params;
             CUDASWCVoxelizeParams cu_swc_v_params;
             CUDABufferView1D<std::pair<Float4,Float4>> cu_segments;
             CUDABufferView1D<Lock> g_lk;
         };
+        CUB_GPU float DecodeVoxelValue(const SWCVoxelizeKernelParams& params, uint8_t voxel){
+            float dist_threshold = length(params.cu_vol_params.space);
+            return dist_threshold * (1.f - voxel / 255.f);
+//            if(voxel <= 127) return dist_threshold - voxel * dist_threshold / 127.f;
+//            return -(voxel - 127.f) * dist_threshold / 128.f;
+        }
 
-        CUB_GPU void VirtualStore(const SWCVoxelizeKernelParams& params,
+        __device__ static inline uint8_t atomicCAS(uint8_t* address, uint8_t expected, uint8_t desired) {
+            size_t long_address_modulo = (size_t) address & 3;
+            auto* base_address = (unsigned int*) ((uint8_t*) address - long_address_modulo);
+            unsigned int selectors[] = {0x3214, 0x3240, 0x3410, 0x4210};
+
+            unsigned int sel = selectors[long_address_modulo];
+            unsigned int long_old, long_assumed, long_val, replacement;
+            uint8_t old;
+
+            long_val = (unsigned int) desired;
+            long_old = *base_address;
+            do {
+                long_assumed = long_old;
+                replacement = __byte_perm(long_old, long_val, sel);
+                long_old = ::atomicCAS(base_address, long_assumed, replacement);
+                old = (uint8_t) ((long_old >> (long_address_modulo * 8)) & 0x000000ff);
+            } while (expected == old && long_assumed != long_old);
+
+            return old;
+        }
+
+        CUB_GPU void VirtualStore(SWCVoxelizeKernelParams& params,
                                   uint4 hash_table[][2], Lock& lk,
                                   uint8_t val,
                                   uint3 voxel_coord,
@@ -128,7 +156,27 @@ VISER_BEGIN
                     //                       tex_coord.x, tex_coord.y, tex_coord.z, tid,
                     //                       pos.x, pos.y, pos.z);
                     //                return;
+#ifdef USE_SDF
+
+                    auto od_ptr = &params.cu_vbuffer[tid].at(pos.x, pos.y, pos.z);
+                    auto od_val = *od_ptr;
+//                    float od_sd = DecodeVoxelValue(params, od_val);
+                    auto update = [](uint8_t od, uint8_t nw){
+                        return nw > od;
+//                        if(od >= 127 && nw <= 127 || od >= 127 && nw >= od) return false;
+//                        if(od <= 127 && nw <= od) return false;
+//                        return true;
+                    };
+                    while(true){
+                        if(!update(od_val, val)) break;
+                        if(atomicCAS(od_ptr, od_val, val) == od_val) break;
+                        od_val = *od_ptr;
+                    }
+
+#else
                     surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
+#endif
+                    //not necessary now
                     if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
                         tex_coord.w |= TexCoordFlag_IsSWCV;
                         //lock
@@ -213,14 +261,15 @@ VISER_BEGIN
             high = (high - params.cu_vol_params.bound.low) / (params.cu_vol_params.bound.high - params.cu_vol_params.bound.low);
             low *= params.cu_vol_params.voxel_dim - make_uint3(1);
             high *= params.cu_vol_params.voxel_dim - make_uint3(1);
-            ret.low.x = max(0, int(low.x + 0.5f));
-            ret.low.y = max(0, int(low.y + 0.5f));
-            ret.low.z = max(0, int(low.z + 0.5f));
-            ret.high.x = min(params.cu_vol_params.voxel_dim.x - 1, int(high.x + 0.5f));
-            ret.high.y = min(params.cu_vol_params.voxel_dim.y - 1, int(high.y + 0.5f));
-            ret.high.z = min(params.cu_vol_params.voxel_dim.z - 1, int(high.z + 0.5f));
+            ret.low.x = max(0, int(low.x - 2));
+            ret.low.y = max(0, int(low.y - 2));
+            ret.low.z = max(0, int(low.z - 2));
+            ret.high.x = min(params.cu_vol_params.voxel_dim.x - 1, int(high.x + 3));
+            ret.high.y = min(params.cu_vol_params.voxel_dim.y - 1, int(high.y + 3));
+            ret.high.z = min(params.cu_vol_params.voxel_dim.z - 1, int(high.z + 3));
             return ret;
         }
+
         //一个block负责一条线，即两个点之间的体素化，因此需要控制输入的神经元每一段的长度适中，使得其包围盒的大小在一定范围
         CUB_KERNEL void SWCVoxelizeKernel(SWCVoxelizeKernelParams params){
             __shared__ uint4 hash_table[HashTableSize][2];
@@ -285,7 +334,55 @@ VISER_BEGIN
                 return c_to_ab_dist <= R;
             };
 
+            float dist_threshold = length(params.cu_vol_params.space);
 
+            float l = sqrt((pt_a_r - pt_b_r) * (pt_a_r - pt_b_r) + dot(a_to_b, a_to_b));
+
+            auto inside_segment_neighborhood = [&](uint3 voxel_coord)->float{
+                float3 pt_c_pos = (voxel_coord + make_float3(0.5f)) * params.cu_vol_params.space;
+                float3 N = normalize(cross(pt_b_pos - pt_c_pos, pt_a_pos - pt_c_pos));
+                auto calc_p = [&](const float3& P, const float3& O, const float3& L, float R)->float3{
+                    float3 PO = O - P;
+                    float3 PA = dot(PO, L) * L;
+                    float3 OA = PA - PO;
+                    float len_OA = length(OA);
+                    if(len_OA < FLT_EPSILON){
+                        OA = normalize(cross(N, L));
+                        len_OA = 1.f;
+                    }
+                    float3 OC = R / len_OA * OA;
+                    return O + OC;
+                };
+
+                float3 C = calc_p(pt_c_pos, pt_a_pos, make_float3(0.f) - ab, pt_a_r);
+                float3 D = calc_p(pt_c_pos, pt_b_pos,  ab, pt_b_r);
+
+                float3 DC = normalize(C - D);
+
+                float3 X = cross(DC, N);
+                float3 DP = pt_c_pos - D;
+                float sd = dot(DP, X);
+                float h = dot(DP, DC);
+                if(h > 0 && h < l){
+                    return -sd;
+                }
+                else if(h <= 0){
+//                    return -pt_b_r;
+                    return length(pt_c_pos - pt_b_pos) - pt_b_r;
+                }
+                else{
+//                    return -pt_a_r;
+                    return length(pt_c_pos - pt_a_pos) - pt_a_r;
+                }
+            };
+
+            auto signed_dist_to_uint8 = [dist_threshold, inv_dist_threshold = 1.f / dist_threshold](float dist)->uint8_t{
+                if(dist <= 0.f) return 255;
+                if(dist >= dist_threshold) return 0;
+                return (dist_threshold - dist) * inv_dist_threshold * 255;
+//                if(dist >= 0) return max(int((dist_threshold - dist) * inv_dist_threshold * 127), 0);
+//                if(dist < 0) return min(255, 127 + int(128 * (-dist) * inv_dist_threshold));
+            };
 
             // 计算这条线占据的voxel范围，返回的必定在有效范围内
 //            printf("pt a %f %f %f %f, pt b %f %f %f %f\n",
@@ -310,9 +407,15 @@ VISER_BEGIN
                 uint32_t box_voxel_y = (box_voxel_idx - box_voxel_z * box_dim.x * box_dim.y) / box_dim.x;
                 uint32_t box_voxel_x = box_voxel_idx - box_voxel_z * box_dim.x * box_dim.y - box_voxel_y * box_dim.x;
                 uint3 voxel_coord = low + make_uint3(box_voxel_x, box_voxel_y, box_voxel_z);
+#ifdef USE_SDF
+                VirtualStore(params, hash_table, lk,
+                             signed_dist_to_uint8(inside_segment_neighborhood(voxel_coord)),
+                             voxel_coord, params.cu_swc_v_params.lod);
+#else
                 if(inside_segment(voxel_coord)){
                     VirtualStore(params, hash_table, lk, SWCVoxelVal, voxel_coord, params.cu_swc_v_params.lod);
                 }
+#endif
 
             }
             __syncthreads();
@@ -469,8 +572,14 @@ VISER_BEGIN
                                                     volume_params.bound.high.z}};
     }
 
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
+    void SWCVoxelizer::BindVBuffer(CUDABufferView3D<uint8_t> view, TextureUnit unit)
+    {
+        assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
+        _->kernel_params.cu_vbuffer[unit] = view;
+    }
+#endif
 
-
-VISER_END
+    VISER_END
 
 

@@ -118,6 +118,10 @@ public:
 
     void BindVTexture(VTextureHandle handle, TextureUnit unit);
 
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
+    void BindVBuffer(CUDABufferView3D<uint8_t> view, TextureUnit unit);
+#endif
+
     void BindPTBuffer(PTBufferHandle handle);
 
     struct SWCVoxelizeAlgoParams{

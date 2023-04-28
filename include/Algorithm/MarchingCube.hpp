@@ -49,6 +49,11 @@ public:
     };
     int Run(MarchingCubeAlgoParams& params);
 
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
+
+    void BindVBuffer(CUDABufferView3D<uint8_t> view, TextureUnit unit);
+#endif
+
 private:
     std::unique_ptr<MarchingCubeAlgoPrivate> _;
 };

@@ -128,7 +128,9 @@ VISER_BEGIN
             float isovalue;
         };
         struct MCKernelParams{
+            CUDABufferView3D<uint8_t> cu_vbuf[MaxCUDATextureCountPerGPU];
             cudaTextureObject_t cu_vtex[MaxCUDATextureCountPerGPU];
+
             CUDAPageTable cu_page_table;
             CUDAVolumeParams cu_vol_params;
             CUDAMCAlgoParams cu_mc_params;
@@ -151,7 +153,14 @@ VISER_BEGIN
             CUDABufferView1D<uint32_t> compacted_voxel_array;
         };
 
-        CUB_GPU float VirtualSampling(const MCKernelParams& params,
+        CUB_GPU float DecodeVoxelValue(float dist_threshold, const uint8_t voxel){
+            if(voxel == 255) return 0.f;
+            return dist_threshold * (1.f - voxel / 255.f);
+//            if(voxel <= 127) return dist_threshold - voxel * dist_threshold / 127.f;
+//            return -(voxel - 127.f) * dist_threshold / 128.f;
+        }
+
+        CUB_GPU float VirtualSampling(MCKernelParams& params,
                               uint4 hash_table[][2],
                               uint3 voxel_coord, uint32_t lod, uint32_t xyz){
             uint32_t lod_block_length = params.cu_vol_params.block_length << lod;
@@ -161,15 +170,26 @@ VISER_BEGIN
             uint4 tex_coord = Query(key, hash_table);
             uint32_t tid = (tex_coord.w >> 16) & 0xffff;
             uint3 coord = make_uint3(tex_coord.x, tex_coord.y, tex_coord.z);
+#ifdef USE_SDF
+            uint8_t voxel_val;
+#endif
             float ret = 0.f;
+
             if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
                 uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
                 auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+#ifdef USE_SDF
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
+                voxel_val = tex3D<uint8_t>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+#else
+                voxel_val = params.cu_vbuf[tid].at(pos.x, pos.y, pos.z);
+#endif
+#else
                 ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+#endif
 
             }
             else{
-
                 auto padding = params.cu_vol_params.padding;
                 auto block_length = params.cu_vol_params.block_length;
                 auto _block_uid = block_uid;
@@ -183,7 +203,11 @@ VISER_BEGIN
                     if((tex_coord.w & 0xffff) & TexCoordFlag_IsValid){
                         uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
                         auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
+#ifdef USE_SDF
+                        voxel_val = tex3D<uint8_t>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+#else
                         ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+#endif
                     }
                 };
 
@@ -209,13 +233,14 @@ VISER_BEGIN
                     --block_uid.z;
                     offset_in_block.z += block_length;
                 }
-
                 if(block_uid_valid(block_uid)) voxel_read(block_uid, offset_in_block);
 
             }
+#ifdef USE_SDF
+            ret = DecodeVoxelValue(length(params.cu_vol_params.space), voxel_val);
+#endif
             return ret;
         }
-
 
         CUB_GPU bool TestFace(const float field[8], int f){
             // 渐近线测试所用的四个参数
@@ -447,7 +472,7 @@ VISER_BEGIN
 
             for(int i = 0; i < 8; i++){
                 if(fabs(field[i]) < FLT_EPSILON) field[i] = FLT_EPSILON;
-                if(field[i] <= 0) config_index += 1u << i;
+                if(field[i] > 0) config_index += 1u << i;
             }
 
             const unsigned int case_idx = cases[config_index][0];
@@ -833,14 +858,14 @@ VISER_BEGIN
 
 
             float3 vert[8];
-            vert[0] = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
-            vert[1] = make_float3((voxel_coord.x + 1) + 0.5f, voxel_coord.y + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
-            vert[2] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
-            vert[3] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, voxel_coord.z + 0.5f) * params.cu_vol_params.space;
-            vert[4] = make_float3(voxel_coord.x + 0.5f, voxel_coord.y + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
-            vert[5] = make_float3((voxel_coord.x + 1) + 0.5f, voxel_coord.y + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[0] = make_float3( voxel_coord.x + 0.5f,       voxel_coord.y + 0.5f,       voxel_coord.z + 0.5f)      * params.cu_vol_params.space;
+            vert[1] = make_float3((voxel_coord.x + 1) + 0.5f,  voxel_coord.y + 0.5f,       voxel_coord.z + 0.5f)      * params.cu_vol_params.space;
+            vert[2] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f,  voxel_coord.z + 0.5f)      * params.cu_vol_params.space;
+            vert[3] = make_float3( voxel_coord.x + 0.5f,      (voxel_coord.y + 1) + 0.5f,  voxel_coord.z + 0.5f)      * params.cu_vol_params.space;
+            vert[4] = make_float3( voxel_coord.x + 0.5f,       voxel_coord.y + 0.5f,      (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[5] = make_float3((voxel_coord.x + 1) + 0.5f,  voxel_coord.y + 0.5f,      (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
             vert[6] = make_float3((voxel_coord.x + 1) + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
-            vert[7] = make_float3(voxel_coord.x + 0.5f, (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
+            vert[7] = make_float3( voxel_coord.x + 0.5f,      (voxel_coord.y + 1) + 0.5f, (voxel_coord.z + 1) + 0.5f) * params.cu_vol_params.space;
 
 
             float field[8];
@@ -859,13 +884,13 @@ VISER_BEGIN
             float3 vert_list[13];
             vert_list[0] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[1], field[0], field[1]);
             vert_list[1] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[2], field[1], field[2]);
-            vert_list[2] = VertexInterp(params.cu_mc_params.isovalue, vert[2], vert[3], field[2], field[3]);
-            vert_list[3] = VertexInterp(params.cu_mc_params.isovalue, vert[3], vert[0], field[3], field[0]);
+            vert_list[2] = VertexInterp(params.cu_mc_params.isovalue, vert[3], vert[2], field[3], field[2]);
+            vert_list[3] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[3], field[0], field[3]);
 
             vert_list[4] = VertexInterp(params.cu_mc_params.isovalue, vert[4], vert[5], field[4], field[5]);
             vert_list[5] = VertexInterp(params.cu_mc_params.isovalue, vert[5], vert[6], field[5], field[6]);
-            vert_list[6] = VertexInterp(params.cu_mc_params.isovalue, vert[6], vert[7], field[6], field[7]);
-            vert_list[7] = VertexInterp(params.cu_mc_params.isovalue, vert[7], vert[4], field[7], field[4]);
+            vert_list[6] = VertexInterp(params.cu_mc_params.isovalue, vert[7], vert[6], field[7], field[6]);
+            vert_list[7] = VertexInterp(params.cu_mc_params.isovalue, vert[4], vert[7], field[4], field[7]);
 
             vert_list[8] = VertexInterp(params.cu_mc_params.isovalue, vert[0], vert[4], field[0], field[4]);
             vert_list[9] = VertexInterp(params.cu_mc_params.isovalue, vert[1], vert[5], field[1], field[5]);
@@ -1194,11 +1219,15 @@ VISER_BEGIN
 
     void MarchingCubeAlgo::BindVTexture(VTextureHandle handle, TextureUnit unit) {
         assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
-
+#ifdef USE_SDF
+        _->params.cu_vtex[unit] = handle->view_as({
+            cub::e_clamp, cub::e_nearest, cub::e_raw, false
+        });
+#else
         _->params.cu_vtex[unit] = handle->view_as({
             cub::e_clamp, cub::e_nearest, cub::e_normalized_float, false
         });
-
+#endif
     }
 
     void MarchingCubeAlgo::BindPTBuffer(PTBufferHandle handle) {
@@ -1220,5 +1249,13 @@ VISER_BEGIN
             };
     }
 
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
+    void MarchingCubeAlgo::BindVBuffer(CUDABufferView3D<uint8_t> view, TextureUnit unit)
+    {
+        assert(unit >= 0 && unit < MaxCUDATextureCountPerGPU);
+        _->params.cu_vbuf[unit] = view;
+    }
 
-VISER_END
+#endif
+
+    VISER_END

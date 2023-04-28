@@ -347,6 +347,11 @@ cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& d
     return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
 }
 
+inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_buffer<false>& dst, const memory_transfer_info& info){
+    auto view_src = src.view_1d<uint8_t>(src.get_size());
+    auto view_dst = dst.view_1d<uint8_t>(dst.get_size());
+    return cu_memory_transfer(view_src, view_dst, info);
+}
 
 inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_wrap& dst, const memory_transfer_info& info){
     if(src.get_type() == cu_memory_type::e_cu_device){

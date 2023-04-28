@@ -105,6 +105,7 @@ Handle<CUDATexture> GPUMemMgr::_AllocTexture(ResourceType type, const TextureCre
 
 UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
     try{
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
         size_t alloc_size = (size_t)info.vtex_count * info.vtex_shape.x * info.vtex_shape.y * info.vtex_shape.z
                 * info.bits_per_sample * info.samples_per_channel / 8;
         auto used = _->used_mem_bytes += alloc_size;
@@ -112,6 +113,7 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
             _->used_mem_bytes.fetch_sub(alloc_size);
             throw std::runtime_error("No free GPU memory to register GPUVTexMgr");
         }
+#endif
 
 
         info.gpu_mem_mgr = Ref(this, false);
@@ -119,9 +121,10 @@ UnifiedRescUID GPUMemMgr::RegisterGPUVTexMgr(const GPUVTexMgrCreateInfo &info) {
         auto uid = resc->GetUID();
         assert(_->vtex_mgr_mp.count(uid) == 0);
         _->vtex_mgr_mp[uid] = std::move(resc);
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
         LOG_DEBUG("Register GPUVTexMgr cost free memory: {}, remain free: {}",
                   alloc_size, _->max_mem_bytes - used);
-
+#endif
         return uid;
     }
     catch (const std::exception& e) {

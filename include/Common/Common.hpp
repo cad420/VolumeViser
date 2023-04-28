@@ -14,7 +14,8 @@
 #include <memory>
 
 VISER_BEGIN
-
+#define USE_SDF
+#define USE_LINEAR_BUFFER_FOR_TEXTURE
 using CUDAContext = cub::cu_context_handle_t;
 
 using CUDAStream = cub::cu_stream;
