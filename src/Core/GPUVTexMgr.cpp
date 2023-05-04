@@ -177,7 +177,12 @@ bool GPUVTexMgr::UploadBlockToGPUTex(Handle<CUDAHostBuffer> src, GPUVTexMgr::Tex
 #ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
         cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info).launch(_->transfer_stream);
 #else
-        cub::cu_memory_transfer(*src, *_->buf_mp.at(tid), transfer_info).launch(_->transfer_stream);
+        auto src_view = _->cu_black_buffer->view_3d<uint8_t>({.pitch = (size_t)_->vtex_block_length, .xsize = (size_t)_->vtex_block_length, .ysize = (size_t)_->vtex_block_length},
+                                                       {.width = (size_t)_->vtex_block_length, .height = (size_t)_->vtex_block_length, .depth = (size_t)_->vtex_block_length});
+        auto dst_view = _->buf_mp.at(tid)->view_3d<uint8_t>({.pitch = (size_t)_->vtex_shape.x, .xsize = (size_t)_->vtex_shape.x, .ysize = (size_t)_->vtex_shape.y},
+                                                  {.width = (size_t)_->vtex_shape.x, .height = (size_t)_->vtex_shape.y, .depth = (size_t)_->vtex_shape.z});
+        cub::cu_memory_transfer(src_view, dst_view, transfer_info)
+            .launch(_->transfer_stream).check_error_on_throw();
 #endif
         _->pt_mgr->Promote(block_uid);
         return true;
@@ -195,8 +200,13 @@ void GPUVTexMgr::UploadBlockToGPUTexAsync(Handle<CUDAHostBuffer> src, GPUVTexMgr
             cub::cu_memory_transfer(*src, *_->tex_mp.at(tid), transfer_info)
             .launch_async(_->transfer_stream), src.GetUID());
 #else
+    auto src_view = _->cu_black_buffer->view_3d<uint8_t>({.pitch = (size_t)_->vtex_block_length, .xsize = (size_t)_->vtex_block_length, .ysize = (size_t)_->vtex_block_length},
+                                                    {.width = (size_t)_->vtex_block_length, .height = (size_t)_->vtex_block_length, .depth = (size_t)_->vtex_block_length});
+    auto dst_view = _->buf_mp.at(tid)->view_3d<uint8_t>({.pitch = (size_t)_->vtex_shape.x, .xsize = (size_t)_->vtex_shape.x, .ysize = (size_t)_->vtex_shape.y},
+                                                   {.width = (size_t)_->vtex_shape.x, .height = (size_t)_->vtex_shape.y, .depth = (size_t)_->vtex_shape.z});
+
     _->submitted_tasks.add(
-        cub::cu_memory_transfer(*src, *_->buf_mp.at(tid), transfer_info)
+        cub::cu_memory_transfer(src_view, dst_view, transfer_info)
             .launch_async(_->transfer_stream), src.GetUID());
 #endif
     _->submitted_items[src.GetUID()] = dst;
@@ -235,10 +245,16 @@ void GPUVTexMgr::Clear(UnifiedRescUID uid, TexCoord dst) {
     cub::cu_memory_transfer(*_->cu_black_buffer, *_->tex_mp.at(tid), transfer_info)
     .launch(_->transfer_stream).check_error_on_throw();
 #else
-    cub::cu_memory_transfer(*_->cu_black_buffer, *_->buf_mp.at(tid), transfer_info)
+    auto src_view = _->cu_black_buffer->view_3d<uint8_t>({.pitch = (size_t)_->vtex_block_length, .xsize = (size_t)_->vtex_block_length, .ysize = (size_t)_->vtex_block_length},
+                                                         {.width = (size_t)_->vtex_block_length, .height = (size_t)_->vtex_block_length, .depth = (size_t)_->vtex_block_length});
+    auto dst_view = _->buf_mp.at(tid)->view_3d<uint8_t>({.pitch = (size_t)_->vtex_shape.x, .xsize = (size_t)_->vtex_shape.x, .ysize = (size_t)_->vtex_shape.y},
+                                                        {.width = (size_t)_->vtex_shape.x, .height = (size_t)_->vtex_shape.y, .depth = (size_t)_->vtex_shape.z});
+    cub::cu_memory_transfer(src_view, dst_view, transfer_info)
         .launch(_->transfer_stream).check_error_on_throw();
 #endif
 }
+
+#ifdef USE_LINEAR_BUFFER_FOR_TEXTURE
 std::vector<std::pair<GPUVTexMgr::GPUTexUnit, CUDABufferView3D<uint8_t>>> GPUVTexMgr::GetAllTextureBuffers()
 {
     std::vector<std::pair<GPUTexUnit, CUDABufferView3D<uint8_t>>> res;
@@ -249,5 +265,6 @@ std::vector<std::pair<GPUVTexMgr::GPUTexUnit, CUDABufferView3D<uint8_t>>> GPUVTe
     }
     return res;
 }
+#endif
 
 VISER_END

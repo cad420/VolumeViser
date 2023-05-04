@@ -177,13 +177,13 @@ VISER_BEGIN
                     surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
 #endif
                     //not necessary now
-                    if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
-                        tex_coord.w |= TexCoordFlag_IsSWCV;
-                        //lock
-                        lk.lock();
-                        Update(key, tex_coord, hash_table);
-                        lk.unlock();
-                    }
+//                    if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
+//                        tex_coord.w |= TexCoordFlag_IsSWCV;
+//                        //lock
+//                        lk.lock();
+//                        Update(key, tex_coord, hash_table);
+//                        lk.unlock();
+//                    }
                 }
             };
 
@@ -195,7 +195,7 @@ VISER_BEGIN
                     && block_uid.z < lod_block_dim.z;
             };
 
-            if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
+//            if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
             const auto _offset_in_block = offset_in_block;
             const auto _block_uid = block_uid;
 
@@ -203,6 +203,7 @@ VISER_BEGIN
             &block_uid_valid, &voxel_store](int x, int y, int z) {
                 auto block_uid = _block_uid;
                 auto offset_in_block = _offset_in_block;
+                int x_ok = 1, y_ok = 1, z_ok = 1;
                 if(x){
                     if(offset_in_block.x >= block_length){
                         ++block_uid.x;
@@ -211,6 +212,9 @@ VISER_BEGIN
                     else if(offset_in_block.x < 2u * padding && block_uid.x > 0){
                         --block_uid.x;
                         offset_in_block.x += block_length;
+                    }
+                    else{
+                        x_ok = 0;
                     }
                 }
                 if(y){
@@ -222,6 +226,9 @@ VISER_BEGIN
                         --block_uid.y;
                         offset_in_block.y += block_length;
                     }
+                    else{
+                        y_ok = 0;
+                    }
                 }
                 if(z){
                     if(offset_in_block.z >= block_length){
@@ -232,8 +239,29 @@ VISER_BEGIN
                         --block_uid.z;
                         offset_in_block.z += block_length;
                     }
+                    else{
+                        z_ok = 0;
+                    }
                 }
-                if(block_uid_valid(block_uid)) voxel_store(block_uid, offset_in_block);
+                auto ok = [](int a, int b)->bool{
+                    if(a) return b;
+                    return true;
+                };
+                if(!ok(x, x_ok) || !ok(y, y_ok) || !ok(z, z_ok)) return;
+                if(block_uid_valid(block_uid)){
+//                    if(x + y + z > 0)
+//                        printf("origin uid : %d %d %d, "
+//                               "origin offset: %d %d %d, "
+//                               "xyz: %d %d %d, "
+//                               "uid : %d %d %d, "
+//                               "offset : %d %d %d\n",
+//                               _block_uid.x, _block_uid.y, _block_uid.z,
+//                               _offset_in_block.x, _offset_in_block.y, _offset_in_block.z,
+//                               x, y, z,
+//                               block_uid.x, block_uid.y, block_uid.z,
+//                               offset_in_block.x, offset_in_block.y, offset_in_block.z);
+                    voxel_store(block_uid, offset_in_block);
+                }
             };
 
             xyz_store(0, 0, 0);
@@ -338,7 +366,9 @@ VISER_BEGIN
 
             float l = sqrt((pt_a_r - pt_b_r) * (pt_a_r - pt_b_r) + dot(a_to_b, a_to_b));
 
-            auto inside_segment_neighborhood = [&](uint3 voxel_coord)->float{
+            auto inside_segment_neighborhood = [&, pt_a_r = pt_a_r - 0.2f * dist_threshold,
+                                                   pt_b_r = pt_b_r - 0.2f * dist_threshold]
+                                                (uint3 voxel_coord)->float{
                 float3 pt_c_pos = (voxel_coord + make_float3(0.5f)) * params.cu_vol_params.space;
                 float3 N = normalize(cross(pt_b_pos - pt_c_pos, pt_a_pos - pt_c_pos));
                 auto calc_p = [&](const float3& P, const float3& O, const float3& L, float R)->float3{
@@ -418,28 +448,36 @@ VISER_BEGIN
 #endif
 
             }
-            __syncthreads();
-            // write back from shared to global memory page table
-            if(thread_idx == 0){
-                auto& g_lk = params.g_lk.at(0);
-                g_lk.lock();
-
-                for(int i = 0; i < HashTableSize; ++i){
-                    auto& block_uid = table.at(i).first;
-                    auto& tex_coord = table.at(i).second;
-                    block_uid = GridVolume::BlockUID(hash_table[i][0].x,
-                                                     hash_table[i][0].y,
-                                                     hash_table[i][0].z,
-                                                     hash_table[i][0].w);
-                    tex_coord.sx = hash_table[i][1].x;
-                    tex_coord.sy = hash_table[i][1].y;
-                    tex_coord.sz = hash_table[i][1].z;
-                    tex_coord.tid = hash_table[i][1].w >> 16;
-                    tex_coord.flag |= hash_table[i][1].w & 0xffff;
-                }
-
-                g_lk.unlock();
-            }
+//            if(thread_idx == 0){
+//                printf("low: %d %d %d, high: %d %d %d, dim : %d %d %d,"
+//                       "p_a: %f %f %f %f, p_b: %f %f %f %f\n", low.x, low.y, low.z, high.x, high.y, high.z,
+//                       box_dim.x ,box_dim.y, box_dim.z,
+//                       pt_a_pos.x, pt_a_pos.y, pt_a_pos.z, pt_a_r,
+//                       pt_b_pos.x, pt_b_pos.y, pt_b_pos.z, pt_b_r);
+//
+//            }
+//            __syncthreads();
+//            // write back from shared to global memory page table
+//            if(thread_idx == 0){
+//                auto& g_lk = params.g_lk.at(0);
+//                g_lk.lock();
+//
+//                for(int i = 0; i < HashTableSize; ++i){
+//                    auto& block_uid = table.at(i).first;
+//                    auto& tex_coord = table.at(i).second;
+//                    block_uid = GridVolume::BlockUID(hash_table[i][0].x,
+//                                                     hash_table[i][0].y,
+//                                                     hash_table[i][0].z,
+//                                                     hash_table[i][0].w);
+//                    tex_coord.sx = hash_table[i][1].x;
+//                    tex_coord.sy = hash_table[i][1].y;
+//                    tex_coord.sz = hash_table[i][1].z;
+//                    tex_coord.tid = hash_table[i][1].w >> 16;
+//                    tex_coord.flag |= hash_table[i][1].w & 0xffff;
+//                }
+//
+//                g_lk.unlock();
+//            }
         }
     }
 

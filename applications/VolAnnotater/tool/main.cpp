@@ -458,10 +458,10 @@ int main(int argc, char** argv){
                 mc_params.shape = UInt3(algo_info.block_length);
 #ifdef USE_SDF
 //                mc_params.isovalue = 0.0f;
-                mc_params.isovalue = vol_params.space.length() * 0.5f;
+                mc_params.isovalue = vol_params.space.length() * 0.2f;
 #else
                 mc_params.isovalue = 0.5f;
-#endif;
+#endif
                 for(auto& b : partial_blocks){
                     mc_params.origin = UInt3(b.x, b.y, b.z) * mc_params.shape;
                     mc_params.lod = b.GetLOD();

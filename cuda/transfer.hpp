@@ -112,8 +112,8 @@ namespace detail {
 
     template<typename T>
     struct cu_buffer_transfer<T, 3> {
-        static cu_task transfer(const buffer_view<T, 3> &src, const buffer_view<T, 3> &dst, const memory_transfer_info &info) {
-            return {[=](const cu_stream &stream) {
+        static cu_task transfer(buffer_view<T, 3> src, buffer_view<T, 3> dst, const memory_transfer_info &info) {
+            return {[=](const cu_stream &stream) mutable {
                 CUDA_MEMCPY3D m;
                 std::memset(&m, 0, sizeof(m));
                 if (src.is_device()) {
@@ -332,7 +332,7 @@ cu_task cu_memory_transfer(const cu_array<T, N>& src, const cu_array<T, N>& dst,
 }
 
 template<typename T, int N>
-cu_task cu_memory_transfer(const buffer_view<T, N>& src, const buffer_view<T, N>& dst, const memory_transfer_info& info){
+cu_task cu_memory_transfer(buffer_view<T, N> src, buffer_view<T, N> dst, const memory_transfer_info& info){
     if(src.is_device() && dst.is_device()){
         CHECK_CTX_SAME(src, dst)
     }
@@ -345,12 +345,6 @@ cu_task cu_memory_transfer(const buffer_view<T, N>& src, const cu_array<T, N>& d
         CHECK_CTX_SAME(src, dst)
     }
     return detail::cu_buffer_transfer<T, N>::transfer(src, dst, info);
-}
-
-inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_buffer<false>& dst, const memory_transfer_info& info){
-    auto view_src = src.view_1d<uint8_t>(src.get_size());
-    auto view_dst = dst.view_1d<uint8_t>(dst.get_size());
-    return cu_memory_transfer(view_src, view_dst, info);
 }
 
 inline cu_task cu_memory_transfer(const cu_buffer<false>& src, const cu_texture_wrap& dst, const memory_transfer_info& info){

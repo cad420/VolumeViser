@@ -204,7 +204,11 @@ VISER_BEGIN
                         uint32_t block_size = params.cu_vol_params.block_length + params.cu_vol_params.padding * 2;
                         auto pos = coord * block_size + offset_in_block + params.cu_vol_params.padding;
 #ifdef USE_SDF
+#ifndef USE_LINEAR_BUFFER_FOR_TEXTURE
                         voxel_val = tex3D<uint8_t>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
+#else
+                        voxel_val = params.cu_vbuf[tid].at(pos.x, pos.y, pos.z);
+#endif
 #else
                         ret = tex3D<float>(params.cu_vtex[tid], pos.x, pos.y, pos.z);
 #endif
