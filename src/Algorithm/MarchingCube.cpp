@@ -476,7 +476,11 @@ VISER_BEGIN
 
             for(int i = 0; i < 8; i++){
                 if(fabs(field[i]) < FLT_EPSILON) field[i] = FLT_EPSILON;
+#ifdef USE_SDF
                 if(field[i] > 0) config_index += 1u << i;
+#else
+                if(field[i] <= 0) config_index += 1u << i;
+#endif
             }
 
             const unsigned int case_idx = cases[config_index][0];

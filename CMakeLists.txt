@@ -2,13 +2,21 @@ cmake_minimum_required(VERSION 3.16)
 
 project(VolumeViser LANGUAGES CXX C CUDA)
 
+option(BUILD_TEST "" OFF)
+option(BUILD_VolAnnotater "" ON)
+option(BUILD_VolViewer "" ON)
+option(BUILD_VolRenderer "" ON)
+option(BUILD_VolEditor "" ON)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
 add_subdirectory(cuda)
 
 add_subdirectory(util)
 
-add_subdirectory(tests)
+if(BUILD_TEST)
+    add_subdirectory(tests)
+endif()
 
 add_subdirectory(deps)
 
@@ -49,11 +57,18 @@ target_link_libraries(VolumeViserLib PUBLIC
         )
 
 
+if(BUILD_VolAnnotater)
+    add_subdirectory(applications/VolViewer)
+endif()
 
-add_subdirectory(applications/VolViewer)
+if(BUILD_VolViewer)
+    add_subdirectory(applications/VolAnnotater)
+endif()
 
-add_subdirectory(applications/VolAnnotater)
+if(BUILD_VolRenderer)
+    add_subdirectory(applications/VolRenderer)
+endif()
 
-add_subdirectory(applications/VolRenderer)
-
-add_subdirectory(applications/VolEditor)
+if(BUILD_VolEditor)
+    add_subdirectory(applications/VolEditor)
+endif()

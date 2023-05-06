@@ -177,13 +177,13 @@ VISER_BEGIN
                     surf3Dwrite(val, params.cu_vsurf[tid], pos.x, pos.y, pos.z);
 #endif
                     //not necessary now
-//                    if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
-//                        tex_coord.w |= TexCoordFlag_IsSWCV;
-//                        //lock
-//                        lk.lock();
-//                        Update(key, tex_coord, hash_table);
-//                        lk.unlock();
-//                    }
+                    if((tex_coord.w & 0xffff & TexCoordFlag_IsSWCV) == 0){
+                        tex_coord.w |= TexCoordFlag_IsSWCV;
+                        //lock
+                        lk.lock();
+                        Update(key, tex_coord, hash_table);
+                        lk.unlock();
+                    }
                 }
             };
 
@@ -456,28 +456,28 @@ VISER_BEGIN
 //                       pt_b_pos.x, pt_b_pos.y, pt_b_pos.z, pt_b_r);
 //
 //            }
-//            __syncthreads();
-//            // write back from shared to global memory page table
-//            if(thread_idx == 0){
-//                auto& g_lk = params.g_lk.at(0);
-//                g_lk.lock();
-//
-//                for(int i = 0; i < HashTableSize; ++i){
-//                    auto& block_uid = table.at(i).first;
-//                    auto& tex_coord = table.at(i).second;
-//                    block_uid = GridVolume::BlockUID(hash_table[i][0].x,
-//                                                     hash_table[i][0].y,
-//                                                     hash_table[i][0].z,
-//                                                     hash_table[i][0].w);
-//                    tex_coord.sx = hash_table[i][1].x;
-//                    tex_coord.sy = hash_table[i][1].y;
-//                    tex_coord.sz = hash_table[i][1].z;
-//                    tex_coord.tid = hash_table[i][1].w >> 16;
-//                    tex_coord.flag |= hash_table[i][1].w & 0xffff;
-//                }
-//
-//                g_lk.unlock();
-//            }
+            __syncthreads();
+            // write back from shared to global memory page table
+            if(thread_idx == 0){
+                auto& g_lk = params.g_lk.at(0);
+                g_lk.lock();
+
+                for(int i = 0; i < HashTableSize; ++i){
+                    auto& block_uid = table.at(i).first;
+                    auto& tex_coord = table.at(i).second;
+                    block_uid = GridVolume::BlockUID(hash_table[i][0].x,
+                                                     hash_table[i][0].y,
+                                                     hash_table[i][0].z,
+                                                     hash_table[i][0].w);
+                    tex_coord.sx = hash_table[i][1].x;
+                    tex_coord.sy = hash_table[i][1].y;
+                    tex_coord.sz = hash_table[i][1].z;
+                    tex_coord.tid = hash_table[i][1].w >> 16;
+                    tex_coord.flag |= hash_table[i][1].w & 0xffff;
+                }
+
+                g_lk.unlock();
+            }
         }
     }
 
