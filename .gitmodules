@@ -2,3 +2,4 @@
 [submodule "deps/VolumeUtils"]
 	path = deps/VolumeUtils
 	url = https://github.com/cad420/VolumeUtils
+	branch = main
