@@ -2,6 +2,7 @@
 .idea
 .vscode
 .vs
-./bin
+/bin
+/out
 *data*
 *binary*

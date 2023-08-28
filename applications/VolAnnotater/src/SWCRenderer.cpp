@@ -2,14 +2,14 @@
 
 SWCRenderer::SWCRenderer(const SWCRenderer::SWCRendererCreateInfo &info) {
     shader = program_t::build_from(
-            shader_t<GL_VERTEX_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/line_shading.vert"),
-            shader_t<GL_FRAGMENT_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/line_shading.frag")
+            shader_t<GL_VERTEX_SHADER>::from_file("./glsl/line_shading.vert"),
+            shader_t<GL_FRAGMENT_SHADER>::from_file("./glsl/line_shading.frag")
             );
 
     pt_shader = program_t::build_from(
-        shader_t<GL_VERTEX_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.vert"),
-        shader_t<GL_FRAGMENT_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.frag"),
-        shader_t<GL_GEOMETRY_SHADER>::from_file("C:/Users/wyz/projects/VolumeViser/applications/VolAnnotater/asset/glsl/pt_shading.geom")
+        shader_t<GL_VERTEX_SHADER>::from_file("./glsl/pt_shading.vert"),
+        shader_t<GL_FRAGMENT_SHADER>::from_file("./glsl/pt_shading.frag"),
+        shader_t<GL_GEOMETRY_SHADER>::from_file("./glsl/pt_shading.geom")
         );
 
     preserved_vertices_per_patch = info.preserved_vertices_per_patch;
